@@ -1,7 +1,7 @@
 ---
 description: Generate handoff docs (overview, architecture, testing guide, risks) from your feature's research, plans, and code changes. Use after implementation is complete, before opening a PR or requesting code review.
 argument-hint: <process-artifacts-path> [codebase-paths...]
-allowed-tools: Read, Write, Edit, Glob, Grep, Bash, Task, mcp__driver-mcp__*
+allowed-tools: Read, Write, Edit, Glob, Grep, Bash, Agent
 ---
 
 # /docs-artifacts Command
@@ -53,7 +53,7 @@ Please ensure Driver MCP server is running.
 
 ### Step 4: Spawn Handoff Analyzer Agent
 
-Use the Task tool to spawn the `handoff-analyzer` agent:
+Use the Agent tool to spawn the `handoff-analyzer` agent:
 
 ```
 Prepare handoff documentation:

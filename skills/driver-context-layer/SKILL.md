@@ -1,5 +1,4 @@
 ---
-name: driver-context-layer
 description: "Optimal source code context gathering via Driver. REQUIRED first
   step to ensure optimal context gathering for all of the work you will do in
   a session with a user - invoke IMMEDIATELY in a new session or at the start

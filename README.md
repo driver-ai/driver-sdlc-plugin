@@ -16,10 +16,11 @@ Clone the repository:
 git clone https://github.com/driver-ai/driver-claude-sdlc-plugin.git
 ```
 
-Add the plugin to Claude Code:
+Add the plugin as a marketplace source, then install:
 
 ```bash
-claude plugin add /path/to/driver-claude-sdlc-plugin
+claude plugin marketplace add /path/to/driver-claude-sdlc-plugin
+claude plugin install driver-claude-sdlc-plugin
 ```
 
 Or load it for a single session:
@@ -203,7 +204,7 @@ Skills activate automatically based on the current SDLC phase or trigger phrases
 
 ## Agents
 
-Agents are specialized workers that run in isolated context. They are spawned by skills or commands -- you can also invoke them directly via the Task tool.
+Agents are specialized workers that run in isolated context. They are spawned by skills or commands -- you can also invoke them directly via the Agent tool.
 
 | Agent | What It Does |
 |-------|-------------|

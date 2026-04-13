@@ -1,7 +1,7 @@
 ---
 description: Dry run a plan to identify gaps before implementation
 argument-hint: <plan-name>
-allowed-tools: Read, Write, Edit, Glob, Grep, mcp__driver-mcp__*
+allowed-tools: Read, Write, Edit, Glob, Grep, Agent
 ---
 
 # /dry-run-plan Command

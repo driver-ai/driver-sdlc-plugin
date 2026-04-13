@@ -122,7 +122,7 @@ Every feature has a `FEATURE_LOG.md` at its root -- the source of truth for life
 - **Deviations are reviewed** -- after implementation, deviations are presented for user approval before bookkeeping proceeds.
 - **Severity helps prioritize, not skip** -- dry-run gaps are classified LOW/MEDIUM/HIGH but all are presented for review.
 - **Plans are the source of truth** -- implementation builds exactly what the plan specifies, nothing more.
-- **Skills read project artifacts directly** -- the plugin reads your feature's files to understand current state and context.
+- **Skills use the Driver CLI for state queries** -- `driver project status`, `driver project query`, etc. -- rather than manual file parsing.
 
 ---
 

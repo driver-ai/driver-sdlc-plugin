@@ -1,7 +1,7 @@
 ---
 description: Start a new feature project with research, plans, and implementation structure
 argument-hint: <project-name> [--prd <path>]
-allowed-tools: Read, Write, Edit, Bash, Glob, mcp__driver-mcp__*
+allowed-tools: Read, Write, Edit, Bash, Glob
 ---
 
 # /feature Command

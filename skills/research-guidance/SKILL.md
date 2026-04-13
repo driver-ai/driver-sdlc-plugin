@@ -1,5 +1,4 @@
 ---
-name: research-guidance
 description: |
   Guide research methodology with structured questioning (why, what, how), document organization,
   and completion criteria. Use when exploring problems, investigating options, starting new features,

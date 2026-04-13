@@ -8,11 +8,11 @@ allowed-tools:
   - Write
   - Glob
   - Grep
-  - Task
-  - mcp__plugin_driver-claude-plugin_driver-mcp__get_codebase_names
-  - mcp__plugin_driver-claude-plugin_driver-mcp__get_architecture_overview
-  - mcp__plugin_driver-claude-plugin_driver-mcp__get_llm_onboarding_guide
-  - mcp__plugin_driver-claude-plugin_driver-mcp__get_file_documentation
+  - Agent
+  - mcp__driver-mcp__get_codebase_names
+  - mcp__driver-mcp__get_architecture_overview
+  - mcp__driver-mcp__get_llm_onboarding_guide
+  - mcp__driver-mcp__get_file_documentation
 ---
 
 # Handoff Analyzer (Orchestrator)
@@ -21,7 +21,7 @@ You are a handoff preparation orchestrator. You coordinate specialized extractio
 
 ## Expected Input
 
-The parent agent invokes you via the Task tool with:
+The parent agent invokes you via the Agent tool with:
 
 - **Process artifacts path** — Path to the feature's process artifacts folder
 - **Codebase paths** — Local paths to codebases involved (one or more)
@@ -116,10 +116,10 @@ Spawn all extraction agents. For multi-codebase features, some agents run per-co
 |-------|-------------|-------|
 | `decisions-log` | `decisions.md` | Process artifacts path |
 
-**Spawn with Task tool:**
+**Spawn with Agent tool:**
 
 ```
-Use Task tool with subagent_type for each agent:
+Use Agent tool with subagent_type for each agent:
 
 For commit-log on python-backend:
 - subagent_type: "commit-log"
@@ -130,7 +130,7 @@ For decisions-log (global):
 - prompt: "Extract decisions from: process_artifacts=/path/to/features/my-feature"
 ```
 
-**IMPORTANT:** Spawn multiple agents in parallel using multiple Task tool calls in a single message.
+**IMPORTANT:** Spawn multiple agents in parallel using multiple Agent tool calls in a single message.
 
 #### Step 1.5: Collect Extraction Outputs
 
@@ -353,7 +353,7 @@ Report what was created:
 
 ## Critical Rules
 
-1. **Spawn agents in parallel** — Use multiple Task calls in one message for efficiency
+1. **Spawn agents in parallel** — Use multiple Agent calls in one message for efficiency
 2. **Write all detailed outputs** — The detailed/ folder is valuable on its own
 3. **Be comprehensive in synthesis** — The final docs should capture EVERYTHING from the extractions
 4. **Preserve detail** — Don't summarize away important findings

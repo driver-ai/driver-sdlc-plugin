@@ -2,6 +2,11 @@
 name: cascade-check
 description: "Check whether implementation deviations need to cascade to downstream plans. Reads the implementation log, overview dependency graph, and downstream plan documents. Returns structured results classifying each cascade as informational or design-impact."
 model: sonnet
+allowed-tools:
+  - Read
+  - Write
+  - Glob
+  - Grep
 ---
 
 # Cascade Check Agent

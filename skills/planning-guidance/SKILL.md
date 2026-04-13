@@ -1,5 +1,4 @@
 ---
-name: planning-guidance
 description: |
   Guide planning methodology with TDD-first task design, test strategy, architecture fit, explicit
   constraints, and task breakdown. Use when transitioning from research to planning phase.

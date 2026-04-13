@@ -1,7 +1,7 @@
 ---
 description: Resume work on a feature project — read the feature log, report current state, suggest next action
 argument-hint: <feature-path>
-allowed-tools: Read, Write, Edit, Glob, Grep, Task
+allowed-tools: Read, Write, Edit, Glob, Grep, Agent
 ---
 
 # /orchestrate Command

@@ -132,13 +132,9 @@ def find_laziness(content: str, file_path: str) -> List[str]:
 
     for pattern, message in PATTERNS:
         try:
-            matches = re.findall(pattern, content, re.IGNORECASE | re.MULTILINE)
-            if matches:
-                # Format message with first match if it's a capture group
-                if matches[0]:
-                    match_str = matches[0] if isinstance(matches[0], str) else matches[0][0] if matches[0] else pattern
-                else:
-                    match_str = pattern
+            match = re.search(pattern, content, re.IGNORECASE | re.MULTILINE)
+            if match:
+                match_str = match.group(1) if match.lastindex else match.group(0)
                 issues.append(message.format(match=match_str))
         except re.error:
             # Skip invalid patterns

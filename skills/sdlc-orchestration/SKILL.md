@@ -1,5 +1,4 @@
 ---
-name: sdlc-orchestration
 description: |
   SDLC lifecycle orchestration. Coordinates phase transitions, loads the right skills,
   manages bookkeeping, and handles session resumption for feature projects.
