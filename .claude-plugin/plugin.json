@@ -1,0 +1,32 @@
+{
+  "name": "driver-claude-sdlc-plugin",
+  "version": "1.0.0",
+  "description": "Structured SDLC workflow for feature development with Driver MCP and Claude Code",
+  "skills": [
+    "./skills/driver-context-layer",
+    "./skills/research-guidance",
+    "./skills/planning-guidance",
+    "./skills/implementation-guidance",
+    "./skills/sdlc-orchestration"
+  ],
+  "agents": [
+    "./agents/driver-task-context.md",
+    "./agents/handoff-analyzer.md",
+    "./agents/commit-log.md",
+    "./agents/decisions-log.md",
+    "./agents/features-list.md",
+    "./agents/security-review.md",
+    "./agents/test-coverage.md",
+    "./agents/dependency-analysis.md",
+    "./agents/cascade-check.md"
+  ],
+  "commands": [
+    "./commands/feature.md",
+    "./commands/dry-run-plan.md",
+    "./commands/docs-artifacts.md",
+    "./commands/context.md",
+    "./commands/driver-retro.md",
+    "./commands/orchestrate.md",
+    "./commands/assess.md"
+  ]
+}

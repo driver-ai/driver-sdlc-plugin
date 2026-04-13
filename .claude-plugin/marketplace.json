@@ -1,0 +1,15 @@
+{
+  "name": "driver-claude-sdlc-plugin",
+  "owner": {
+    "name": "Driver AI"
+  },
+  "plugins": [
+    {
+      "name": "driver-claude-sdlc-plugin",
+      "source": "./",
+      "description": "Structured SDLC workflow for feature development with Driver MCP and Claude Code",
+      "homepage": "https://github.com/driver-ai/driver-claude-sdlc-plugin",
+      "repository": "https://github.com/driver-ai/driver-claude-sdlc-plugin"
+    }
+  ]
+}
