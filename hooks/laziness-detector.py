@@ -5,7 +5,7 @@ Agent Laziness Detector - PreToolUse hook for Claude Code
 Blocks writes/edits that contain lazy patterns like TODO, FIXME,
 NotImplementedError, empty function bodies, etc.
 
-Part of the Driver Agentic SDLC tooling.
+Part of the SDLC plugin for Claude Code.
 """
 
 import json

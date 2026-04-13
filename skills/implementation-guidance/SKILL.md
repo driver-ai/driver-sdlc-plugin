@@ -71,6 +71,17 @@ After completing each task:
 
 ---
 
+## CRITICAL: Verify Before Declaring Complete
+
+**Never claim a task or plan is done without verification.** Premature completion claims waste debugging cycles.
+
+- After completing each task, **run the relevant test suite** before marking it done
+- Before declaring a plan complete, **verify all tasks have passing tests**
+- Do not claim an issue is resolved without **executing a verification command** (test run, build, lint, or manual check)
+- If no automated tests exist, explicitly state what manual verification you performed
+
+---
+
 ## CRITICAL: Phase Transitions
 
 **NEVER suggest moving to the next SDLC phase.** After Step 4 bookkeeping, you may suggest the next available plan (informational only). The user controls all phase transitions.
@@ -332,6 +343,7 @@ The log should always have enough context for a fresh session to continue: compl
 - [ ] **Tasks created?** — Is there a task list tracking progress?
 - [ ] **Current task in_progress?** — Is the active task marked correctly?
 - [ ] **Deviations tracked?** — Did I compare actual vs. planned?
+- [ ] **Verified?** — Did I run a verification command before claiming this task is done?
 - [ ] **Tests passing?** — Are tests green before committing?
 - [ ] **Log updated?** — Is `implementation/log-<plan>.md` current?
 - [ ] **Committed?** — Is the completed task committed?

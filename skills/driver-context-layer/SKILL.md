@@ -86,6 +86,17 @@ Use `get_codebase_names` to see all available codebases. Useful for:
 When working across codebases, spawn the agent with context about all relevant
 codebases — it can pull from multiple sources.
 
+## MCP Connectivity Pre-Check
+
+Before spawning the `driver-task-context` agent or making Driver MCP calls, verify connectivity:
+
+1. Call `get_codebase_names` first — it's a lightweight call that confirms the MCP server is reachable
+2. If the call fails, **stop and tell the user** before proceeding with heavier operations:
+   - "Driver MCP is not responding. Check your MCP configuration, verify your token is valid, and ensure your codebases are onboarded in Driver."
+3. Do not proceed with context gathering if the pre-check fails — downstream calls will also fail, wasting time
+
+This prevents entire sessions from being blocked by expired tokens or MCP configuration issues.
+
 ## Key Gotchas
 
 - Driver shows **committed state**, not local uncommitted changes

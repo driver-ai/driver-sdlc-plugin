@@ -25,7 +25,7 @@
     "./commands/dry-run-plan.md",
     "./commands/docs-artifacts.md",
     "./commands/context.md",
-    "./commands/driver-retro.md",
+    "./commands/retro.md",
     "./commands/orchestrate.md",
     "./commands/assess.md"
   ]

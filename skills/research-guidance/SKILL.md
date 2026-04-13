@@ -195,6 +195,17 @@ Create a new numbered research doc when:
 
 ---
 
+## Pattern Discovery Before Planning
+
+Before the user transitions to planning, ensure existing codebase patterns have been explored. This prevents the #1 friction source — choosing a wrong approach because existing patterns weren't understood.
+
+**Prompt the user (once, when research feels complete):**
+> "Have you used Driver MCP to understand how similar features are built in this codebase? What existing patterns will this feature follow?"
+
+**Why this matters:** 37% of implementation friction comes from choosing custom solutions over existing patterns. Front-loading pattern discovery during research prevents costly rework during implementation.
+
+---
+
 ## Research Completion Criteria
 
 Research is "done enough" when the **user decides** it's done. These are signals to watch for, but do NOT prompt the user to move on:

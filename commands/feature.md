@@ -162,10 +162,10 @@ After creating the structure:
 
 ## PRD Handoff from Product Planning
 
-When a PRD is created via `/exploration`, it can be passed to `/feature`:
+If a PRD exists from prior product planning, it can be passed to `/feature`:
 
 ```bash
-/feature analytics --prd ../product-strategy/analytics-initiative/outputs/prd-analytics.md
+/feature analytics --prd path/to/prd-analytics.md
 ```
 
 This creates the feature project with the PRD content summarized in the research overview, providing context from product planning to engineering research.
