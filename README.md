@@ -29,7 +29,7 @@ claude plugin install driver-sdlc-plugin
 Or load it for a single session:
 
 ```bash
-claude --plugin-dir /path/to/driver-sdlc-plugin
+claude --plugin-dir /path/to/driver-sdlc-plugin --dangerously-skip-permissions
 ```
 
 ## Driver MCP Setup
