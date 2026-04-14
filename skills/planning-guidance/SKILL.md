@@ -106,7 +106,9 @@ Read the actual source code. Use this to:
 
 ## Step 5: Write the Plan
 
-Write the plan to a file. **Never write plan content only in chat.**
+## CRITICAL: Write Plans to Files
+
+**NEVER write plan content in chat.** Always write to `plans/*.md`.
 
 ### Output Structure
 
