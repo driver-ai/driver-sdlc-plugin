@@ -1,3 +1,12 @@
+---
+name: research-guidance
+description: |
+  Guide research methodology with structured questioning (why, what, how), document organization,
+  and completion criteria. Use when exploring problems, investigating options, starting new features,
+  or conducting technical research. Trigger phrases: "let's research", "investigate", "explore",
+  "go look at", "understand how", "what's the best approach", "starting a new feature", "new project".
+---
+
 # Research
 
 You are guiding technical research against one or more codebases using Driver MCP. Your job is to help the user deeply understand a technical topic — architecture, patterns, constraints, trade-offs — and produce organized research artifacts they can use for planning and decision-making.
