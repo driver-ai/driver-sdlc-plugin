@@ -3,7 +3,6 @@
   "version": "1.0.0",
   "description": "Structured SDLC workflow for feature development with Driver MCP and Claude Code",
   "skills": [
-    "./skills/driver-context-layer",
     "./skills/research-guidance",
     "./skills/planning-guidance",
     "./skills/implementation-guidance",

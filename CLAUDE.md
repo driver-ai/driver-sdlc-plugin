@@ -144,7 +144,6 @@ Every feature has a `FEATURE_LOG.md` at its root -- the source of truth for life
 
 | Skill | Description |
 |-------|-------------|
-| `driver-context-layer` | Optimal source code context gathering via Driver MCP. Invoked automatically at session start or when starting a new major task. |
 | `research-guidance` | Guide research with structured questioning (why, what, how), document organization, and completion criteria. |
 | `planning-guidance` | Guide planning with TDD-first task design, test strategy, architecture fit, and task breakdown. |
 | `implementation-guidance` | Guide implementation with plan-driven task lists, subagent delegation, deviation tracking, and commit discipline. |
@@ -172,6 +171,14 @@ The plugin integrates with Driver MCP to query codebase architecture, implementa
 
 **Primary approach:** Use the `driver-task-context` agent. Give it a task description and it returns synthesized, task-specific context -- architecture, key files, conventions, and suggested approach. It runs in an isolated context so your main conversation stays clean.
 
+**When to use direct MCP calls instead of the agent:**
+- **Verification lookups** -- quick checks during implementation: "Does this file exist?" (`get_code_map`), "What's the exact method signature?" (`get_file_documentation`)
+- **Follow-up queries** -- after the agent has provided initial context: "What about this other file?" (`get_file_documentation`, `get_source_file`)
+- **Codebase name resolution** -- `get_codebase_names` is always fine to call directly
+
+**Avoid calling these directly for initial context gathering** -- they produce large responses that burden your main context. Let the agent handle them:
+- `get_architecture_overview`, `get_llm_onboarding_guide`, `get_changelog`
+
 **Direct tools** (also available):
 - `get_architecture_overview` -- complete architecture document for a codebase
 - `get_llm_onboarding_guide` -- codebase orientation, navigation tips, conventions
@@ -180,7 +187,14 @@ The plugin integrates with Driver MCP to query codebase architecture, implementa
 - `get_source_file` -- read actual source code with line numbers
 - `get_changelog` / `get_detailed_changelog` -- development history
 
-Use `get_codebase_names` to discover which codebases are available.
+**Cross-codebase capability:** Driver can pull context for any supported codebase, not just the local one. Use `get_codebase_names` to see all available codebases. Useful for frontend/backend integration, shared library consumers, multi-repo features, and product development spanning multiple systems. When working across codebases, give the agent context about all relevant codebases -- it can pull from multiple sources.
+
+**Connectivity pre-check:** Call `get_codebase_names` before spawning the agent or making heavier MCP calls. If it fails, stop and tell the user: "Driver MCP is not responding. Check your MCP configuration, verify your token is valid, and ensure your codebases are onboarded in Driver." Do not proceed with context gathering if the pre-check fails.
+
+**Key gotchas:**
+- Driver shows committed state, not local uncommitted changes
+- Codebase name must match Driver exactly (verify with `get_codebase_names`)
+- Large doc dumps in main context cause distraction -- use the agent
 
 ---
 

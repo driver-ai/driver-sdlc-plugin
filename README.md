@@ -196,7 +196,6 @@ Skills activate automatically based on the current SDLC phase or trigger phrases
 
 | Skill | What It Does | When It Activates |
 |-------|-------------|-------------------|
-| **driver-context-layer** | Guides optimal codebase context gathering via Driver MCP. Ensures Driver is the primary context source for all development work. | Automatically at session start or when starting a new major task |
 | **research-guidance** | Structured Why-What-How questioning, document organization, and research completion criteria. | Trigger phrases: "let's research", "investigate", "explore", "understand how", "what's the best approach" |
 | **planning-guidance** | TDD-first task design, test strategy, architecture fit, explicit constraints, and task breakdown. Plans are always written to files, never in chat. | Trigger phrases: "let's plan", "ready to plan", "create a plan", "test strategy", "TDD" |
 | **implementation-guidance** | Plan-driven task execution, subagent delegation for context gathering, deviation tracking, and commit discipline. | Trigger phrases: "let's implement", "start implementing", "ready to build", "execute the plan" |
