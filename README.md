@@ -6,7 +6,10 @@ A Claude Code plugin that guides structured feature development through a full s
 
 - [Claude Code](https://docs.anthropic.com/en/docs/claude-code) installed and configured
 - A [Driver](https://driverai.com) account with your codebases onboarded
-- Driver MCP server configured in Claude Code (provides codebase context)
+- Driver MCP server configured in Claude Code (see [Driver MCP Setup](#driver-mcp-setup) below)
+- `jq` command-line tool (`brew install jq` on macOS, `apt install jq` on Linux) — required for skill phase tracking
+- `python3` available in PATH — required for the laziness detector hook
+- Claude model access: Opus (used by `driver-task-context` and `handoff-analyzer` agents) and Sonnet (used by extraction agents like `commit-log`, `decisions-log`, etc.)
 
 ## Installation
 
@@ -28,6 +31,38 @@ Or load it for a single session:
 ```bash
 claude --plugin-dir /path/to/driver-sdlc-plugin
 ```
+
+## Driver MCP Setup
+
+The plugin uses [Driver MCP](https://driverai.com) to access pre-computed codebase documentation — architecture overviews, code maps, symbol-level docs, and changelogs. This is the plugin's core dependency.
+
+### Configuration
+
+Add the Driver MCP server to your project's `.mcp.json` or Claude Code settings. The server name **must** be `driver-mcp` — all plugin agents reference tools using the `mcp__driver-mcp__` prefix. Using a different name will cause agent failures.
+
+**Project-level** (`.mcp.json` in your project root):
+
+```json
+{
+  "mcpServers": {
+    "driver-mcp": {
+      "type": "http",
+      "url": "https://api.us1.driverai.com/mcp/v1"
+    }
+  }
+}
+```
+
+### Verify Connectivity
+
+After configuring, verify the connection works by asking Claude Code:
+
+> "Call `get_codebase_names` from Driver MCP"
+
+You should see a list of your onboarded codebases. If you get an error, check:
+- Your Driver API token is configured (see [Driver docs](https://driverai.com))
+- The server name is exactly `driver-mcp` (not `driver`, `my-driver`, etc.)
+- The URL matches your region (`us1` for US)
 
 ## Quick Start
 
@@ -102,6 +137,8 @@ Build a complete feature through all phases.
 > (fix any gaps found)
 > "let's implement"
 > (implementation phase: tasks executed, tests written, code committed)
+/assess features/add-export-csv
+> (curate test suite, verify quality)
 /docs-artifacts features/add-export-csv
 ```
 
