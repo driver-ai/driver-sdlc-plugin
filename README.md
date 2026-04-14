@@ -2,6 +2,14 @@
 
 A Claude Code plugin that guides structured feature development through a full software development lifecycle. Features move through Research, Planning, Validation, Implementation, Review, and Handoff phases -- each supported by specialized skills, commands, and agents that keep work organized, traceable, and thorough.
 
+> **Note:** This plugin orchestrates many tools, agents, and file operations across its lifecycle phases. In default permission mode, you will be prompted frequently for approvals. For the best experience, run Claude Code with `--dangerously-skip-permissions`:
+>
+> ```bash
+> claude --plugin-dir /path/to/driver-sdlc-plugin --dangerously-skip-permissions
+> ```
+>
+> Review the [Claude Code permissions documentation](https://docs.anthropic.com/en/docs/claude-code/security) to understand what this flag does before enabling it.
+
 ## Prerequisites
 
 - [Claude Code](https://docs.anthropic.com/en/docs/claude-code) installed and configured
