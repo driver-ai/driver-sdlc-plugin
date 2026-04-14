@@ -51,6 +51,14 @@ Please ensure Driver MCP server is running.
 | No `driver-docs/` folder in feature | **Create** - Generate all artifacts from scratch |
 | `driver-docs/` exists in feature | **Update** - Diff-based update of changed sections |
 
+### Step 3.5: Resolve Driver Codebase Names
+
+Before spawning the analyzer, resolve Driver codebase names so the analyzer can use Driver MCP tools:
+
+1. Read `research/00-overview.md` from the feature's process artifacts
+2. Find the Codebases table and extract the "Driver Name" column values
+3. If no Codebases table exists, check `FEATURE_LOG.md` or ask the user for Driver codebase names
+
 ### Step 4: Spawn Handoff Analyzer Agent
 
 Use the Agent tool to spawn the `handoff-analyzer` agent:
@@ -61,6 +69,7 @@ Prepare handoff documentation:
 - Codebases:
   - {codebase_path_1}
   - {codebase_path_2}
+- Driver codebase names: {driver_name_1}, {driver_name_2}
 - Mode: {create|update}
 ```
 

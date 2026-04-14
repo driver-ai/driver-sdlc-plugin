@@ -204,7 +204,7 @@ If `plans/00-overview.md` exists, add an Assessment row to the progress table:
 ## Step 9: Update Feature Log and Commit
 
 1. Update `FEATURE_LOG.md`:
-   - Set phase → Done
+   - Set phase → Handoff
    - Append event row: `| <date> | Assessment complete — pruned <X>, promoted <Y>, kept <Z> | assessment/test-curation-<date>.md |`
 2. Commit bookkeeping: `"chore: Assessment complete — pruned <X>, promoted <Y>, kept <Z>"`
 

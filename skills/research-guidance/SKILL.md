@@ -39,11 +39,79 @@ Before touching any tools, understand what the user wants to learn.
 
 ---
 
+## How Questions Work in Research Docs
+
+Questions live **inline with the content they relate to** — not in a separate file or at the bottom of the doc. This keeps reasoning visible and makes questions easier to answer.
+
+````markdown
+## Payment Processing Options
+
+We need to handle payments for the new subscription tier.
+
+**Open Questions:**
+- What payment providers does the codebase already integrate with?
+- Are there compliance requirements (PCI-DSS) that constrain our options?
+- ~~Do we support recurring billing?~~ → Yes, Stripe subscriptions are already set up in `billing_service.py`
+
+**Findings:**
+After reviewing the codebase via Driver MCP...
+````
+
+**Question best practices:**
+- Use clear "Open Questions" or "Questions" headers
+- Mark resolved questions inline: `~~Question~~ → Answer`
+- Don't delete resolved questions — they're part of the decision record
+- Provide context: what led to this question, what decision depends on the answer
+- Sequence naturally: start broad (open-ended exploration), then narrow (closed decisions)
+
+---
+
+## The Why-What-How Framework
+
+Progress through these layers systematically. Don't rush to "how" before "why" and "what" are clear.
+
+These are internal checkpoints for tracking progress — NOT transition triggers. Reaching "done" on a layer doesn't mean you should suggest moving on.
+
+### 1. Why (Problem Framing)
+
+Start here. Understand the problem before exploring solutions.
+
+- What problem are we solving? Who experiences it?
+- Why solve it now? What happens if we don't?
+- What's the business/user value?
+
+**Checkpoint:** Problem statement is clear and agreed upon.
+
+### 2. What (Scope & Constraints)
+
+Define boundaries before exploring implementation.
+
+- What's in scope vs. out of scope?
+- What constraints exist? (technical, business, time, team)
+- What's been tried before? What does success look like?
+
+Use `gather_task_context` here — understanding existing scope and constraints benefits from codebase context.
+
+**Checkpoint:** Scope is bounded and constraints are documented.
+
+### 3. How (Technical Exploration)
+
+Now explore implementation approaches.
+
+- How might this work technically?
+- What patterns exist in the codebase? (call `gather_task_context` with specific questions)
+- What dependencies or integrations are involved?
+- What risks or unknowns exist?
+
+**Checkpoint:** Technical approach is understood well enough to plan.
+
+---
+
 ## Step 2: Gather Codebase Context
 
 ### CRITICAL: Use `gather_task_context` — Not Native Agents
 
-`gather_task_context` is Driver MCP's primary tool. **It is your default tool for codebase context.**
+`gather_task_context` is Driver MCP's primary tool. **It is your default tool for codebase context.** (Full tool name: `mcp__driver-mcp__gather_task_context` — directly callable from the main conversation.)
 
 **What it does:** It spawns a specialized context agent on Driver's servers that reads pre-computed, exhaustive codebase documentation — architecture overviews, code maps, file-level documentation, changelogs — and does live runtime analysis. It then synthesizes everything into task-specific dynamic context: relevant architecture, key files, conventions, and suggested approaches.
 
@@ -104,7 +172,7 @@ These primitives are for **targeted, specific lookups** — not for broad explor
 ### Output Structure
 
 ```
-research-output/
+research/
 ├── 00-overview.md      # Index + summary of all findings
 ├── 01-<topic>.md       # First research thread
 ├── 02-<topic>.md       # Second research thread
@@ -187,3 +255,16 @@ When the user indicates research is complete:
 - Spawn parallel subagents as concurrency wrappers for multiple `gather_task_context` calls
 - Ask lots of probing questions before and during research
 - Keep the overview current as an index of all research
+
+---
+
+## Before Responding Checklist
+
+Before sending any response during research, verify:
+
+- [ ] **Questions asked?** — Am I being curious enough? What else should I ask?
+- [ ] **Questions in context?** — Are questions placed near the content they relate to?
+- [ ] **Why-What-How order?** — Am I progressing through layers appropriately?
+- [ ] **Driver context?** — Have I called `gather_task_context` where relevant?
+- [ ] **Overview current?** — Does `00-overview.md` reflect the latest findings and decisions?
+- [ ] **Feature log?** — Did I update `FEATURE_LOG.md` when creating new research docs?
