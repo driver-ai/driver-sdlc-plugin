@@ -1,3 +1,4 @@
 # User-specific configuration (created by /feature first-run setup)
 config.local.json
 .claude/
+__pycache__/
