@@ -13,20 +13,20 @@ A Claude Code plugin that guides structured feature development through a full s
 Clone the repository:
 
 ```bash
-git clone https://github.com/driver-ai/driver-claude-sdlc-plugin.git
+git clone https://github.com/driver-ai/driver-sdlc-plugin.git
 ```
 
 Add the plugin as a marketplace source, then install:
 
 ```bash
-claude plugin marketplace add /path/to/driver-claude-sdlc-plugin
-claude plugin install driver-claude-sdlc-plugin
+claude plugin marketplace add /path/to/driver-sdlc-plugin
+claude plugin install driver-sdlc-plugin
 ```
 
 Or load it for a single session:
 
 ```bash
-claude --plugin-dir /path/to/driver-claude-sdlc-plugin
+claude --plugin-dir /path/to/driver-sdlc-plugin
 ```
 
 ## Quick Start
@@ -233,7 +233,7 @@ Add to your `.claude/settings.json`:
     "PreToolUse": [
       {
         "matcher": "Write|Edit",
-        "command": "python3 /path/to/driver-claude-sdlc-plugin/hooks/laziness-detector.py"
+        "command": "python3 /path/to/driver-sdlc-plugin/hooks/laziness-detector.py"
       }
     ]
   }
@@ -252,7 +252,7 @@ Add to your `.claude/settings.json`:
     "PreToolUse": [
       {
         "matcher": "Skill",
-        "command": "/path/to/driver-claude-sdlc-plugin/hooks/track-skill-load.sh"
+        "command": "/path/to/driver-sdlc-plugin/hooks/track-skill-load.sh"
       }
     ]
   }
