@@ -29,15 +29,18 @@ If the user says "implement" without specifying a plan, list available plans and
 
 ---
 
-## CRITICAL: Keep It Simple
+## Implementation Defaults
 
 Implementation builds only what the plan specifies. Nothing more.
 
+**Core principles** (always apply):
 - **Only what's in the plan** — No bonus features, no "while I'm here" improvements
-- **Three lines over an abstraction** — Don't create helpers for one-time operations
+- **No hypothetical futures** — Build for now, not for imagined requirements
+
+**Default practices** (override via plan constraints or project CLAUDE.md):
+- **Three lines over an abstraction** — Prefer inline code over one-time helpers
 - **Validate at boundaries only** — Trust internal code, validate user input
 - **Delete, don't deprecate** — If something is unused, remove it completely
-- **No hypothetical futures** — Build for now, not for imagined requirements
 
 ---
 
@@ -60,13 +63,13 @@ After completing each task:
 
 ---
 
-## CRITICAL: Commit Discipline
+## Commit Discipline
 
 **Commit at every task boundary where tests pass.**
 
 1. One commit per completed task (or batched task group)
 2. Tests must pass — never commit broken state
-3. Commit message references the task: `"feat: Add webhook handler (Task 2/5)"`
+3. Follow the project's commit message conventions. If none exist, reference the task — e.g., `"Add webhook handler (Task 2/5)"`
 4. If tests fail, fix before committing
 
 ---
