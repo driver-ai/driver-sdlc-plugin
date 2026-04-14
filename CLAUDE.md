@@ -117,7 +117,7 @@ Every feature has a `FEATURE_LOG.md` at its root -- the source of truth for life
 - **Deviations are reviewed** -- after implementation, deviations are presented for user approval before bookkeeping proceeds.
 - **Severity helps prioritize, not skip** -- dry-run gaps are classified LOW/MEDIUM/HIGH but all are presented for review.
 - **Plans are the source of truth** -- implementation builds exactly what the plan specifies, nothing more.
-- **Skills use Driver MCP tools for codebase context** -- `gather_task_context` for synthesized context, `get_code_map` for navigation, `get_file_documentation` for symbol details -- rather than manual file parsing.
+- **Skills use Driver MCP tools for codebase context** -- `gather_task_context` for synthesized context, `get_code_map` for navigation, `get_file_documentation` for symbol details -- rather than manual file parsing. Always call `gather_task_context` via a native subagent -- the subagent is a concurrency primitive that keeps the main conversation unblocked and enables parallel calls trivially.
 
 ---
 
