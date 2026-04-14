@@ -23,7 +23,8 @@ You are guiding the implementation phase of a feature development lifecycle. Imp
 2. **Read prerequisites** — research docs, Driver context, or materials referenced in the plan's Context or Architecture Fit section
 3. **Extract the Task Breakdown** — find the `## Task Breakdown` section
 4. **Create a task list** — `TaskCreate` for each task in the plan
-5. **Tell the user** — "I've created N tasks from the plan. Starting with Task 1."
+5. **Pre-flight** — Step 2 runs environment checks before execution begins
+6. **Tell the user** — "I've created N tasks from the plan. Starting with Task 1."
 
 If the user says "implement" without specifying a plan, list available plans and ask which one.
 
@@ -87,7 +88,7 @@ After completing each task:
 
 ## CRITICAL: Phase Transitions
 
-**NEVER suggest moving to the next SDLC phase.** After Step 4 bookkeeping, you may suggest the next available plan (informational only). The user controls all phase transitions.
+**NEVER suggest moving to the next SDLC phase.** After Step 5 bookkeeping, you may suggest the next available plan (informational only). The user controls all phase transitions.
 
 ---
 
@@ -101,7 +102,24 @@ User specifies plan → Read it → Read prerequisites → Extract Task Breakdow
 
 Set up dependencies if tasks are sequential (`addBlockedBy`).
 
-### Step 2: Execute Each Task
+### Step 2: Pre-Flight Validation
+
+Before executing any tasks, verify the environment is ready:
+
+1. **Required tools** — Check that tools referenced in the plan exist and are accessible (`which <tool>` or `command -v <tool>`). Examples: compilers, build tools, database CLIs, linters.
+2. **Environment variables** — Check that env vars referenced in the plan or project config are set. Flag any that are missing.
+3. **Test baseline** — Run the project's test suite to establish a clean baseline. If tests fail before you've changed anything, stop and report.
+4. **Referenced paths** — Verify that files and directories referenced in the plan's task breakdown actually exist. Flag any missing paths.
+
+**Report findings:**
+> "Pre-flight complete. Found N issues: [list]. Proceed with implementation?"
+
+**If critical issues found** (tools missing, tests failing):
+> "Pre-flight found critical issues that will block implementation: [list]. These should be resolved before proceeding."
+
+This is a gate — the user decides whether to proceed, skip, or fix issues first.
+
+### Step 3: Execute Each Task
 
 For each task:
 
@@ -135,30 +153,32 @@ Adjacent tasks that are tightly coupled should be batched into a single subagent
 
 Batching reduces subagent overhead and gives the subagent better context. Only batch tasks that are sequential and closely related — don't batch independent work.
 
-### Step 3: Summarize
+### Step 4: Summarize
 
 After all tasks are complete:
 1. Write a final summary in the implementation log
 2. List all deviations across tasks
 3. Note any follow-up work identified during implementation
 
-### Step 4: Review Deviations and Bookkeeping
+### Step 5: Review Deviations and Bookkeeping
 
 After the summary, present deviations for user review before proceeding with bookkeeping.
 
-#### 4.0: Review Deviations
+#### 5.0: Review Deviations
 
 Present the deviation summary from the implementation log. For each deviation, the user should understand what changed and why.
 
 > "Implementation complete. Here are the deviations from the plan: ..."
 > "Are these acceptable, or would you like to go back and address any of them?"
 
-- **If the user wants changes** → return to Step 2 for rework on specific tasks
-- **If the user approves** → proceed to bookkeeping (4.1+)
+- **If the user wants changes** → return to Step 3 for rework on specific tasks
+- **If the user approves** → proceed to bookkeeping (5.1+)
 
-**If no overview file exists at `plans/00-overview.md`, skip steps 4.2, 4.3, and 4.5.**
+**After approval, execute steps 5.1 through 5.5 automatically without pausing for acknowledgment.** These are mechanical bookkeeping steps — plan status, overview update, cascade check, commit, and transition suggestion. Only pause if cascade-check (5.3) surfaces design-impact decisions requiring user input.
 
-#### 4.1: Update Plan Status
+**If no overview file exists at `plans/00-overview.md`, skip steps 5.2, 5.3, and 5.5.**
+
+#### 5.1: Update Plan Status
 
 Write a status header at the TOP of the plan file (before `## Context`):
 
@@ -180,14 +200,14 @@ Write a status header at the TOP of the plan file (before `## Context`):
 
 Follow this format exactly. Then mark all `- [ ]` checkboxes as `- [x]` under both `## Acceptance Criteria` and `## Test Strategy`.
 
-#### 4.2: Update Overview Progress Table
+#### 5.2: Update Overview Progress Table
 
 If `plans/00-overview.md` exists:
 1. Find the progress table row matching this plan
 2. Update: Status → `COMPLETE`, Tests → count, Key Artifact → one-line summary from log
 3. If no row exists, add one at the correct position
 
-#### 4.3: Cascade Check
+#### 5.3: Cascade Check
 
 Spawn the [cascade-check](../../agents/cascade-check.md) agent with:
 - Implementation log path
@@ -198,19 +218,20 @@ The agent reads all files, classifies each deviation as informational or design-
 
 If the agent reports design decisions needed, present each to the user with options. Otherwise report: "Cascade check complete. N gaps added to overview." (or "No cascading needed.")
 
-#### 4.4: Commit Bookkeeping
+#### 5.4: Commit Bookkeeping
 
 ```
 git add plans/<plan>.md plans/00-overview.md
 git commit -m "chore: Update plan status and overview for plan <name>"
 ```
 
-#### 4.5: Transition Suggestion
+#### 5.5: Transition Suggestion
 
 Use the overview's progress table and dependency graph to identify the next unblocked plan:
 - "Next unblocked plan is X. It has [a plan document / no plan document yet]."
 - Multiple unblocked: "Two plans are unblocked: X and Y."
 - None unblocked: "All dependencies for remaining plans are not yet complete."
+- All complete: "All plans complete. Run `/assess` to curate the test suite before handoff."
 
 This is informational — the user decides what to do.
 
@@ -324,7 +345,7 @@ The log should always have enough context for a fresh session to continue: compl
 - Batch tightly coupled tasks for subagent efficiency
 - Do simple tasks directly, spawn subagents for complex ones
 - Write to the implementation log as you go
-- Run Step 4 bookkeeping after all tasks complete
+- Run Step 5 bookkeeping after all tasks complete
 - Keep scaffolding tests intact — curation happens post-implementation via `/assess`
 - Suggest next unblocked plan (informational only)
 
@@ -344,11 +365,12 @@ The log should always have enough context for a fresh session to continue: compl
 
 - [ ] **Read plan?** — Have I read the specific plan the user specified?
 - [ ] **Tasks created?** — Is there a task list tracking progress?
+- [ ] **Pre-flight done?** — Ran environment checks before starting task execution
 - [ ] **Current task in_progress?** — Is the active task marked correctly?
 - [ ] **Deviations tracked?** — Did I compare actual vs. planned?
 - [ ] **Verified?** — Did I run a verification command before claiming this task is done?
 - [ ] **Tests passing?** — Are tests green before committing?
 - [ ] **Log updated?** — Is `implementation/log-<plan>.md` current?
 - [ ] **Committed?** — Is the completed task committed?
-- [ ] **Bookkeeping done?** — If all tasks complete, did I run Step 4?
+- [ ] **Bookkeeping done?** — If all tasks complete, did I run Step 5?
 - [ ] **Feature log?** — Did I update `FEATURE_LOG.md` at implementation start and completion?

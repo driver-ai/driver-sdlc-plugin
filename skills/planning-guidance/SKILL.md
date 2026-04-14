@@ -76,6 +76,21 @@ elsewhere in the codebase, and testing patterns/frameworks used."
 
 **Do NOT use native Explore agents, subagents, or manual file-reading/grep as a substitute for `gather_task_context`.** These native tools work from raw source only. `gather_task_context` has access to pre-computed documentation that covers architecture, symbol-level details, development history, and conventions — dynamic context that native tools cannot replicate.
 
+Native tools are useful for **targeted follow-up** after `gather_task_context` returns (see Step 4), but they are not a replacement for it.
+
+### Running Multiple Calls in Parallel
+
+When you need context from multiple angles (e.g., architecture AND testing patterns), spawn native subagents as concurrency wrappers. Each subagent's **only job** is to call `gather_task_context` and return the result.
+
+**This is the one correct use of native subagents in this skill.** The subagent is a concurrency wrapper — it does NOT do its own codebase exploration.
+
+| Pattern | What the subagent does | Correct? |
+|---------|----------------------|----------|
+| **Substitution** | Its own file reading, grep, exploration — bypassing Driver | No |
+| **Parallelism wrapper** | Calls `gather_task_context` with a specific task description, returns the result | Yes |
+
+**Example:** You need architecture context and testing patterns for the same feature. Spawn two subagents, each calling `gather_task_context` with a different focused task description. Collect both results before writing the plan.
+
 ---
 
 ## Step 4: Detail with Primitive Driver MCP Tools
@@ -322,7 +337,7 @@ During planning, design both kinds deliberately:
 - Durable tests validate behavior that should survive refactoring
 - Coverage targets (above) apply to durable tests — scaffolding tests don't count toward long-term coverage
 
-After all plans are implemented, the test suite is curated via `/assess`. Plan accordingly: write scaffolding tests freely during TDD, knowing they'll be evaluated later.
+After all plans are implemented, `/assess` curates the test suite by categorizing each test as **PRUNE** (scaffolding that's served its purpose), **KEEP** (durable tests covering observable behavior), or **PROMOTE** (tests worth keeping but needing refactoring to assert behavior instead of implementation details). Plan accordingly: write scaffolding tests freely during TDD, knowing they'll be categorized and acted on during assessment.
 
 #### Fixture Sourcing
 

@@ -1,6 +1,6 @@
 ---
 description: Dry run a plan to identify gaps before implementation
-argument-hint: <plan-name>
+argument-hint: "[plan-name]"
 allowed-tools: Read, Write, Edit, Glob, Grep, Agent
 ---
 
@@ -14,7 +14,16 @@ Walk through a plan as if implementing it to identify gaps, missing context, and
 
 Find the plan file based on the argument:
 - If `<plan-name>` provided: Look for `plans/<plan-name>.md` or `plans/*<plan-name>*.md`
-- If no argument: List available plans in `plans/` and ask which to dry run
+- If no argument: Run **multi-plan mode** — validate all plans in parallel:
+  1. Glob for all `plans/*.md` excluding `00-overview.md`
+  2. If no plans found: `> "No plans found to validate."` and exit
+  3. If only one plan found: run it directly in single-plan mode (no subagent overhead)
+  4. For multiple plans: spawn one subagent per plan (using `Agent` tool). Each subagent's prompt must embed the full dry-run procedure:
+     > "Read plan X at `plans/X.md`. Walk through each task checking: Files, Patterns, Tests, Dependencies, Edge cases, Context, Env vars, Dependency paths, File conventions, CLI compatibility, Platform. Classify gaps as LOW/MEDIUM/HIGH. Write results to `dry-runs/X-<date>.md` using the standard dry-run template."
+  5. Each subagent writes its own `dry-runs/<plan-name>-<date>.md` result
+  6. If a subagent fails (e.g., plan file is malformed), continue with remaining plans and report the failure in the convergence manifest
+  7. `> "Found N plans (excluding overview). Running dry-run validation on all plans in parallel..."`
+  8. After all subagents complete, proceed to Step 6 (Convergence Manifest)
 
 ### Step 2: Read the Plan
 
@@ -34,6 +43,11 @@ For each task in the plan, walk through it as if implementing:
 4. **Dependencies**: Are there hidden dependencies on other tasks?
 5. **Edge cases**: What could go wrong that isn't covered?
 6. **Context**: Is any context missing that I'd need during implementation?
+7. **Env vars**: Are there environment variables that must be set? Will they persist across shell sessions?
+8. **Dependency paths**: Do file paths and import references use correct extensions and conventions?
+9. **File conventions**: Do new file names follow the project's naming conventions?
+10. **CLI compatibility**: Do referenced CLI commands and flags exist in the expected versions?
+11. **Platform**: Are there platform-specific assumptions (e.g., bash version, OS utilities)?
 
 Classify each gap found using the severity criteria below.
 
@@ -91,7 +105,52 @@ The gap table column order is canonical — follow it exactly:
 3. [LOW] <nice-to-fix items>
 ```
 
-### Step 6: Present Gaps and Offer to Fix
+### Step 6: Convergence Manifest (multi-plan mode only)
+
+After all individual dry-runs complete in multi-plan mode, synthesize results into a convergence manifest.
+
+#### Cross-Plan Interface Validation
+
+Read `plans/00-overview.md` Interface Contracts section. If no `00-overview.md` exists or no Interface Contracts section is found, skip cross-plan interface validation and note "No interface contracts defined" in the convergence manifest.
+
+For each contract, verify both sides define consistent interfaces:
+- Method/function signatures match
+- Data models/types are compatible
+- API routes/endpoints agree
+- Config keys/env vars are consistent
+
+Severity: HIGH for signature mismatches, MEDIUM for naming inconsistencies, LOW for documentation gaps.
+
+#### Write Convergence Manifest
+
+Write to `dry-runs/convergence-manifest-<YYYY-MM-DD>.md`. If a manifest already exists for today's date, append a sequence number: `convergence-manifest-<date>-2.md`.
+
+```markdown
+# Convergence Manifest
+
+**Date**: <date>
+**Plans validated**: <list>
+
+## Per-Plan Summary
+
+| Plan | Gaps | HIGH | MEDIUM | LOW | Verdict |
+|------|------|------|--------|-----|---------|
+
+## Cross-Plan Interface Issues
+
+| Plans | Issue | Severity | Description |
+
+## Overall Verdict
+
+- [ ] All plans ready for implementation
+- [ ] Plans need updates first (see gaps above)
+```
+
+Check the "All plans ready" box only if every individual plan's verdict is "Ready for implementation" AND no HIGH-severity cross-plan interface issues were found.
+
+Present the manifest to the user.
+
+### Step 7: Present Gaps and Offer to Fix
 
 Present the results to the user, organized by severity (HIGH first). The user reviews all gaps — even LOW severity gaps may trigger insights about missed requirements.
 
@@ -132,6 +191,11 @@ Default severities are starting points — override based on the specific gap.
 | **Stale references** | Files or patterns that don't exist in codebase | LOW |
 | **Missing tests** | Implementation task without corresponding test task | MEDIUM |
 | **Constraint gaps** | Generic constraints instead of specific rules | MEDIUM |
+| **Env var persistence** | Required env var not set, or won't persist across sessions | MEDIUM |
+| **Dependency path mismatch** | Import or file reference uses wrong extension or path | LOW |
+| **File naming convention** | New file doesn't follow project naming pattern | LOW |
+| **CLI flag incompatibility** | Referenced command flag doesn't exist or changed between versions | MEDIUM |
+| **Platform assumption** | Code assumes platform-specific behavior (bash version, OS utilities) | MEDIUM |
 
 ## Notes
 

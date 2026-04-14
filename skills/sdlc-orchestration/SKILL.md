@@ -43,6 +43,7 @@ When a user returns to a feature ("returning to feature/X", "resume feature X", 
    - Implementation logs without a matching plan status header → implementation was in progress
    - Plan files without dry-run results → plan needs validation
    - Research docs with open questions → research may be incomplete
+   - Phase detection resolves to **Assessment** (all plans COMPLETE, no `assessment/test-curation-*.md`) → suggest `/assess`
 4. **Report current state:**
 
 ```
@@ -50,7 +51,7 @@ Feature: <name>
 Progress: N/M plans complete
 Current state: <what's in progress or what's next>
 Last activity: <most recent artifact modified>
-Next action: <suggestion based on state>
+Next action: <suggestion based on state — if assessment phase, "Run /assess to curate the test suite before handoff">
 ```
 
 If no overview exists, check for `research/` and `plans/` directories to infer the phase.
@@ -84,11 +85,11 @@ When implementation-guidance reports all tasks complete:
 - If the user approves → proceed to bookkeeping
 
 ### Review → Bookkeeping
-After the user approves deviations:
+After the user approves deviations, execute all bookkeeping steps automatically without pausing:
 - Update plan status header (mark checkboxes, add Implementation Status)
 - Update overview progress table
 - Spawn [cascade-check](../../agents/cascade-check.md) agent to analyze whether deviations affect downstream plans
-- Present cascade results to user
+- Present cascade results to user (pause only if design-impact decisions are flagged)
 - Commit bookkeeping: `"chore: Update plan status and overview for plan <name>"`
 
 ### Bookkeeping → Next Plan
