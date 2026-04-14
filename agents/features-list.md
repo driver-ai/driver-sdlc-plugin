@@ -7,7 +7,7 @@ allowed-tools:
   - Read
   - Glob
   - Grep
-  - mcp__plugin_driver-claude-plugin_driver-mcp__get_file_documentation
+  - mcp__driver-mcp__get_file_documentation
 ---
 
 # Features List Extraction Agent

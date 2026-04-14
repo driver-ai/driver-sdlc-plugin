@@ -1,7 +1,7 @@
 ---
 description: Gather codebase context for a specific task
 argument-hint: <task description> [--codebases name1,name2]
-allowed-tools: Task, Bash, mcp__driver-mcp__get_codebase_names
+allowed-tools: Agent, Bash, mcp__driver-mcp__get_codebase_names
 ---
 
 # /context Command

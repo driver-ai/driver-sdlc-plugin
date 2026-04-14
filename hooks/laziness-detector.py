@@ -132,13 +132,9 @@ def find_laziness(content: str, file_path: str) -> List[str]:
 
     for pattern, message in PATTERNS:
         try:
-            matches = re.findall(pattern, content, re.IGNORECASE | re.MULTILINE)
-            if matches:
-                # Format message with first match if it's a capture group
-                if matches[0]:
-                    match_str = matches[0] if isinstance(matches[0], str) else matches[0][0] if matches[0] else pattern
-                else:
-                    match_str = pattern
+            match = re.search(pattern, content, re.IGNORECASE | re.MULTILINE)
+            if match:
+                match_str = match.group(1) if match.lastindex else match.group(0)
                 issues.append(message.format(match=match_str))
         except re.error:
             # Skip invalid patterns
@@ -159,14 +155,48 @@ def block_write(reason: str) -> None:
     print(json.dumps(result))
 
 
+def log_friction_event(session_id, event_type, cost, detail):
+    """Append a JSONL friction event to the session friction log."""
+    try:
+        if not session_id:
+            return
+        log_path = f"/tmp/driver-friction-{session_id}.log"
+        event = json.dumps({
+            "ts": __import__('datetime').datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ'),
+            "type": event_type,
+            "cost": cost,
+            "detail": detail,
+        })
+        with open(log_path, 'a') as f:
+            f.write(event + '\n')
+    except Exception:
+        return  # fail open — never block on friction logging errors
+
+
 def main():
     try:
         # Read input from stdin
         input_data = json.load(sys.stdin)
 
+        # Friction tracking config — fail open on any error
+        friction_enabled = False
+        try:
+            plugin_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            config_path = os.path.join(plugin_dir, 'config.local.json')
+            with open(config_path) as f:
+                config = json.load(f)
+            friction_enabled = config.get('friction_tracking', False)
+        except Exception:
+            friction_enabled = False
+
         tool_name = input_data.get("tool_name", "")
         tool_input = input_data.get("tool_input", {})
         file_path = tool_input.get("file_path", "")
+        session_id = input_data.get("session_id", "")
+
+        # Friction: detect Edit on non-existent file
+        if friction_enabled and tool_name == "Edit" and file_path and not os.path.exists(file_path):
+            log_friction_event(session_id, "wrong_path", 2, f"Edit on non-existent file: {file_path}")
 
         # Skip non-code files
         if not should_check_file(file_path):
@@ -186,6 +216,8 @@ def main():
             reason += "\n".join(f"  • {issue}" for issue in issues)
             reason += "\n\nRewrite the code with actual implementations instead of stubs/placeholders."
             block_write(reason)
+            if friction_enabled:
+                log_friction_event(session_id, "silent_failure", 3, f"Laziness blocked: {file_path}")
             sys.exit(0)
 
         # No issues - allow the write

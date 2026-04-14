@@ -16,10 +16,11 @@ Clone the repository:
 git clone https://github.com/driver-ai/driver-claude-sdlc-plugin.git
 ```
 
-Add the plugin to Claude Code:
+Add the plugin as a marketplace source, then install:
 
 ```bash
-claude plugin add /path/to/driver-claude-sdlc-plugin
+claude plugin marketplace add /path/to/driver-claude-sdlc-plugin
+claude plugin install driver-claude-sdlc-plugin
 ```
 
 Or load it for a single session:
@@ -195,7 +196,6 @@ Skills activate automatically based on the current SDLC phase or trigger phrases
 
 | Skill | What It Does | When It Activates |
 |-------|-------------|-------------------|
-| **driver-context-layer** | Guides optimal codebase context gathering via Driver MCP. Ensures Driver is the primary context source for all development work. | Automatically at session start or when starting a new major task |
 | **research-guidance** | Structured Why-What-How questioning, document organization, and research completion criteria. | Trigger phrases: "let's research", "investigate", "explore", "understand how", "what's the best approach" |
 | **planning-guidance** | TDD-first task design, test strategy, architecture fit, explicit constraints, and task breakdown. Plans are always written to files, never in chat. | Trigger phrases: "let's plan", "ready to plan", "create a plan", "test strategy", "TDD" |
 | **implementation-guidance** | Plan-driven task execution, subagent delegation for context gathering, deviation tracking, and commit discipline. | Trigger phrases: "let's implement", "start implementing", "ready to build", "execute the plan" |
@@ -203,7 +203,7 @@ Skills activate automatically based on the current SDLC phase or trigger phrases
 
 ## Agents
 
-Agents are specialized workers that run in isolated context. They are spawned by skills or commands -- you can also invoke them directly via the Task tool.
+Agents are specialized workers that run in isolated context. They are spawned by skills or commands -- you can also invoke them directly via the Agent tool.
 
 | Agent | What It Does |
 |-------|-------------|
@@ -258,6 +258,15 @@ Add to your `.claude/settings.json`:
   }
 }
 ```
+
+## Friction Tracking
+
+Observational friction logging -- detects wrong-tool usage, wrong-path edits, and laziness blocks during sessions.
+
+- **Enable**: Set `"friction_tracking": true` in `config.local.json`
+- **Data**: Events logged to `/tmp/driver-friction-{SESSION_ID}.log` in JSONL format
+- **Review**: Run `/retro` -- the Friction Events section summarizes session friction
+- **Reference**: See `hooks/friction-taxonomy.md` for the full taxonomy
 
 ## Driver Context
 

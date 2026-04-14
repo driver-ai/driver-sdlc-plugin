@@ -7,6 +7,20 @@ description: "REQUIRED before planning, designing, implementing, debugging, fixi
   implementing features, fixing bugs, debugging issues, refactoring code, understanding
   'how does X work?'. Returns high-signal context tailored to your specific task."
 model: opus
+allowed-tools:
+  - Read
+  - Grep
+  - Glob
+  - Bash
+  - mcp__driver-mcp__gather_task_context
+  - mcp__driver-mcp__get_architecture_overview
+  - mcp__driver-mcp__get_changelog
+  - mcp__driver-mcp__get_code_map
+  - mcp__driver-mcp__get_codebase_names
+  - mcp__driver-mcp__get_detailed_changelog
+  - mcp__driver-mcp__get_file_documentation
+  - mcp__driver-mcp__get_llm_onboarding_guide
+  - mcp__driver-mcp__get_source_file
 ---
 
 You are a task-specific context specialist using Driver's pre-computed
@@ -14,7 +28,7 @@ codebase documentation.
 
 ## Expected Input
 
-The parent agent (or user) invokes you via the Task tool with a prompt describing
+The parent agent (or user) invokes you via the Agent tool with a prompt describing
 the task. A good prompt includes:
 
 - **What task** they're trying to accomplish (feature, refactor, investigation, etc.)

@@ -21,6 +21,7 @@ Read these before analyzing:
 1. **FEATURE_LOG.md** — if the session was on a feature, read the log for full lifecycle context
 2. **Previous retros** — scan `retrospectives/INDEX.md` for recurring patterns (if it exists)
 3. **MEMORY.md** — check the project's memory directory to avoid suggesting things already captured
+4. **Friction log**: Use `Bash` to run `ls -t /tmp/driver-friction-*.log 2>/dev/null | head -1` and read the result with the Read tool. If no files found, note that no friction data is available for this session.
 
 ### Step 3: Identify what happened
 
@@ -78,7 +79,7 @@ The user may push back, add context, or ask to expand sections. Revise as needed
 
 INDEX.md row format:
 ```
-| <YYYY-MM-DD> | <short-id> | <phase> | <summary under 100 chars> | <top suggestion> |
+| <YYYY-MM-DD> | <short-id> | <phase> | <summary under 100 chars> | <top suggestion> | <friction score> |
 ```
 
 ---
@@ -171,6 +172,16 @@ Follow Simplified Technical English (STE):
 ## Orchestration
 
 <Did skills/agents/commands help? What should have fired but didn't (cite the specific moment)? Was FEATURE_LOG.md maintained?>
+
+## Friction Events
+
+_Read from session friction log (`/tmp/driver-friction-*.log`). If no friction log exists or is empty, write "No friction data captured this session."_
+
+| Time | Type | Cost | Detail |
+|------|------|------|--------|
+
+**Session friction score:** <sum of costs>
+**Top friction type:** <most frequent type>
 
 ## Recurring Patterns
 

@@ -1,7 +1,7 @@
 ---
 description: Start a new feature project with research, plans, and implementation structure
 argument-hint: <project-name> [--prd <path>]
-allowed-tools: Read, Write, Edit, Bash, Glob, mcp__driver-mcp__*
+allowed-tools: Read, Write, Edit, Bash, Glob
 ---
 
 # /feature Command
@@ -26,9 +26,12 @@ If `config.local.json` doesn't exist, create it by asking:
 Save the response to `config.local.json`:
 ```json
 {
-  "projects_path": "<user's answer>"
+  "projects_path": "<user's answer>",
+  "friction_tracking": false
 }
 ```
+
+> Optional. When `true`, hooks log friction events for `/retro` analysis.
 
 ### Step 3: Create Folder Structure
 
@@ -147,8 +150,16 @@ Answer these before diving into research:
 After creating the structure:
 
 1. Confirm what was created
-2. Tell the user: "Please answer the Setup Questions in `research/00-overview.md`. Once answered, we can begin research."
+2. Tell the user: "Please answer the Setup Questions in `research/00-overview.md`. Once answered, we'll begin research using the `research-guidance` skill."
 3. Note that `/orchestrate <feature-path>` can be used to resume this feature in future sessions
+
+### Step 7: Begin Research
+
+Once the user answers the Setup Questions (provides codebases, branch, and problem statement):
+
+1. Update `research/00-overview.md` with their answers
+2. **Invoke the `research-guidance` skill** to drive the research phase — do NOT use ad-hoc Explore agents or manual research
+3. The research-guidance skill handles structured questioning (Why-What-How), context gathering via Driver MCP, and artifact organization
 
 ## Notes
 

@@ -1,7 +1,7 @@
 ---
 description: Curate the test suite after implementation — categorize, prune scaffolding, promote valuable tests, keep durable ones
 argument-hint: [feature-path]
-allowed-tools: Read, Write, Edit, Bash, Glob, Grep, Task
+allowed-tools: Read, Write, Edit, Bash, Glob, Grep, Agent
 ---
 
 # /assess Command
