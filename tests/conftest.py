@@ -3,6 +3,7 @@
 All stdlib Python — no external dependencies.
 """
 
+import os
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
@@ -11,6 +12,18 @@ from pathlib import Path
 
 PLUGIN_ROOT: Path = Path(__file__).resolve().parent.parent
 PLUGIN_CONFIG_DIR: Path = PLUGIN_ROOT / ".claude-plugin"
+
+
+def discover_feature_projects(search_path=None):
+    """Find feature project directories containing FEATURE_LOG.md.
+    Uses FEATURE_PROJECTS_PATH env var, or falls back to sibling directory."""
+    if search_path is None:
+        search_path = os.environ.get("FEATURE_PROJECTS_PATH",
+            str(PLUGIN_ROOT.parent / "driver-sdlc-projects" / "features"))
+    search = Path(search_path)
+    if not search.is_dir():
+        return []
+    return [p.parent for p in search.rglob("FEATURE_LOG.md")]
 
 # ---------------------------------------------------------------------------
 # Frontmatter / Markdown helpers
@@ -126,10 +139,26 @@ def parse_frontmatter(path: Path) -> dict:
 
 
 def get_md_body(path: Path) -> str:
-    """Return the markdown content after the YAML frontmatter fences."""
+    """Return the markdown content after the YAML frontmatter fences.
+
+    Only strips frontmatter when the first non-blank line is ``---``
+    (real YAML frontmatter). Horizontal-rule ``---`` dividers inside
+    the body are left untouched.
+    """
 
     text = path.read_text(encoding="utf-8")
     lines = text.splitlines(keepends=True)
+
+    # Check that the first non-blank line is a ``---`` fence.
+    first_content_is_fence = False
+    for line in lines:
+        if not line.strip():
+            continue
+        first_content_is_fence = line.strip() == "---"
+        break
+
+    if not first_content_is_fence:
+        return text
 
     fence_count = 0
     body_start = 0
@@ -141,7 +170,7 @@ def get_md_body(path: Path) -> str:
                 break
 
     if fence_count < 2:
-        # No frontmatter — entire file is the body
+        # No closing fence — entire file is the body
         return text
 
     return "".join(lines[body_start:]).lstrip("\n")
