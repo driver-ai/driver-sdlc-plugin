@@ -88,18 +88,18 @@ Features follow a phased development lifecycle. Each phase has a dedicated skill
 
 ### Phase-Skill Mapping
 
-| Phase | Skill / Command | What It Does |
-|-------|----------------|--------------|
-| Research | `research-guidance` | Why-What-How methodology, structured questioning, document organization |
-| Planning | `planning-guidance` | TDD-first task design, test strategy, architecture fit, task breakdown |
-| Validation | `/dry-run-plan` | Walk through plan as-if implementing, severity-classified gap analysis |
-| Implementation | `implementation-guidance` | Plan-driven task execution, subagent delegation, deviation tracking |
-| Review | `sdlc-orchestration` | Present deviations for user approval before bookkeeping |
-| Bookkeeping | `implementation-guidance` Step 4 | Update plan status, overview, cascade check |
-| Transition | `sdlc-orchestration` | Identify next unblocked plan from dependency graph |
-| Assessment | `/assess` | Curate test suite -- categorize, prune scaffolding, promote valuable tests |
-| Handoff | `/docs-artifacts` | Generate feature overview, architecture, testing guide, risk assessment |
-| Retro | `/retro` | Evaluate session quality, recurring patterns, improvement ideas |
+| Phase | Skill / Command | What It Does | Entry Signal |
+|-------|----------------|--------------|-------------|
+| Research | `research-guidance` | Why-What-How methodology, document organization, completion criteria | `/feature`, "let's research", "explore" |
+| Planning | `planning-guidance` | TDD-first task design, test strategy, architecture fit, task breakdown | "let's plan", "ready to plan" |
+| Validation | `/dry-run-plan` | Walk through plan to find gaps before implementation | "dry-run plan X" |
+| Implementation | `implementation-guidance` | Plan-driven task execution, deviation tracking, commit discipline | "implement plan X" |
+| Review | `sdlc-orchestration` | Present deviations for user review | implementation complete |
+| Bookkeeping | `implementation-guidance` Step 4 | Update plan status, overview, cascade check | deviations approved |
+| Transition | `sdlc-orchestration` | Identify next unblocked plan from dependency graph | bookkeeping complete |
+| Assessment | `/assess` | Curate test suite — categorize, prune scaffolding, promote | all plans complete, "assess tests" |
+| Handoff | `/docs-artifacts` | Generate feature overview, architecture, testing guide, risks | assessment complete |
+| Retro | `/retro` | Evaluate session quality, identify improvements | "retro", end of session |
 
 ---
 

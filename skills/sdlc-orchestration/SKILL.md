@@ -26,14 +26,7 @@ You manage process, not decisions. Present information, suggest next steps, but 
 
 ## Phase → Skill Mapping
 
-| Phase | Skill | Entry Signal |
-|-------|-------|-------------|
-| Research | [research-guidance](../research-guidance/SKILL.md) | `/feature`, "let's research", "explore" |
-| Planning | [planning-guidance](../planning-guidance/SKILL.md) | "let's plan", "ready to plan" |
-| Validation | [/dry-run-plan](../../commands/dry-run-plan.md) | "dry-run plan X" |
-| Implementation | [implementation-guidance](../implementation-guidance/SKILL.md) | "implement plan X" |
-| Assessment | [/assess](../../commands/assess.md) | all plans complete, "assess tests", "curate tests" |
-| Handoff | [/docs-artifacts](../../commands/docs-artifacts.md) | "docs artifacts", assessment complete |
+See [CLAUDE.md Phase-Skill Mapping](../../CLAUDE.md#phase-skill-mapping) for the full phase-to-skill table with entry signals.
 
 When you detect an entry signal, ensure the corresponding skill is active. If the user is in research and says "let's plan", acknowledge the transition and activate planning-guidance.
 
@@ -116,6 +109,12 @@ When all plans are complete, the next step is test suite assessment — not hand
 - Do NOT suggest `/docs-artifacts` until assessment is complete
 
 **Mid-implementation assessment**: Users may invoke `/assess` before all plans are complete. This is allowed — `/assess` handles scoping and warnings internally. A partial assessment does not satisfy the mandatory pre-handoff requirement; the final assessment must cover all plans.
+
+### Phase Detection: Assessment
+
+- All plans COMPLETE in overview but no `assessment/test-curation-*.md` → phase is **Assessment**
+- Assessment artifact exists that covers all plans (check Scope line) → phase is **Done**
+- Partial assessment exists but plans remain → phase is still **Implementation**
 
 ---
 
