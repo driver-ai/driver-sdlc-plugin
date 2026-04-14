@@ -259,6 +259,15 @@ Add to your `.claude/settings.json`:
 }
 ```
 
+## Friction Tracking
+
+Observational friction logging -- detects wrong-tool usage, wrong-path edits, and laziness blocks during sessions.
+
+- **Enable**: Set `"friction_tracking": true` in `config.local.json`
+- **Data**: Events logged to `/tmp/driver-friction-{SESSION_ID}.log` in JSONL format
+- **Review**: Run `/retro` -- the Friction Events section summarizes session friction
+- **Reference**: See `hooks/friction-taxonomy.md` for the full taxonomy
+
 ## Driver Context
 
 The `driver-task-context` agent is the primary mechanism for gathering codebase context. When you use `/context` or when skills need to understand your code, this agent:

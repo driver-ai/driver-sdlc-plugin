@@ -26,9 +26,12 @@ If `config.local.json` doesn't exist, create it by asking:
 Save the response to `config.local.json`:
 ```json
 {
-  "projects_path": "<user's answer>"
+  "projects_path": "<user's answer>",
+  "friction_tracking": false
 }
 ```
+
+> Optional. When `true`, hooks log friction events for `/retro` analysis.
 
 ### Step 3: Create Folder Structure
 
