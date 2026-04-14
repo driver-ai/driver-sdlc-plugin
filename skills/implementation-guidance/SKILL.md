@@ -1,4 +1,5 @@
 ---
+name: implementation-guidance
 description: |
   Guide implementation execution with plan-driven task lists, subagent delegation, deviation tracking,
   and commit discipline. Use when transitioning from planning to implementation phase.

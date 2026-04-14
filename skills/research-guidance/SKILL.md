@@ -43,7 +43,7 @@ Before touching any tools, understand what the user wants to learn.
 
 ### CRITICAL: Use `gather_task_context` — Not Native Agents
 
-`gather_task_context` is Driver MCP's primary tool. **It is your default tool for codebase context.**
+`gather_task_context` is Driver MCP's primary tool. **It is your default tool for codebase context.** (Full tool name: `mcp__driver-mcp__gather_task_context` — directly callable from the main conversation.)
 
 **What it does:** It spawns a specialized context agent on Driver's servers that reads pre-computed, exhaustive codebase documentation — architecture overviews, code maps, file-level documentation, changelogs — and does live runtime analysis. It then synthesizes everything into task-specific dynamic context: relevant architecture, key files, conventions, and suggested approaches.
 
@@ -104,7 +104,7 @@ These primitives are for **targeted, specific lookups** — not for broad explor
 ### Output Structure
 
 ```
-research-output/
+research/
 ├── 00-overview.md      # Index + summary of all findings
 ├── 01-<topic>.md       # First research thread
 ├── 02-<topic>.md       # Second research thread

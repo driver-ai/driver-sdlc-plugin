@@ -56,7 +56,7 @@ With research context loaded, ask the user what they want to build.
 
 ### CRITICAL: Use `gather_task_context` — Not Native Agents
 
-`gather_task_context` is Driver MCP's primary tool. **It is your default tool for codebase context.**
+`gather_task_context` is Driver MCP's primary tool. **It is your default tool for codebase context.** (Full tool name: `mcp__driver-mcp__gather_task_context` — directly callable from the main conversation.)
 
 **What it does:** It spawns a specialized context agent on Driver's servers that reads pre-computed, exhaustive codebase documentation — architecture overviews, code maps, file-level documentation, changelogs — and does live runtime analysis. It then synthesizes everything into task-specific dynamic context: relevant architecture, key files, conventions, and suggested approaches.
 
@@ -113,7 +113,7 @@ Read the actual source code. Use this to:
 ### Output Structure
 
 ```
-plan-output/
+plans/
 ├── 00-overview.md      # Index (only if multiple plans)
 ├── 01-<name>.md        # The plan
 └── ...                 # Additional plans if needed (usually just 1)
@@ -246,7 +246,7 @@ Update the plan to address any discrepancies before the user reviews it.
 
 Present the plan to the user for review.
 
-- "The plan is at `plan-output/01-<name>.md`. I've validated it against the codebase — [summary of self-review findings]."
+- "The plan is at `plans/01-<name>.md`. I've validated it against the codebase — [summary of self-review findings]."
 - Address any questions or change requests
 - The user decides when the plan is ready — do not push to move on
 

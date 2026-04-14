@@ -1,4 +1,5 @@
 ---
+name: sdlc-orchestration
 description: |
   SDLC lifecycle orchestration. Coordinates phase transitions, loads the right skills,
   manages bookkeeping, and handles session resumption for feature projects.
@@ -113,7 +114,7 @@ When all plans are complete, the next step is test suite assessment — not hand
 ### Phase Detection: Assessment
 
 - All plans COMPLETE in overview but no `assessment/test-curation-*.md` → phase is **Assessment**
-- Assessment artifact exists that covers all plans (check Scope line) → phase is **Done**
+- Assessment artifact exists that covers all plans (check Scope line) → phase is **Handoff**
 - Partial assessment exists but plans remain → phase is still **Implementation**
 
 ---
