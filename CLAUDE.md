@@ -15,21 +15,16 @@ Running `/feature <name>` scaffolds this structure:
 ├── FEATURE_LOG.md           # Lifecycle state — phase transitions and artifact history
 ├── research/                # Problem exploration and design decisions
 │   ├── 00-overview.md       # Research overview and open questions
-│   ├── decisions/           # Standalone decision files (d01-*.md, d02-*.md)
 │   └── NN-topic.md          # Individual research documents
 ├── plans/                   # Implementation plans
 │   ├── 00-overview.md       # Multi-plan overview with dependency graph
 │   └── NN-plan-name.md      # Individual plans with tasks and acceptance criteria
 ├── dry-runs/                # Plan validation results
 ├── implementation/          # Implementation logs per plan
-│   └── <plan-name>/
-│       ├── log.md           # Implementation log
-│       ├── deviations/      # What diverged from the plan and why
-│       └── learnings/       # Discoveries during implementation
+│   └── log-<plan>.md       # Implementation log (flat file per plan)
 ├── assessment/              # Test suite curation results
 ├── tests/                   # Markdown test plans for LLM execution (optional)
 │   └── results/             # Timestamped test results
-├── wireframes/              # Single-page HTML wireframes for UI research (optional)
 └── driver-docs/             # Handoff documentation for code review
 ```
 
@@ -122,7 +117,7 @@ Every feature has a `FEATURE_LOG.md` at its root -- the source of truth for life
 - **Deviations are reviewed** -- after implementation, deviations are presented for user approval before bookkeeping proceeds.
 - **Severity helps prioritize, not skip** -- dry-run gaps are classified LOW/MEDIUM/HIGH but all are presented for review.
 - **Plans are the source of truth** -- implementation builds exactly what the plan specifies, nothing more.
-- **Skills use the Driver CLI for state queries** -- `driver project status`, `driver project query`, etc. -- rather than manual file parsing.
+- **Skills use Driver MCP tools for codebase context** -- `gather_task_context` for synthesized context, `get_code_map` for navigation, `get_file_documentation` for symbol details -- rather than manual file parsing.
 
 ---
 
@@ -198,32 +193,9 @@ The plugin integrates with Driver MCP to query codebase architecture, implementa
 
 ---
 
-## Engineering Best Practices
+## Engineering Practices
 
-These practices apply to all implementation work guided by this plugin.
-
-### Self-Documenting Code
-- Clarity of intent is paramount -- code should reveal its purpose through structure and naming
-- Use descriptive function and variable names instead of verbose comments
-- Break complex logic into small, well-named helper functions that express intent
-- Comments should explain *why*, not *what* -- if the code is clear, no comment is needed
-- Do not remove existing code comments unless they are factually incorrect
-
-### Function Naming
-- Use clear, action-oriented names (e.g., `fetch_nodes_with_descriptions`, `build_tree_from_nodes`)
-- Private functions should start with underscore
-- Names should describe what they do, not how they do it
-
-### Avoid Code Smells
-- Replace inline comments with well-named functions
-- Avoid deeply nested logic -- extract to helper functions
-- Keep functions small (typically under 10-15 lines)
-- DRY -- extract duplicated logic into helper functions
-
-### Error Handling
-- try/except blocks should be as narrow as possible
-- Use descriptive error messages
-- Handle edge cases explicitly
+This plugin does not prescribe coding standards. Add your team's engineering guidelines to your project's `CLAUDE.md` or to this plugin's `CLAUDE.md` under this section.
 
 ---
 
