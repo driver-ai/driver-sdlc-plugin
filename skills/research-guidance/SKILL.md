@@ -43,6 +43,21 @@ After reviewing the codebase via Driver MCP...
 - Provide context: what led to this question, what decision depends on the answer
 - Sequence naturally: start broad (open-ended exploration), then narrow (closed decisions)
 
+### Push Back on Vague Requests
+
+**Help the user narrow broad research questions before diving in.** Vague requests lead to unfocused exploration that doesn't inform decisions.
+
+**Too broad:** "Research the authentication system"
+
+**Better:** "Understand how session tokens are stored and whether the current approach meets compliance requirements"
+
+**How to push back:**
+- Ask what decision this research informs
+- Ask what the user already knows or suspects
+- Suggest a narrower framing and confirm
+
+Don't refuse to start — help the user sharpen the question. One focused question that gets answered is worth more than three broad questions explored shallowly.
+
 ---
 
 ## CRITICAL: Phase Transitions
@@ -121,6 +136,32 @@ Researching database migration patterns for the new multi-tenant feature. Need t
 - Any relevant data isolation patterns or conventions
 ```
 
+### Parallel Context Gathering
+
+When you have multiple distinct research angles, spawn multiple `driver-task-context` agents in parallel — one per angle. Each agent runs in its own isolated context and returns synthesized findings.
+
+**How:** Make multiple Agent tool calls in a single message, each with `subagent_type: "driver-claude-sdlc-plugin:driver-task-context"` and a different focused prompt. Collect all results and synthesize.
+
+**Example:** Researching a new notification system. Three angles:
+1. "How does the current email delivery pipeline work? Retry logic, queue architecture, failure modes."
+2. "What notification preferences and subscription management exists? User settings, opt-out flows."
+3. "How are notification templates structured? Rendering engine, localization, variable substitution."
+
+Spawn three `driver-task-context` agents in parallel, then synthesize the combined context.
+
+**When to use parallel calls:**
+- You have 2+ distinct research angles against the same or different codebases
+- The angles are independent (one doesn't inform the other)
+
+**When a single call is sufficient:**
+- One codebase, one clear question
+- The research angles are sequential (answer A informs question B)
+
+| Pattern | What happens | Correct? |
+|---------|-------------|----------|
+| **Substitution** | Spawning native Explore agents to read files/grep instead of `driver-task-context` | No — native tools lack pre-computed documentation |
+| **Parallel context** | Spawning multiple `driver-task-context` agents with different focused prompts | Yes |
+
 ### External Research via Web
 
 Use `WebSearch` and `WebFetch` for external sources — API documentation, library comparisons, best practices, competitor analysis.
@@ -134,6 +175,25 @@ Use `WebSearch` and `WebFetch` for external sources — API documentation, libra
 **Example:** Researching a Forge vs Connect decision for Jira integration — fetch Atlassian's documentation, compare deprecation timelines, read community experiences.
 
 Document web research findings in the research docs with source links.
+
+### Targeted Follow-Up with Driver Primitives
+
+After `driver-task-context` returns broad context, YOU (the main agent) can drill into specific areas using Driver MCP primitives directly. These are for targeted, specific lookups — not broad exploration.
+
+- **`get_code_map`** — navigate codebase directory structure. Use when you need to find where specific functionality lives or understand how directories are organized.
+- **`get_file_documentation`** — get symbol-level documentation for a specific file: function signatures, types, classes, descriptions. Use when you need to understand a file's interface without reading every line of source.
+- **`get_source_file`** — read the actual source code of a file with line numbers. Use when you need exact implementation details, specific logic, or code patterns.
+
+**When to use primitives:**
+- `driver-task-context` mentioned a file or pattern you want to examine more closely
+- You need to verify a specific detail (does this function accept an optional parameter?)
+- You want to see exact code for a pattern the agent described at a high level
+
+**When NOT to use primitives:**
+- As a substitute for `driver-task-context` — always start with the agent for broad context
+- For broad exploration — if you don't know where to look, use `driver-task-context` first
+
+**Codebase name verification:** If calling Driver primitives directly, verify codebase names first with `get_codebase_names`. (The `driver-task-context` agent handles this automatically via `git remote`.)
 
 ### UI Wireframes
 
@@ -166,7 +226,8 @@ A feature project (created by `/feature`) has this structure:
 ├── research/           # Why-What-How exploration docs
 │   ├── 00-overview.md  # Entry point, status, links to other docs
 │   ├── 01-<topic>.md   # First research topic
-│   └── 02-<topic>.md   # Second topic (when concept shifts)
+│   ├── 02-<topic>.md   # Second topic (when concept shifts)
+│   └── decisions/      # Standalone decision artifacts (optional)
 ├── plans/              # Plan docs + 00-overview.md (created during planning)
 ├── dry-runs/           # Dry-run results per plan (created during validation)
 ├── implementation/     # Implementation logs per plan
@@ -186,11 +247,74 @@ Create a new numbered research doc when:
 
 **Do NOT split based on** line count or arbitrary thresholds.
 
+### Research Document Frontmatter
+
+Every research document should include frontmatter for consistency and traceability:
+
+```yaml
+---
+type: research
+status: in_progress
+created: "YYYY-MM-DD"
+updated: "YYYY-MM-DD"
+topic: "<descriptive topic>"
+---
+```
+
+Update `status` to `complete` when the document's research thread is fully explored. Update `updated` whenever the document is modified.
+
 ### Numbering Convention
 
 - `00-overview.md` — always the entry point
 - `01-xxx.md`, `02-xxx.md` — numbered by creation order
 - Use descriptive names: `01-data-model.md`, `02-pipeline-design.md`, `03-jira-api-reference.md`
+
+### Decision Artifacts
+
+When research surfaces a decision — a choice between alternatives — create a **standalone decision artifact** rather than burying the decision inside a research doc.
+
+**Why standalone?** Decisions are referenced by downstream plans. A standalone file gives plans a stable path to link to. Decisions buried in research docs are hard to find and easy to miss.
+
+**Create decision files in `research/decisions/`:**
+
+```markdown
+---
+type: decision
+status: open
+created: "YYYY-MM-DD"
+updated: "YYYY-MM-DD"
+choice: ""
+rationale: ""
+---
+
+# Decision: <Title>
+
+## Context
+_What prompted this decision? What are the alternatives?_
+
+## Choice
+_What was decided_
+
+## Rationale
+_Why this choice over the alternatives_
+
+## Alternatives Considered
+- **Option A**: <description> — rejected because <reason>
+- **Option B**: <description> — rejected because <reason>
+```
+
+**Numbering:** `dNN-<slug>.md` (e.g., `d01-yaml-library-choice.md`, `d02-auth-provider.md`). Number by creation order.
+
+**Cross-referencing:** The research doc that motivated the decision links TO the decision file. The decision file is the source of truth for the choice; the research doc is the source of truth for the investigation.
+
+**When to create one:**
+- You've identified 2+ viable approaches and need to choose
+- A constraint or trade-off narrows the solution space
+- The user makes a judgment call that should be recorded
+
+**When NOT to create one:**
+- The answer is obvious and uncontested (just note it in the research doc)
+- It's a temporary working assumption that may change
 
 ---
 
@@ -202,6 +326,23 @@ Before the user transitions to planning, ensure existing codebase patterns have 
 > "Have you used Driver MCP to understand how similar features are built in this codebase? What existing patterns will this feature follow?"
 
 **Why this matters:** 37% of implementation friction comes from choosing custom solutions over existing patterns. Front-loading pattern discovery during research prevents costly rework during implementation.
+
+---
+
+## Research Finalization
+
+When the user indicates research is complete, finalize the artifacts before transitioning:
+
+1. **Re-read all research documents** — make sure nothing was missed or left incomplete
+2. **Update `00-overview.md`** to fully capture:
+   - Summary reflecting ALL findings (not just early ones)
+   - Complete document index with accurate one-line summaries
+   - All key decisions (with links to decision artifacts in `research/decisions/`)
+   - Remaining open questions for the planning phase
+3. **Verify decision artifacts** — every decision made during research has a standalone file in `research/decisions/`
+4. **Confirm with the user** — "Research artifacts are finalized. The overview at `00-overview.md` indexes everything."
+
+This is the workflow for wrapping up. The criteria below are signals that research MAY be ready — the user decides.
 
 ---
 
@@ -240,6 +381,9 @@ Research is "done enough" when the **user decides** it's done. These are signals
 - Skip web research when evaluating external tools/APIs
 - Leave questions orphaned without context
 - Use placeholder data in wireframes ("Lorem ipsum")
+- Use native Explore agents as a substitute for `driver-task-context` — they lack pre-computed documentation
+- Bury decisions inside research docs — create standalone decision artifacts in `research/decisions/`
+- Skip the finalize step when research is done — the overview must reflect all findings
 
 **Do:**
 - Take time on "why" — it shapes everything else
@@ -249,6 +393,9 @@ Research is "done enough" when the **user decides** it's done. These are signals
 - Use web research for external APIs, libraries, and patterns
 - Create HTML wireframes when exploring UI concepts
 - Mark questions as resolved when answered (keep the answer visible)
+- Spawn parallel `driver-task-context` agents for multi-angle research
+- Use Driver primitives (`get_code_map`, `get_file_documentation`, `get_source_file`) for targeted follow-up after broad context
+- Create standalone decision artifacts in `research/decisions/` for choices between alternatives
 
 ---
 
@@ -271,4 +418,7 @@ Before sending any response during research, verify:
 - [ ] **Driver context?** — Have I pulled relevant codebase context?
 - [ ] **Web research?** — Have I searched for external sources where relevant?
 - [ ] **Wireframes?** — If this involves UI, have I created or suggested HTML wireframes?
+- [ ] **Decision artifacts?** — Did I create standalone decision files for choices made?
+- [ ] **Frontmatter?** — Do all research docs have proper frontmatter?
+- [ ] **Finalized?** — Is the overview fully up-to-date with all findings, decisions, and open questions?
 - [ ] **Feature log?** — Did I update `FEATURE_LOG.md` when creating new research docs or wireframes?
