@@ -119,6 +119,80 @@ plans/
 └── ...                 # Additional plans if needed (usually just 1)
 ```
 
+### Plan Sizing
+
+Each plan should produce **one reviewable PR**. Signals a plan is well-sized:
+
+- **5-12 tasks** — fewer means tasks are too broad for subagents; more means the plan should be split
+- **One logical unit of work** — a plan delivers one capability that can be tested independently
+- **Focused scope** — if explaining the plan requires "and also..." it should be two plans
+
+**Split when:**
+- The PR would be too large to review (>500 lines of real code, not counting tests)
+- Tasks have no dependencies on each other (parallel tracks = separate plans)
+- Different codebases are involved (one plan per codebase, unless tightly coupled)
+
+**Don't split when:**
+- Tasks are sequential and tightly coupled (test + implement pairs)
+- The feature only makes sense as a whole (splitting would create a broken intermediate state)
+
+### Multi-Plan Overview
+
+For features that span multiple plans, create `plans/00-overview.md` as the central coordination document.
+
+**When to create an overview:**
+- Feature will have 2+ plans
+- Multiple codebases or components are involved
+- Plans have dependencies on each other
+
+**Overview template:**
+
+````markdown
+# <Feature Name> — Planning Overview
+
+## Status
+**Phase**: Planning
+**Last Updated**: <date>
+
+### Progress
+| Plan | Status | Tests | Key Artifact |
+|------|--------|-------|-------------|
+| 01 <name> | NOT STARTED | — | <what it delivers> |
+| 02 <name> | NOT STARTED | — | <what it delivers> |
+
+## Planning Strategy
+_Why the feature is broken into these plans, what order, what the rationale is_
+
+## Dependency Graph
+_ASCII diagram showing which plans depend on which_
+
+## Interface Contracts Between Plans
+_Key seams between plans — method signatures, data models, API routes, config_
+_Each plan defines its interface; downstream plans develop against it_
+
+## Gaps to Address in Downstream Plans
+_Surfaced during implementation — deviations that affect other plans_
+
+## Open Questions
+- [ ] <unresolved decisions>
+````
+
+#### Interface Contracts Are Critical
+
+The interface contracts section prevents the most expensive planning failure: discovering during implementation that Plan B's assumptions don't match Plan A's definitions. Define contracts explicitly when writing each plan.
+
+#### Consumer Validation
+
+After writing a plan, check whether downstream plans are compatible:
+
+1. Read the overview's dependency graph — find plans that depend on this one
+2. For each downstream plan that already exists as a document:
+   - Compare interface contracts: does THIS plan's definition match what the downstream plan assumes?
+   - Flag mismatches: "Plan 01b assumes a 7-method interface. Plan 01a defines 4 methods."
+3. If no downstream plans exist yet, note what the interface contract is so future plans can develop against it
+
+This catches interface design problems during planning (free to fix) rather than during implementation (expensive refactor).
+
 ### Plan Document Template
 
 ```markdown
@@ -208,6 +282,62 @@ Be specific. Generic advice is not a constraint.
 | "Run `pytest backend/tests/` after every change" | "Run tests" |
 | "All new functions must have type hints" | "Follow best practices" |
 
+### Testing Methodology
+
+Testing is a planning concern. The test strategy shapes task ordering and acceptance criteria.
+
+#### Test Pyramid
+
+| Type | Typical Ratio | Purpose |
+|------|---------------|---------|
+| **Unit** | 70% | Business logic, pure functions |
+| **Integration** | 20% | Component interactions, API contracts |
+| **E2E** | 10% | Critical user journeys |
+
+Adjust per project: API-heavy → more integration; UI-heavy → more e2e; library → more unit.
+
+#### Coverage Targets
+
+| Code Type | Target |
+|-----------|--------|
+| Business logic | 100% |
+| API contracts | 100% |
+| Edge cases / error handling | 90%+ |
+| Critical user paths | E2E covered |
+| Utilities / helpers | 80%+ |
+| Glue code / wiring | Lower priority |
+
+#### Mocking Boundaries
+
+**Mock:** External APIs, database (in unit tests), time/date, random values.
+**Don't mock:** The code under test, internal modules, simple data structures.
+**Over-mocking signal:** Test setup is longer than the test itself.
+
+#### Test Lifecycle
+
+Not all TDD tests are permanent. Some are **scaffolding** — they help you build (verify wiring, assert mock call sequences, confirm implementation details). Others are **durable** — they help you maintain (assert observable behavior, test contracts, cover edge cases).
+
+During planning, design both kinds deliberately:
+- Scaffolding tests validate that components are wired correctly during construction
+- Durable tests validate behavior that should survive refactoring
+- Coverage targets (above) apply to durable tests — scaffolding tests don't count toward long-term coverage
+
+After all plans are implemented, the test suite is curated via `/assess`. Plan accordingly: write scaffolding tests freely during TDD, knowing they'll be evaluated later.
+
+#### Fixture Sourcing
+
+Test fixtures for external API responses must come from **real API calls**, not reconstructed from documentation. Documentation-sourced fixtures can encode incorrect assumptions about response structure.
+
+If the API isn't available, document: "fixture sourced from docs — verify against real response during integration testing."
+
+#### Test Specificity in Plans
+
+Each test case must have enough detail for a subagent to write it:
+
+**Too vague:** "Test: user authentication works"
+
+**Good:** "Test: `login_with_valid_credentials_returns_token` — POST `/auth/login` with valid credentials returns 200 with JWT containing `user_id` claim"
+
 ---
 
 ## Step 6: Self-Review
@@ -273,3 +403,18 @@ Present the plan to the user for review.
 - Order tests before implementation (TDD)
 - Validate the plan against the codebase before presenting to the user
 - Include explicit, actionable constraints — not generic advice
+
+---
+
+## Before Responding Checklist
+
+- [ ] **Read research first?** — Have I checked `research/*.md`?
+- [ ] **Driver context?** — Have I called `gather_task_context` for architecture AND testing patterns?
+- [ ] **Writing to file?** — Plan content goes in `plans/*.md`, not chat
+- [ ] **Overview needed?** — Multi-plan feature? Create `plans/00-overview.md`
+- [ ] **All sections covered?** — Context, Architecture, Acceptance, Tests, Approach, Scope, Constraints, Tasks
+- [ ] **Consumer validation?** — Do downstream plans match this plan's interface?
+- [ ] **TDD task ordering?** — Test tasks before implementation tasks
+- [ ] **Constraints explicit?** — Specific rules, not generic advice
+- [ ] **Plan sized right?** — 5-12 tasks, one PR, one logical unit
+- [ ] **Feature log?** — Did I update `FEATURE_LOG.md` when creating plans or the overview?
