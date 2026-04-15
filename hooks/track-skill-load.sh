@@ -46,26 +46,7 @@ fi
 # ---------------------------------------------------------------------------
 
 FRICTION_ENABLED=false
-CONFIG_FILE=""
-
-# Resolution: installed_plugins.json installPath, then CLAUDE_PLUGIN_ROOT, then local/, then dirname
-INSTALLED_JSON="$HOME/.claude/plugins/installed_plugins.json"
-if [ -f "$INSTALLED_JSON" ] && command -v jq >/dev/null 2>&1; then
-    INSTALL_PATH=$(jq -r '.plugins | to_entries[] | select(.key | contains("driver-sdlc-plugin")) | .value[0].installPath // empty' "$INSTALLED_JSON" 2>/dev/null)
-    if [ -n "$INSTALL_PATH" ] && [ -f "$INSTALL_PATH/config.local.json" ]; then
-        CONFIG_FILE="$INSTALL_PATH/config.local.json"
-    fi
-fi
-if [ -z "$CONFIG_FILE" ] && [ -n "$CLAUDE_PLUGIN_ROOT" ] && [ -f "$CLAUDE_PLUGIN_ROOT/config.local.json" ]; then
-    CONFIG_FILE="$CLAUDE_PLUGIN_ROOT/config.local.json"
-fi
-if [ -z "$CONFIG_FILE" ] && [ -f "$HOME/.claude/plugins/local/driver-sdlc-plugin/config.local.json" ]; then
-    CONFIG_FILE="$HOME/.claude/plugins/local/driver-sdlc-plugin/config.local.json"
-fi
-if [ -z "$CONFIG_FILE" ]; then
-    PLUGIN_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-    CONFIG_FILE="$PLUGIN_DIR/config.local.json"
-fi
+CONFIG_FILE="$HOME/.driver/config.json"
 
 if [ -f "$CONFIG_FILE" ]; then
     FRICTION_VAL=$(jq -r '.friction_tracking // false' "$CONFIG_FILE" 2>/dev/null)

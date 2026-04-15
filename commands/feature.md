@@ -18,18 +18,12 @@ Extract project name from arguments. If not provided, ask for it.
 
 ### Step 2: Check Configuration
 
-Locate `config.local.json` using install-method detection:
-1. Read `~/.claude/plugins/installed_plugins.json`
-2. Look for a key containing `driver-sdlc-plugin`
-3. If found: read `config.local.json` from the `installPath` in that entry
-4. If not found: read `config.local.json` from `~/.claude/plugins/local/driver-sdlc-plugin/`
+Read `~/.driver/config.json` and use the `projects_path` value to determine where feature projects are created.
 
-Use the `projects_path` value to determine where feature projects are created.
-
-If `config.local.json` doesn't exist or doesn't have a `projects_path`:
+If `~/.driver/config.json` doesn't exist or doesn't have a `projects_path`:
 > "No projects directory is configured. Run `/setup` first to set up your projects directory."
 
-Stop here — do not create `config.local.json` or ask for the path. `/setup` owns that configuration.
+Stop here — do not create config or ask for the path. `/setup` owns that configuration.
 
 ### Step 3: Create Folder Structure
 
