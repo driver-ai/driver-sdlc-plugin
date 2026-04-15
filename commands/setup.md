@@ -8,6 +8,16 @@ allowed-tools: Read, Write, Edit, Bash, Glob, Grep, AskUserQuestion, mcp__driver
 
 Set up a projects directory for the Driver SDLC plugin. This command is idempotent — safe to re-run at any time.
 
+## Config Path
+
+Plugin configuration lives at a well-known, stable location:
+
+```
+~/.claude/plugins/local/driver-sdlc-plugin/config.local.json
+```
+
+This path is the same regardless of how the plugin was installed (marketplace or plugin-dir). Always read and write config here.
+
 ## Workflow
 
 ### Step 1: Wrong-Directory Detection
@@ -58,11 +68,33 @@ Create a new projects directory from scratch.
    mkdir -p <parent>/<name>
    ```
 
-4. **Create `.gitignore`** in the new directory
-   Read the template at `templates/gitignore.template` (relative to the plugin directory). Write its contents to `<parent>/<name>/.gitignore`.
+4. **Create `.gitignore`** in the new directory. Write this exact content to `<parent>/<name>/.gitignore`:
+   ```
+   # Environment and secrets
+   .env
+   .env.local
+   .env.*.local
 
-5. **Create `.mcp.json`** in the new directory
-   Write this exact content to `<parent>/<name>/.mcp.json`:
+   # MCP configuration (may contain API keys)
+   .mcp.json
+
+   # OS files
+   .DS_Store
+   Thumbs.db
+
+   # IDE/Editor
+   .idea/
+   .vscode/
+
+   # Claude Code local state
+   .claude/
+
+   # Temporary files
+   tmp/
+   temp/
+   ```
+
+5. **Create `.mcp.json`** in the new directory. Write this exact content to `<parent>/<name>/.mcp.json`:
    ```json
    {
      "mcpServers": {
@@ -74,12 +106,7 @@ Create a new projects directory from scratch.
    }
    ```
 
-6. **Create `CLAUDE.md`** in the new directory
-   Read the template at `templates/CLAUDE.md.template` (relative to the plugin directory). Use it as a structural guide to generate the final CLAUDE.md:
-   - Replace `{{TEAM_NAME}}` with the directory name from step 2
-   - Replace `{{DATE}}` with today's date
-   - Leave the Codebases table as a placeholder — codebases are configured per-feature during `/feature` setup
-   - Write the result to `<parent>/<name>/CLAUDE.md`
+6. **Create `CLAUDE.md`** in the new directory. Generate it from the template below, replacing `{{TEAM_NAME}}` with the directory name from step 2 and `{{DATE}}` with today's date. Leave the Codebases table as a placeholder — codebases are configured per-feature during `/feature` setup. Write the result to `<parent>/<name>/CLAUDE.md`.
 
 7. **Git init** in the new directory:
    ```bash
@@ -105,10 +132,9 @@ Check for required files and fill gaps.
 
    | File | Check | If Missing |
    |------|-------|------------|
-   | `CLAUDE.md` | Glob for `CLAUDE.md` | Offer to create from template (ask for team name + codebases first) |
-   | `.gitignore` | Glob for `.gitignore` | Offer to create from template |
-   | `.mcp.json` | Glob for `.mcp.json` | Create with `driver-mcp` server |
-   | `features/` | Glob for `features/` | Create directory |
+   | `CLAUDE.md` | Glob for `CLAUDE.md` | Offer to create from the CLAUDE.md template below (ask for project name first) |
+   | `.gitignore` | Glob for `.gitignore` | Offer to create using the .gitignore content from Step 3A |
+   | `.mcp.json` | Glob for `.mcp.json` | Create with `driver-mcp` server using the .mcp.json content from Step 3A |
 
    **For `.mcp.json` that exists:** Read it and check if `mcpServers.driver-mcp` is present.
    - If `driver-mcp` is missing, warn: "Your `.mcp.json` does not include a `driver-mcp` server. The plugin requires this for codebase context. Would you like me to add it?"
@@ -141,17 +167,18 @@ Check for required files and fill gaps.
 
 For all paths (A, B, C), after the projects directory is set up:
 
-1. **Resolve the absolute path** of the current projects directory:
-   ```bash
-   pwd
-   ```
-   This gives the absolute path. Store it as `projects_path`.
+1. **Resolve the absolute path** of the projects directory:
+   - For Path A: the `<parent>/<name>` from step 3
+   - For Path B: the current working directory (`pwd`)
+   - For Path C: the cloned directory
 
-2. **Update `config.local.json`** in the plugin directory:
-   - The plugin directory can be found relative to this command file (this file is at `commands/setup.md`, so the plugin root is `..` relative to it). Use `Bash` to resolve: the plugin knows its own location.
-   - Read existing `config.local.json` if it exists — preserve all fields (especially `friction_tracking`)
+2. **Update `config.local.json`** at `~/.claude/plugins/local/driver-sdlc-plugin/config.local.json`:
+   ```bash
+   mkdir -p ~/.claude/plugins/local/driver-sdlc-plugin
+   ```
+   - Read existing `config.local.json` at that path if it exists — preserve all fields (especially `friction_tracking`)
    - Set or update `projects_path` to the resolved absolute path
-   - Write the updated config back
+   - Write the updated config back to `~/.claude/plugins/local/driver-sdlc-plugin/config.local.json`
 
 3. **Note:** Hooks are auto-registered via `hooks/hooks.json` — no configuration needed.
 
@@ -180,7 +207,6 @@ Print a summary of everything that was done:
 - CLAUDE.md: <created | already exists>
 - .gitignore: <created | already exists>
 - .mcp.json: <created | already exists | driver-mcp verified>
-- features/: <created | already exists>
 
 **Plugin configuration:**
 - config.local.json: projects_path set to <path>
@@ -190,3 +216,196 @@ Print a summary of everything that was done:
 
 **Next step:** Run `/feature <name>` to start your first feature.
 ```
+
+---
+
+## CLAUDE.md Template
+
+Use this template when creating CLAUDE.md for a new projects directory. Replace `{{TEAM_NAME}}` with the project name and `{{DATE}}` with today's date.
+
+````markdown
+# {{TEAM_NAME}} — SDLC Project Instructions
+
+This repository organizes development work by feature, with each feature containing its own lifecycle of artifacts. It is managed by the [Driver SDLC Plugin](https://github.com/driver-ai/driver-sdlc-plugin) for Claude Code.
+
+---
+
+## Project Structure
+
+```
+{{TEAM_NAME}}/
+├── CLAUDE.md                # Agent instructions (this file)
+├── .mcp.json                # MCP server configuration (gitignored)
+├── .gitignore
+├── features/                # Feature development projects
+│   └── <feature-name>/
+│       ├── FEATURE_LOG.md   # Lifecycle state — the source of truth
+│       ├── research/        # Problem exploration and design decisions
+│       ├── plans/           # Implementation plans
+│       │   └── 00-overview.md  # Multi-plan overview (when needed)
+│       ├── dry-runs/        # Plan validation results
+│       ├── implementation/  # Implementation logs per plan
+│       ├── assessment/      # Test suite curation results
+│       ├── tests/           # Markdown test plans (optional)
+│       │   └── results/     # Timestamped test results
+│       └── driver-docs/     # Handoff documentation
+```
+
+| Folder | Purpose | When Created |
+|--------|---------|-------------|
+| `FEATURE_LOG.md` | Source of truth for lifecycle state | `/feature` scaffolding |
+| `research/` | Problem statements, explorations, trade-off analysis | `/feature` scaffolding |
+| `plans/` | Implementation plans with concrete steps | Planning phase |
+| `dry-runs/` | Plan validation results with gap analysis | `/dry-run-plan` |
+| `implementation/` | Implementation logs tracking deviations per plan | Implementation phase |
+| `assessment/` | Test suite curation results | `/assess` |
+| `tests/` | Markdown test plans executed by LLM agents | When manual testing is needed |
+| `driver-docs/` | Handoff documentation | `/docs-artifacts` |
+
+Use `/feature <name>` to scaffold a new feature project. Use `/orchestrate <feature-path>` to resume an existing feature.
+
+---
+
+## Frontmatter Schema
+
+All artifacts use YAML frontmatter for structured metadata.
+
+**Required fields** (all types):
+```yaml
+---
+type: <type>
+status: <status>
+created: "YYYY-MM-DD"
+updated: "YYYY-MM-DD"
+---
+```
+
+**Types:** `research`, `plan`, `task`, `implementation_log`, `feature_log`, `decision`, `deviation`, `learning`, `test_plan`, `test_result`, `assessment`, `open_question`
+
+**Statuses:** `not_started`, `in_progress`, `complete`, `approved`, `accepted`, `pending_review`, `resolved`, `open`, `confirmed`, `unverified`
+
+**Type-specific fields:**
+- `task`: `plan` (parent plan name), `depends_on` (list of task paths)
+- `decision`: `topic`, `choice`
+- `deviation`: `severity` (low/medium/high), `task` (source task)
+- `plan`: `depends_on`, `blocks` (for dependency graph resolution)
+
+---
+
+## SDLC Lifecycle
+
+Features follow a phased development lifecycle. Each phase has a dedicated skill that provides guidance.
+
+```
+/feature -> Research -> Planning -> Validation -> Implementation -> Review -> Bookkeeping -> Next Plan -> ...
+                                                                                                   |
+                                                                                      All plans complete
+                                                                                                   |
+                                                                                                   v
+                                                                          /assess -> /docs-artifacts -> Handoff
+```
+
+### Phase -> Skill Mapping
+
+| Phase | Skill / Command | What It Does |
+|-------|----------------|-------------|
+| Research | `research-guidance` | Why-What-How methodology, document organization, completion criteria |
+| Planning | `planning-guidance` | TDD-first task design, test strategy, architecture fit, task breakdown |
+| Validation | `/dry-run-plan` | Walk through plan as-if implementing, severity-classified gaps |
+| Implementation | `implementation-guidance` | Plan-driven task execution, deviation tracking, commit discipline |
+| Review | `sdlc-orchestration` | Present deviations for user approval before bookkeeping |
+| Bookkeeping | `implementation-guidance` | Update plan status, overview, cascade check |
+| Assessment | `/assess` | Curate test suite — categorize, prune scaffolding, promote valuable tests |
+| Handoff | `/docs-artifacts` | Generate feature-overview, architecture, testing-guide, risk-assessment |
+
+### Key Principles
+
+- **User controls all decisions** — skills suggest, the user decides. No auto-fixing, no silent bookkeeping.
+- **Deviations are reviewed** — after implementation, deviations are presented for approval before bookkeeping.
+- **Plans are the source of truth** — implementation builds exactly what the plan specifies, nothing more.
+- **Research before building** — the SDLC is front-loaded: most time goes into Research and Planning.
+
+---
+
+## Commands
+
+| Command | Purpose |
+|---------|---------|
+| `/setup` | Set up this projects directory (first-time configuration) |
+| `/feature <name>` | Scaffold a new feature project with FEATURE_LOG.md |
+| `/orchestrate <path>` | Resume a feature — read log, report state, suggest next action |
+| `/dry-run-plan <plan>` | Walk through a plan to identify gaps before implementation |
+| `/assess` | Curate test suite after implementation — categorize, prune, promote |
+| `/docs-artifacts` | Generate handoff documentation for code review |
+| `/retro` | Evaluate session quality, patterns, and improvements |
+
+## Skills
+
+| Skill | Purpose |
+|-------|---------|
+| `research-guidance` | Why-What-How methodology, document organization |
+| `planning-guidance` | TDD-first plans, test strategy, task breakdown |
+| `implementation-guidance` | Plan-driven execution, deviation tracking, bookkeeping |
+| `sdlc-orchestration` | Lifecycle coordination, phase transitions |
+
+## Agents
+
+| Agent | Purpose |
+|-------|---------|
+| `driver-task-context` | Gather task-specific context from Driver MCP |
+| `cascade-check` | Analyze implementation deviations against downstream plans |
+| `handoff-analyzer` | Synthesize process artifacts + git + Driver context for handoff |
+
+---
+
+## Codebases
+
+| Codebase | Repo | Local Path | Default Branch | Description |
+|----------|------|------------|----------------|-------------|
+| _Add your codebases here_ | | | | |
+
+---
+
+## Engineering Guidelines
+
+### Patterns We Follow
+
+_Add your team's coding standards here. Examples:_
+- _Naming conventions_
+- _Error handling patterns_
+- _Code organization rules_
+
+### Patterns We Avoid
+
+_Add anti-patterns your team has agreed to avoid. Examples:_
+- _No mocking the database in integration tests_
+- _No generic dict types for structured data_
+
+### Testing Strategy
+
+_Describe your team's testing approach. Examples:_
+- _Test framework and commands_
+- _Unit vs. integration test boundaries_
+- _Coverage expectations_
+
+---
+
+## MCP Integrations
+
+| Integration | Purpose | When to Use |
+|-------------|---------|-------------|
+| **Driver MCP** | Codebase architecture, file docs, code maps | Starting any research or planning |
+| _Add additional MCP servers here_ | | |
+
+---
+
+## Key References
+
+| Document | Purpose |
+|----------|---------|
+| _Add links to external resources here_ | |
+
+---
+
+_Generated by `/setup` on {{DATE}}_
+````

@@ -46,8 +46,13 @@ fi
 # ---------------------------------------------------------------------------
 
 FRICTION_ENABLED=false
-PLUGIN_DIR="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
-CONFIG_FILE="$PLUGIN_DIR/config.local.json"
+LOCAL_CONFIG="$HOME/.claude/plugins/local/driver-sdlc-plugin/config.local.json"
+if [ -f "$LOCAL_CONFIG" ]; then
+    CONFIG_FILE="$LOCAL_CONFIG"
+else
+    PLUGIN_DIR="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
+    CONFIG_FILE="$PLUGIN_DIR/config.local.json"
+fi
 
 if [ -f "$CONFIG_FILE" ]; then
     FRICTION_VAL=$(jq -r '.friction_tracking // false' "$CONFIG_FILE" 2>/dev/null)

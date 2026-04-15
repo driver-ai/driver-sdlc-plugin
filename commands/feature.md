@@ -18,9 +18,9 @@ Extract project name from arguments. If not provided, ask for it.
 
 ### Step 2: Check Configuration
 
-Look for `config.local.json` in the plugin directory. The plugin resolves this via `CLAUDE_PLUGIN_ROOT` when available, or relative to the plugin's installed location.
+Read `config.local.json` from the well-known path: `~/.claude/plugins/local/driver-sdlc-plugin/config.local.json`
 
-Read `config.local.json` and use the `projects_path` value to determine where feature projects are created.
+Use the `projects_path` value to determine where feature projects are created.
 
 If `config.local.json` doesn't exist or doesn't have a `projects_path`:
 > "No projects directory is configured. Run `/setup` first to set up your projects directory."

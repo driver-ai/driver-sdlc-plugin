@@ -179,10 +179,15 @@ def main():
         input_data = json.load(sys.stdin)
 
         # Friction tracking config — fail open on any error
+        # Check well-known local path first, then CLAUDE_PLUGIN_ROOT, then dirname fallback
         friction_enabled = False
         try:
-            plugin_dir = os.environ.get('CLAUDE_PLUGIN_ROOT', os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-            config_path = os.path.join(plugin_dir, 'config.local.json')
+            local_config = os.path.expanduser('~/.claude/plugins/local/driver-sdlc-plugin/config.local.json')
+            if os.path.exists(local_config):
+                config_path = local_config
+            else:
+                plugin_dir = os.environ.get('CLAUDE_PLUGIN_ROOT', os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+                config_path = os.path.join(plugin_dir, 'config.local.json')
             with open(config_path) as f:
                 config = json.load(f)
             friction_enabled = config.get('friction_tracking', False)
