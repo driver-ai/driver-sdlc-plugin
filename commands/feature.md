@@ -127,6 +127,7 @@ Answer these before diving into research:
 - [ ] Which codebases are involved? (Driver codebase names + local paths)
 - [ ] Which branches should we work on?
 - [ ] What problem are we solving? (1-2 sentences)
+- [ ] Are there known coding standards for each codebase? (CLAUDE.md path, URL, or "will discover during research")
 
 ---
 
@@ -158,6 +159,9 @@ After creating the structure:
 Once the user answers the Setup Questions (provides codebases, branch, and problem statement):
 
 1. Update `research/00-overview.md` with their answers
+
+The setup question about coding standards primes the user to think about standards early. The research-guidance skill's Step 2 will read this answer and use it as a starting hint — if the user provided a specific path, Step 2 verifies and uses it; if they said "none," Step 2 does a quick confirmation check without re-asking.
+
 2. **Invoke the `research-guidance` skill** to drive the research phase — do NOT use ad-hoc Explore agents or manual research
 3. The research-guidance skill handles structured questioning (Why-What-How), context gathering via Driver MCP, and artifact organization
 
