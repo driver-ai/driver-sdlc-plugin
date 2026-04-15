@@ -2,22 +2,20 @@
 
 A Claude Code plugin that guides structured feature development through a full software development lifecycle. Features move through Research, Planning, Validation, Implementation, Review, and Handoff phases -- each supported by specialized skills, commands, and agents that keep work organized, traceable, and thorough.
 
-> **Note:** This plugin orchestrates many tools, agents, and file operations across its lifecycle phases. In default permission mode, you will be prompted frequently for approvals. For the best experience, run Claude Code with `--dangerously-skip-permissions`:
+> **Note:** This plugin orchestrates many tools, agents, and file operations across its lifecycle phases. For the best experience, run Claude Code with `--permission-mode auto`, which approves routine tool calls automatically while still flagging unusual operations:
 >
 > ```bash
-> claude --plugin-dir /path/to/driver-sdlc-plugin --dangerously-skip-permissions
+> claude --permission-mode auto
 > ```
 >
-> Review the [Claude Code permissions documentation](https://docs.anthropic.com/en/docs/claude-code/security) to understand what this flag does before enabling it.
+> See the [Claude Code permissions documentation](https://docs.anthropic.com/en/docs/claude-code/security) for details on permission modes.
 
 ## Prerequisites
 
 - [Claude Code](https://docs.anthropic.com/en/docs/claude-code) installed and configured
 - A [Driver](https://driverai.com) account with your codebases onboarded
 - Driver MCP server configured in Claude Code (see [Driver MCP Setup](#driver-mcp-setup) below)
-- `jq` command-line tool (`brew install jq` on macOS, `apt install jq` on Linux) — required for skill phase tracking
 - `python3` available in PATH — required for the laziness detector hook
-- Claude model access: Opus (used by `driver-task-context` and `handoff-analyzer` agents) and Sonnet (used by extraction agents like `commit-log`, `decisions-log`, etc.)
 
 ## Installation
 
@@ -37,7 +35,7 @@ claude plugin install driver-sdlc-plugin
 Or load it for a single session:
 
 ```bash
-claude --plugin-dir /path/to/driver-sdlc-plugin --dangerously-skip-permissions
+claude --plugin-dir /path/to/driver-sdlc-plugin --permission-mode auto
 ```
 
 ## Driver MCP Setup
@@ -72,15 +70,37 @@ You should see a list of your onboarded codebases. If you get an error, check:
 - The server name is exactly `driver-mcp` (not `driver`, `my-driver`, etc.)
 - The URL matches your region (`us1` for US)
 
-## Quick Start
+## Getting Started
 
-1. Navigate to your project directory
-2. Run `/feature my-feature-name` to scaffold a new feature project
-3. Follow the guided SDLC phases -- the plugin loads the right skill for each phase and tells you what to do next
+After installing the plugin, run `/setup` to configure your projects directory:
 
-## Recommended Setup
+### New Team / Solo Developer
 
-> **Tip:** We recommend creating a centralized location for feature projects (e.g., a dedicated repo or directory). This helps with session resumption via `/orchestrate` and cross-feature context. Feature artifacts are plain markdown files organized by convention, so they work well in version control.
+1. Create a directory for your SDLC projects (or use an existing repo)
+2. Open Claude Code in that directory with `--permission-mode auto`
+3. Run `/setup` — it will guide you through creating CLAUDE.md, .mcp.json, and initial structure
+
+### Joining an Existing Team
+
+1. Clone your team's projects repo: `git clone <team-repo-url>`
+2. Open Claude Code in the cloned directory with `--permission-mode auto`
+3. Run `/setup` — it will verify your configuration and fill any gaps
+
+You can also pass a clone URL directly: `/setup git@github.com:my-org/my-team-sdlc.git`
+
+### Verify
+
+After setup, run `/feature my-first-feature` to confirm everything works.
+
+## Why a Projects Repo?
+
+The SDLC plugin works from a dedicated projects repository — separate from your source code. This repo tracks the *process* of building software: research, plans, decisions, and implementation logs.
+
+- **Version-controlled thinking** — every decision is a git commit you can trace back to
+- **Queryable artifacts** — YAML frontmatter lets you filter and aggregate project state
+- **Agent-accessible context** — plans and research docs become instruction sets that agents follow during implementation
+
+The plugin generates most artifacts through guided workflows. Your job is to provide the thinking; the plugin handles the structure.
 
 ## SDLC Workflow
 
@@ -264,45 +284,17 @@ Agents are specialized workers that run in isolated context. They are spawned by
 
 ## Hooks
 
-Hooks run automatically on specific Claude Code events. Configure them in your Claude Code `settings.json`.
+Hooks are automatically registered when the plugin is installed via `hooks/hooks.json` — no manual configuration needed.
 
 ### laziness-detector (PreToolUse)
 
 Blocks Write and Edit operations that contain lazy code patterns: TODO/FIXME comments, `NotImplementedError`, empty function bodies, placeholder returns, and similar stubs across Python, TypeScript, JavaScript, Swift, Go, Java, and C#. Test files are excluded.
 
-Add to your `.claude/settings.json`:
-
-```json
-{
-  "hooks": {
-    "PreToolUse": [
-      {
-        "matcher": "Write|Edit",
-        "command": "python3 /path/to/driver-sdlc-plugin/hooks/laziness-detector.py"
-      }
-    ]
-  }
-}
-```
-
 ### track-skill-load (PreToolUse)
 
-Tracks which skills are loaded during a session by appending skill names to a session-scoped temp file. Useful for observability and retrospectives.
+Tracks which skills are loaded during a session by appending skill names to a session-scoped temp file. Used for phase tracking and observability during retrospectives.
 
-Add to your `.claude/settings.json`:
-
-```json
-{
-  "hooks": {
-    "PreToolUse": [
-      {
-        "matcher": "Skill",
-        "command": "/path/to/driver-sdlc-plugin/hooks/track-skill-load.sh"
-      }
-    ]
-  }
-}
-```
+Both hooks resolve their configuration via the `CLAUDE_PLUGIN_ROOT` environment variable (set by Claude Code) with a fallback to relative path resolution for backward compatibility. They follow a fail-open pattern — errors never block user operations.
 
 ## Friction Tracking
 

@@ -46,9 +46,7 @@ fi
 # ---------------------------------------------------------------------------
 
 FRICTION_ENABLED=false
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PLUGIN_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-CONFIG_FILE="$PLUGIN_DIR/config.local.json"
+CONFIG_FILE="$HOME/.driver/config.json"
 
 if [ -f "$CONFIG_FILE" ]; then
     FRICTION_VAL=$(jq -r '.friction_tracking // false' "$CONFIG_FILE" 2>/dev/null)

@@ -1,0 +1,184 @@
+# {{TEAM_NAME}} — SDLC Project Instructions
+
+This repository organizes development work by feature, with each feature containing its own lifecycle of artifacts. It is managed by the [Driver SDLC Plugin](https://github.com/driver-ai/driver-sdlc-plugin) for Claude Code.
+
+---
+
+## Project Structure
+
+```
+{{TEAM_NAME}}/
+├── CLAUDE.md                # Agent instructions (this file)
+├── .mcp.json                # MCP server configuration (gitignored)
+├── .gitignore
+├── features/                # Feature development projects
+│   └── <feature-name>/
+│       ├── FEATURE_LOG.md   # Lifecycle state — the source of truth
+│       ├── research/        # Problem exploration and design decisions
+│       ├── plans/           # Implementation plans
+│       │   └── 00-overview.md  # Multi-plan overview (when needed)
+│       ├── dry-runs/        # Plan validation results
+│       ├── implementation/  # Implementation logs per plan
+│       ├── assessment/      # Test suite curation results
+│       ├── tests/           # Markdown test plans (optional)
+│       │   └── results/     # Timestamped test results
+│       └── driver-docs/     # Handoff documentation
+```
+
+| Folder | Purpose | When Created |
+|--------|---------|-------------|
+| `FEATURE_LOG.md` | Source of truth for lifecycle state | `/feature` scaffolding |
+| `research/` | Problem statements, explorations, trade-off analysis | `/feature` scaffolding |
+| `plans/` | Implementation plans with concrete steps | Planning phase |
+| `dry-runs/` | Plan validation results with gap analysis | `/dry-run-plan` |
+| `implementation/` | Implementation logs tracking deviations per plan | Implementation phase |
+| `assessment/` | Test suite curation results | `/assess` |
+| `tests/` | Markdown test plans executed by LLM agents | When manual testing is needed |
+| `driver-docs/` | Handoff documentation | `/docs-artifacts` |
+
+Use `/feature <name>` to scaffold a new feature project. Use `/orchestrate <feature-path>` to resume an existing feature.
+
+---
+
+## Frontmatter Schema
+
+All artifacts use YAML frontmatter for structured metadata.
+
+**Required fields** (all types):
+```yaml
+---
+type: <type>
+status: <status>
+created: "YYYY-MM-DD"
+updated: "YYYY-MM-DD"
+---
+```
+
+**Types:** `research`, `plan`, `task`, `implementation_log`, `feature_log`, `decision`, `deviation`, `learning`, `test_plan`, `test_result`, `assessment`, `open_question`
+
+**Statuses:** `not_started`, `in_progress`, `complete`, `approved`, `accepted`, `pending_review`, `resolved`, `open`, `confirmed`, `unverified`
+
+**Type-specific fields:**
+- `task`: `plan` (parent plan name), `depends_on` (list of task paths)
+- `decision`: `topic`, `choice`
+- `deviation`: `severity` (low/medium/high), `task` (source task)
+- `plan`: `depends_on`, `blocks` (for dependency graph resolution)
+
+---
+
+## SDLC Lifecycle
+
+Features follow a phased development lifecycle. Each phase has a dedicated skill that provides guidance.
+
+```
+/feature -> Research -> Planning -> Validation -> Implementation -> Review -> Bookkeeping -> Next Plan -> ...
+                                                                                                   |
+                                                                                      All plans complete
+                                                                                                   |
+                                                                                                   v
+                                                                          /assess -> /docs-artifacts -> Handoff
+```
+
+### Phase -> Skill Mapping
+
+| Phase | Skill / Command | What It Does |
+|-------|----------------|-------------|
+| Research | `research-guidance` | Why-What-How methodology, document organization, completion criteria |
+| Planning | `planning-guidance` | TDD-first task design, test strategy, architecture fit, task breakdown |
+| Validation | `/dry-run-plan` | Walk through plan as-if implementing, severity-classified gaps |
+| Implementation | `implementation-guidance` | Plan-driven task execution, deviation tracking, commit discipline |
+| Review | `sdlc-orchestration` | Present deviations for user approval before bookkeeping |
+| Bookkeeping | `implementation-guidance` | Update plan status, overview, cascade check |
+| Assessment | `/assess` | Curate test suite — categorize, prune scaffolding, promote valuable tests |
+| Handoff | `/docs-artifacts` | Generate feature-overview, architecture, testing-guide, risk-assessment |
+
+### Key Principles
+
+- **User controls all decisions** — skills suggest, the user decides. No auto-fixing, no silent bookkeeping.
+- **Deviations are reviewed** — after implementation, deviations are presented for approval before bookkeeping.
+- **Plans are the source of truth** — implementation builds exactly what the plan specifies, nothing more.
+- **Research before building** — the SDLC is front-loaded: most time goes into Research and Planning.
+
+---
+
+## Commands
+
+| Command | Purpose |
+|---------|---------|
+| `/setup` | Set up this projects directory (first-time configuration) |
+| `/feature <name>` | Scaffold a new feature project with FEATURE_LOG.md |
+| `/orchestrate <path>` | Resume a feature — read log, report state, suggest next action |
+| `/dry-run-plan <plan>` | Walk through a plan to identify gaps before implementation |
+| `/assess` | Curate test suite after implementation — categorize, prune, promote |
+| `/docs-artifacts` | Generate handoff documentation for code review |
+| `/retro` | Evaluate session quality, patterns, and improvements |
+
+## Skills
+
+| Skill | Purpose |
+|-------|---------|
+| `research-guidance` | Why-What-How methodology, document organization |
+| `planning-guidance` | TDD-first plans, test strategy, task breakdown |
+| `implementation-guidance` | Plan-driven execution, deviation tracking, bookkeeping |
+| `sdlc-orchestration` | Lifecycle coordination, phase transitions |
+
+## Agents
+
+| Agent | Purpose |
+|-------|---------|
+| `driver-task-context` | Gather task-specific context from Driver MCP |
+| `cascade-check` | Analyze implementation deviations against downstream plans |
+| `handoff-analyzer` | Synthesize process artifacts + git + Driver context for handoff |
+
+---
+
+## Codebases
+
+| Codebase | Repo | Local Path | Default Branch | Description |
+|----------|------|------------|----------------|-------------|
+| _Add your codebases here_ | | | | |
+
+---
+
+## Engineering Guidelines
+
+### Patterns We Follow
+
+_Add your team's coding standards here. Examples:_
+- _Naming conventions_
+- _Error handling patterns_
+- _Code organization rules_
+
+### Patterns We Avoid
+
+_Add anti-patterns your team has agreed to avoid. Examples:_
+- _No mocking the database in integration tests_
+- _No generic dict types for structured data_
+
+### Testing Strategy
+
+_Describe your team's testing approach. Examples:_
+- _Test framework and commands_
+- _Unit vs. integration test boundaries_
+- _Coverage expectations_
+
+---
+
+## MCP Integrations
+
+| Integration | Purpose | When to Use |
+|-------------|---------|-------------|
+| **Driver MCP** | Codebase architecture, file docs, code maps | Starting any research or planning |
+| _Add additional MCP servers here_ | | |
+
+---
+
+## Key References
+
+| Document | Purpose |
+|----------|---------|
+| _Add links to external resources here_ | |
+
+---
+
+_Generated by `/setup` on {{DATE}}_

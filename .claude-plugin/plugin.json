@@ -1,6 +1,6 @@
 {
   "name": "driver-sdlc-plugin",
-  "version": "1.0.0",
+  "version": "1.0.5",
   "description": "Structured SDLC workflow for feature development with Driver MCP and Claude Code",
   "skills": [
     "./skills/research-guidance",
@@ -20,6 +20,7 @@
     "./agents/cascade-check.md"
   ],
   "commands": [
+    "./commands/setup.md",
     "./commands/feature.md",
     "./commands/dry-run-plan.md",
     "./commands/docs-artifacts.md",

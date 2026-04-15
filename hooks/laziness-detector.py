@@ -181,8 +181,7 @@ def main():
         # Friction tracking config — fail open on any error
         friction_enabled = False
         try:
-            plugin_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            config_path = os.path.join(plugin_dir, 'config.local.json')
+            config_path = os.path.expanduser('~/.driver/config.json')
             with open(config_path) as f:
                 config = json.load(f)
             friction_enabled = config.get('friction_tracking', False)

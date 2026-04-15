@@ -18,20 +18,12 @@ Extract project name from arguments. If not provided, ask for it.
 
 ### Step 2: Check Configuration
 
-Look for `config.local.json` in the plugin directory (`~/.claude/plugins/local/driver-sdlc-plugin/` or the installed plugin location).
+Read `~/.driver/config.json` and use the `projects_path` value to determine where feature projects are created.
 
-If `config.local.json` doesn't exist, create it by asking:
-1. "Where should I create feature projects? (e.g., ~/driver-projects)"
+If `~/.driver/config.json` doesn't exist or doesn't have a `projects_path`:
+> "No projects directory is configured. Run `/setup` first to set up your projects directory."
 
-Save the response to `config.local.json`:
-```json
-{
-  "projects_path": "<user's answer>",
-  "friction_tracking": false
-}
-```
-
-> Optional. When `true`, hooks log friction events for `/retro` analysis.
+Stop here — do not create config or ask for the path. `/setup` owns that configuration.
 
 ### Step 3: Create Folder Structure
 

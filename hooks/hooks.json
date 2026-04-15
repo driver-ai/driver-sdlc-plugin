@@ -1,0 +1,27 @@
+{
+  "description": "Driver SDLC Plugin hooks — laziness detection and skill tracking",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/laziness-detector.py\"",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "Skill",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/track-skill-load.sh\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}
