@@ -1,6 +1,6 @@
 {
   "name": "driver-sdlc-plugin",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Structured SDLC workflow for feature development with Driver MCP and Claude Code",
   "skills": [
     "./skills/research-guidance",
