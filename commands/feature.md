@@ -6,7 +6,7 @@ allowed-tools: Read, Write, Edit, Bash, Glob
 
 # /feature Command
 
-Create a new feature project and kick off the research phase.
+Create a new feature project with research, plans, and implementation structure.
 
 ## Workflow
 
@@ -143,19 +143,8 @@ Answer these before diving into research:
 After creating the structure:
 
 1. Confirm what was created
-2. Tell the user: "Please answer the Setup Questions in `research/00-overview.md`. Once answered, we'll begin research using the `research-guidance` skill."
+2. Tell the user: "Please answer the Setup Questions in `research/00-overview.md`. When you're ready to start research, say 'let's research' or use any research trigger phrase. The `research-guidance` skill will guide the process."
 3. Note that `/orchestrate <feature-path>` can be used to resume this feature in future sessions
-
-### Step 7: Begin Research
-
-Once the user answers the Setup Questions (provides codebases, branch, and problem statement):
-
-1. Update `research/00-overview.md` with their answers
-
-The setup question about coding standards primes the user to think about standards early. The research-guidance skill's Step 2 will read this answer and use it as a starting hint — if the user provided a specific path, Step 2 verifies and uses it; if they said "none," Step 2 does a quick confirmation check without re-asking.
-
-2. **Invoke the `research-guidance` skill** to drive the research phase — do NOT use ad-hoc Explore agents or manual research
-3. The research-guidance skill handles structured questioning (Why-What-How), context gathering via Driver MCP, and artifact organization
 
 ## Notes
 
@@ -164,7 +153,7 @@ The setup question about coding standards primes the user to think about standar
 - Deep codebase context is handled by `driver-task-context` agent
 - `FEATURE_LOG.md` tracks lifecycle state — each skill updates it at transitions
 - Resume with `/orchestrate <feature-path>` in future sessions
-- Config is stored per-user in `config.local.json` (gitignored)
+- Config is stored per-user in `~/.driver/config.json`
 - Use `--prd <path>` to include a PRD from product planning as context
 
 ## PRD Handoff from Product Planning

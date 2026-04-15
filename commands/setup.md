@@ -207,7 +207,7 @@ Print a summary of everything that was done:
 - .mcp.json: <created | already exists | driver-mcp verified>
 
 **Plugin configuration:**
-- config.local.json: projects_path set to <path>
+- ~/.driver/config.json: projects_path set to <path>
 - Hooks: auto-registered via hooks.json
 
 **Driver MCP:** <connected (N codebases) | not connected — see above>
