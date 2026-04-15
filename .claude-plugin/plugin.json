@@ -20,6 +20,7 @@
     "./agents/cascade-check.md"
   ],
   "commands": [
+    "./commands/setup.md",
     "./commands/feature.md",
     "./commands/dry-run-plan.md",
     "./commands/docs-artifacts.md",

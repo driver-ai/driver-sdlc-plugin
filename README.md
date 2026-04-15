@@ -15,7 +15,6 @@ A Claude Code plugin that guides structured feature development through a full s
 - [Claude Code](https://docs.anthropic.com/en/docs/claude-code) installed and configured
 - A [Driver](https://driverai.com) account with your codebases onboarded
 - Driver MCP server configured in Claude Code (see [Driver MCP Setup](#driver-mcp-setup) below)
-- `jq` command-line tool (`brew install jq` on macOS, `apt install jq` on Linux) — required for skill phase tracking
 - `python3` available in PATH — required for the laziness detector hook
 - Claude model access: Opus (used by `driver-task-context` and `handoff-analyzer` agents) and Sonnet (used by extraction agents like `commit-log`, `decisions-log`, etc.)
 
@@ -72,15 +71,37 @@ You should see a list of your onboarded codebases. If you get an error, check:
 - The server name is exactly `driver-mcp` (not `driver`, `my-driver`, etc.)
 - The URL matches your region (`us1` for US)
 
-## Quick Start
+## Getting Started
 
-1. Navigate to your project directory
-2. Run `/feature my-feature-name` to scaffold a new feature project
-3. Follow the guided SDLC phases -- the plugin loads the right skill for each phase and tells you what to do next
+After installing the plugin, run `/setup` to configure your projects directory:
 
-## Recommended Setup
+### New Team / Solo Developer
 
-> **Tip:** We recommend creating a centralized location for feature projects (e.g., a dedicated repo or directory). This helps with session resumption via `/orchestrate` and cross-feature context. Feature artifacts are plain markdown files organized by convention, so they work well in version control.
+1. Create a directory for your SDLC projects (or use an existing repo)
+2. Open Claude Code in that directory with `--permission-mode auto`
+3. Run `/setup` — it will guide you through creating CLAUDE.md, .mcp.json, and initial structure
+
+### Joining an Existing Team
+
+1. Clone your team's projects repo: `git clone <team-repo-url>`
+2. Open Claude Code in the cloned directory with `--permission-mode auto`
+3. Run `/setup` — it will verify your configuration and fill any gaps
+
+You can also pass a clone URL directly: `/setup git@github.com:my-org/my-team-sdlc.git`
+
+### Verify
+
+After setup, run `/feature my-first-feature` to confirm everything works.
+
+## Why a Projects Repo?
+
+The SDLC plugin works from a dedicated projects repository — separate from your source code. This repo tracks the *process* of building software: research, plans, decisions, and implementation logs.
+
+- **Version-controlled thinking** — every decision is a git commit you can trace back to
+- **Queryable artifacts** — YAML frontmatter lets you filter and aggregate project state
+- **Agent-accessible context** — plans and research docs become instruction sets that agents follow during implementation
+
+The plugin generates most artifacts through guided workflows. Your job is to provide the thinking; the plugin handles the structure.
 
 ## SDLC Workflow
 

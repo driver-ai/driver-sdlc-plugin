@@ -1,0 +1,22 @@
+# Environment and secrets
+.env
+.env.local
+.env.*.local
+
+# MCP configuration (may contain API keys)
+.mcp.json
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE/Editor
+.idea/
+.vscode/
+
+# Claude Code local state
+.claude/
+
+# Temporary files
+tmp/
+temp/
