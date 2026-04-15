@@ -16,7 +16,6 @@ A Claude Code plugin that guides structured feature development through a full s
 - A [Driver](https://driverai.com) account with your codebases onboarded
 - Driver MCP server configured in Claude Code (see [Driver MCP Setup](#driver-mcp-setup) below)
 - `python3` available in PATH — required for the laziness detector hook
-- Claude model access: Opus (used by `driver-task-context` and `handoff-analyzer` agents) and Sonnet (used by extraction agents like `commit-log`, `decisions-log`, etc.)
 
 ## Installation
 
