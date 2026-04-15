@@ -16,10 +16,12 @@ You are guiding technical research against one or more codebases using Driver MC
 ## How This Skill Works
 
 1. **Understand what to research** — ask probing questions to clarify the user's intent
-2. **Gather codebase context via Driver MCP** — use `gather_task_context` as your primary tool
-3. **Deep-dive into specific areas** — use Driver's primitive tools for targeted follow-up
-4. **Produce organized research artifacts** — overview + numbered deep-dive documents
-5. **Finalize** — when the user says done, ensure the overview captures everything
+2. **Resolve codebase standards** — find and capture the target codebase's coding standards
+3. **Gather codebase context via Driver MCP** — use `gather_task_context` as your primary tool
+4. **Validate remote context against local state** — verify key files and interfaces locally after Driver returns
+5. **Deep-dive into specific areas** — use Driver's primitive tools for targeted follow-up
+6. **Produce organized research artifacts** — overview + numbered deep-dive documents
+7. **Finalize** — when the user says done, ensure the overview captures everything
 
 ---
 
@@ -107,7 +109,90 @@ Now explore implementation approaches.
 
 ---
 
-## Step 2: Gather Codebase Context
+## Step 2: Resolve Codebase Standards
+
+**Why a separate step**: This step reads the codebase's standards documents directly because `gather_task_context` (Step 3) synthesizes conventions from its pre-computed documentation, which may paraphrase or omit specific rules. The raw CLAUDE.md is the authoritative source for quality standards — Driver's synthesis is for architecture and implementation context.
+
+**Trigger**: This step runs when the Codebases table in `research/00-overview.md` has at least one entry with a Local Path filled in. This may happen during Step 1's probing questions, or it may already be filled from `/feature` setup. If the Codebases table was already filled during `/feature` setup, proceed directly to path verification.
+
+**Check setup question answer first**: Read the Setup Questions section in `research/00-overview.md`. If the user already answered the standards question with a specific path, verify it exists and use it as the primary source (still check for subdirectory-level overrides). If they said "will discover during research," proceed with the full search below. If they said "none" or equivalent, do a quick check (CLAUDE.md at repo root only) to confirm, then accept their answer — don't ask again.
+
+### Path Verification
+
+For each codebase in the Codebases table, verify the Local Path exists on disk. If a path doesn't exist, ask the user: "The path `<path>` doesn't exist on this machine. What's the correct local path for `<codebase-name>`?" Update the Codebases table with the corrected path before proceeding. All paths must be absolute — not relative or using `~`.
+
+### Search Flow
+
+Process one codebase at a time (complete all searches for codebase A before moving to codebase B). For each codebase in the Codebases table, search for standards docs relative to the local path:
+
+- `<local-path>/CLAUDE.md`
+- `<local-path>/<subdirectory>/CLAUDE.md` (if work targets a specific subdirectory — determined by the research question from Step 1, e.g., "the backend API" → look in the backend subdirectory. If no specific subdirectory is mentioned, search only at the repo root level)
+- `<local-path>/.claude/CLAUDE.md`
+- `<local-path>/.claude/rules/*.md` (note any filename-based activation patterns, e.g., `test-*.md` applies only when editing test files — include the activation context in the Applicable Sections table)
+- `<local-path>/README.md` (check for conventions/guidelines sections)
+- Walk up from the target subdirectory to repo root — when CLAUDE.md files exist at multiple levels, include all of them in the standards artifact. Note the hierarchy (repo-root vs. subdirectory) and that subdirectory rules take precedence on conflicts, matching Claude Code's native merge behavior
+
+Only search for CLAUDE.md and README.md — other AI assistant config files (`.cursorrules`, `.windsurfrules`, etc.) are out of scope. This plugin targets Claude Code's native standards format.
+
+**Note on native file reading**: Reading standards documents at known paths (CLAUDE.md, README.md) is a direct file lookup, not a substitute for `gather_task_context`. The prohibition in Step 3 against native file-reading applies to broad codebase exploration for research context, not targeted reads of specific files at known paths.
+
+### Handling Results
+
+- **If found but empty/trivial** (e.g., only a project name or boilerplate with no actionable coding standards): treat as "not found" and offer the user the three options below
+- **If found**: read the standards document, produce a summary artifact
+- **If not found**: ask the user with three options:
+  1. Point to a file or URL that contains standards
+  2. Describe them verbally (capture as research artifact with "User-supplied" attribution)
+  3. Proceed without standards constraints
+- **If user says none exist**: record in the research overview: "No codebase standards found. User confirmed none exist." No friction added.
+- **If user supplies standards**: flag as user-supplied, suggest committing a CLAUDE.md to the repo for future use
+
+### Authority Hierarchy
+
+The local CLAUDE.md read in this step is the authoritative source for coding standards. If `gather_task_context` (Step 3) later returns conventions or standards information that supplements this, note the supplement but do not overwrite CLAUDE.md content with Driver-synthesized conventions. Update the standards artifact only to add genuinely new information — not to replace what was read directly from CLAUDE.md.
+
+### Multi-Codebase
+
+If multiple codebases have different standards, produce one standards section per codebase in the artifact. Write the artifact after processing ALL codebases, not after each one.
+
+### Standards Artifact Format
+
+Write to `research/NN-codebase-standards.md` with this template:
+
+````markdown
+# Codebase Standards
+
+## Standards Source
+
+| Codebase | Source | Path |
+|----------|--------|------|
+| <name> | CLAUDE.md | `<path>` |
+
+## Applicable Sections
+
+| Codebase | Section | Summary |
+|----------|---------|---------|
+| <name> | §<identifier> <title> | <one-line summary> |
+
+`§<identifier>` refers to sections in the source standards document. Use the section's own numbering if it has numbered sections (e.g., `§6 Error Handling`). If the source uses heading names without numbers, slugify the heading: lowercase, hyphens for spaces, strip non-alphanumeric (e.g., `## Error Handling` → `§error-handling Error Handling`). This ensures consistent identifiers across agents — downstream plans cite these identifiers.
+
+## Key Rules
+
+1. <specific, actionable rule with source citation>
+2. <specific, actionable rule with source citation>
+
+## Full Standards Text
+
+<include the full text of ALL CLAUDE.md sections, clearly attributed. Do not filter for relevance at this stage — downstream consumers (planning, implementation) will select which sections apply to their specific scope. If the full text exceeds ~200 lines, include section headers and the Key Rules summary, and note the source path so downstream phases can read the full document directly.>
+````
+
+All paths in the artifact must be absolute (not relative, not using `~`).
+
+Index this artifact in `research/00-overview.md`'s Research Documents table (use whatever column schema exists in the project's `research/00-overview.md` at the time — the `/feature` command and research-guidance may use different table schemas).
+
+---
+
+## Step 3: Gather Codebase Context
 
 ### CRITICAL: Use `gather_task_context` — Not Native Agents
 
@@ -130,7 +215,7 @@ and how delivery status is tracked. Codebase: my-backend"
 
 **Do NOT use native Explore agents, subagents, or manual file-reading/grep as a substitute for `gather_task_context`.** These native tools work from raw source only. `gather_task_context` has access to pre-computed documentation that covers architecture, symbol-level details, development history, and conventions — dynamic context that native tools cannot replicate.
 
-Native tools are useful for **targeted follow-up** after `gather_task_context` returns (see Step 3), but they are not a replacement for it.
+Native tools are useful for **targeted follow-up** after `gather_task_context` returns (see Step 5), but they are not a replacement for it.
 
 ### When to Call `gather_task_context`
 
@@ -155,7 +240,24 @@ When you have multiple distinct research angles to explore, you can run `gather_
 
 ---
 
-## Step 3: Deep-Dive with Primitive Tools
+## Step 4: Validate Remote Context Against Local State
+
+This step runs immediately after `gather_task_context` returns. It's a lightweight local validation — not a full codebase scan.
+
+For each codebase in the Codebases table, run these commands in the directory specified by its Local Path column:
+
+- **Branch check**: run `git branch --show-current` in the target codebase's Local Path directory. Report the current branch so the user can confirm they're on the right one. If the Codebases table has a Branch column entry, compare against it. If different, note: "Local branch is `<branch>`, Codebases table specifies `<expected>`. You may need to switch branches before implementation." This is a user-awareness check, not a validation failure.
+- **Key file existence**: for files that `gather_task_context` referenced as architecturally important, verify they exist locally at the stated paths using `ls` or `Glob`. Flag any that are missing locally — they may have been renamed or deleted.
+- **Uncommitted changes**: run `git status --short` in the target codebase's Local Path directory. If there are uncommitted changes to files that `gather_task_context` referenced in its response, note them: "Local file `<path>` has uncommitted changes — Driver's documentation may not reflect the current state of this file."
+- **Not a git repo**: if the Local Path is not a git repository (`git rev-parse --git-dir` fails), skip branch check and uncommitted changes. Note: "Codebase at `<path>` is not a git repo — skipping git-based validation."
+- **If divergence found**: report it inline in the research doc, note which findings from `gather_task_context` may be affected. Use local state as ground truth when the two conflict.
+- **If no divergence**: note "Local state validated against Driver context — no divergence found" and continue.
+
+This step should be quick — a few git commands and targeted file checks. Do not re-read the entire codebase; that's what `gather_task_context` already did.
+
+---
+
+## Step 5: Deep-Dive with Primitive Tools
 
 After `gather_task_context` returns broad context, you may need to drill into specific areas. Use Driver's primitive MCP tools for targeted follow-up:
 
@@ -167,7 +269,7 @@ These primitives are for **targeted, specific lookups** — not for broad explor
 
 ---
 
-## Step 4: Produce Research Artifacts
+## Step 6: Produce Research Artifacts
 
 ### Output Structure
 
@@ -223,7 +325,7 @@ Each deep-dive doc should:
 
 ---
 
-## Step 5: Finalize
+## Step 7: Finalize
 
 When the user indicates research is complete:
 
@@ -247,6 +349,9 @@ When the user indicates research is complete:
 - Skip the conversational Q&A phase — understanding intent before researching prevents wasted work
 - Split documents based on length rather than concept boundaries
 - Leave the overview out of date when research is finalized
+- Assume you know where the codebase is or what standards apply — if uncertain, ask the user
+- Skip standards resolution when the user has identified codebases — always search for CLAUDE.md
+- Trust Driver context without local validation — Driver shows committed state, not local uncommitted changes
 
 **DO:**
 - Call `gather_task_context` with detailed, specific task descriptions
@@ -255,6 +360,9 @@ When the user indicates research is complete:
 - Spawn parallel subagents as concurrency wrappers for multiple `gather_task_context` calls
 - Ask lots of probing questions before and during research
 - Keep the overview current as an index of all research
+- Search for CLAUDE.md relative to each codebase path before gathering context
+- When no standards are found, ask the user rather than proceeding silently
+- After gather_task_context returns, validate key files and branch locally before building on the findings
 
 ---
 
@@ -268,3 +376,5 @@ Before sending any response during research, verify:
 - [ ] **Driver context?** — Have I called `gather_task_context` where relevant?
 - [ ] **Overview current?** — Does `00-overview.md` reflect the latest findings and decisions?
 - [ ] **Feature log?** — Did I update `FEATURE_LOG.md` when creating new research docs?
+- [ ] **Standards resolved?** — Have I searched for CLAUDE.md at each codebase path? If not found, did I ask the user?
+- [ ] **Local state validated?** — After gather_task_context, did I check branch, key file existence, and uncommitted changes locally?

@@ -82,7 +82,35 @@ Signals:
 
 ---
 
-## Step 4: Write Assessment Report
+## Step 4: Code Quality Review
+
+If a codebase standards artifact exists (`research/NN-codebase-standards.md`), review implementation code against the documented standards.
+
+**If no standards artifact exists, skip this step entirely.**
+
+1. **Read the standards artifact** — get the Applicable Sections and Key Rules
+2. **Identify implementation files** — from the implementation logs, identify all source files modified or created. If implementation logs don't enumerate all files, fall back to `git diff --name-only <base-branch>...HEAD` to identify modified files.
+3. **For each applicable standard**, check whether each implementation file complies. Only check standards relevant to the file's type and content — skip standards that clearly don't apply (e.g., don't check Python error handling standards against CSS files, don't check data structure standards against test files). The table should contain only rows where the standard is applicable — omit N/A combinations:
+   - Read the file
+   - Compare against the standard's requirements
+   - Classify as PASS (compliant) or FAIL (violation found)
+4. **For each FAIL**, note the specific violation and suggest a fix
+
+Build a compliance table:
+
+| File | Standard | Status | Detail |
+|------|----------|--------|--------|
+| `path/to/file.py` | §6 Error handling | PASS | Narrow try/except used |
+| `path/to/file.py` | §4 Data structures | FAIL | Uses raw dict on line 42, should be Pydantic model |
+
+This review is **advisory** — present violations organized by severity. The user decides which to address:
+- **If user wants fixes**: track them as follow-up work items. Standards fixes are NOT executed during assessment (unlike test pruning/promotion, which has dedicated execution steps). Record approved fixes in the assessment report as "Standards fixes approved — to be addressed before handoff."
+- **If user declines**: note in the report as "Standards violations acknowledged — user accepted as-is."
+- The user can review all at once, by category, or individually.
+
+---
+
+## Step 5: Write Assessment Report
 
 Write to `assessment/test-curation-<YYYY-MM-DD>.md`:
 
@@ -139,18 +167,28 @@ Durable tests — no changes needed.
 | Test File | Tests Kept | Coverage |
 |-----------|-----------|----------|
 | ... | ... | ... |
+
+## Code Quality Review
+
+_Only include if a codebase standards artifact exists_
+
+**Standards source**: `research/NN-codebase-standards.md`
+
+| File | Standard | Status | Detail |
+|------|----------|--------|--------|
 ```
 
 ---
 
-## Step 5: Present Findings
+## Step 6: Present Findings
 
 Present to the user in this order:
 
-1. **Summary table** — overall counts
+1. **Summary table** — overall test counts
 2. **PRUNE list** — what will be removed and why
 3. **PROMOTE list** — what will be rewritten and how
 4. **KEEP summary** — confirmation that the rest stays
+5. **Code Quality Review** — standards compliance findings (if applicable). User approves or declines fixes using the same flow as test curation (all at once, by category, or individually).
 
 The user can approve:
 - **All at once** — "Looks good, proceed"
@@ -159,7 +197,7 @@ The user can approve:
 
 ---
 
-## Step 6: Execute Approved Changes
+## Step 7: Execute Approved Changes
 
 For approved changes:
 
@@ -175,7 +213,7 @@ If tests fail after changes, investigate:
 
 ---
 
-## Step 7: Update Report with Outcomes
+## Step 8: Update Report with Outcomes
 
 Update the assessment report to mark each test's actual outcome:
 
@@ -191,7 +229,7 @@ This makes the report the permanent record of decisions, not just proposals.
 
 ---
 
-## Step 8: Update Overview
+## Step 9: Update Overview
 
 If `plans/00-overview.md` exists, add an Assessment row to the progress table:
 
@@ -201,11 +239,14 @@ If `plans/00-overview.md` exists, add an Assessment row to the progress table:
 
 ---
 
-## Step 9: Update Feature Log and Commit
+## Step 10: Update Feature Log and Commit
 
 1. Update `FEATURE_LOG.md`:
    - Set phase → Handoff
-   - Append event row: `| <date> | Assessment complete — pruned <X>, promoted <Y>, kept <Z> | assessment/test-curation-<date>.md |`
+   - Append event row (with standards):
+     `| <date> | Assessment complete — pruned <X>, promoted <Y>, kept <Z>, standards: <N pass, M fail> | assessment/test-curation-<date>.md |`
+   - Append event row (without standards — use when no standards artifact exists):
+     `| <date> | Assessment complete — pruned <X>, promoted <Y>, kept <Z> | assessment/test-curation-<date>.md |`
 2. Commit bookkeeping: `"chore: Assessment complete — pruned <X>, promoted <Y>, kept <Z>"`
 
 After completion, suggest: "Assessment complete. Run `/docs-artifacts` for handoff documentation."

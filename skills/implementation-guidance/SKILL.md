@@ -38,7 +38,7 @@ Implementation builds only what the plan specifies. Nothing more.
 - **Only what's in the plan** — No bonus features, no "while I'm here" improvements
 - **No hypothetical futures** — Build for now, not for imagined requirements
 
-**Default practices** (override via plan constraints or project CLAUDE.md):
+**Default practices** (override via plan constraints, codebase standards, or project CLAUDE.md):
 - **Three lines over an abstraction** — Prefer inline code over one-time helpers
 - **Validate at boundaries only** — Trust internal code, validate user input
 - **Delete, don't deprecate** — If something is unused, remove it completely
@@ -110,6 +110,7 @@ Before executing any tasks, verify the environment is ready:
 2. **Environment variables** — Check that env vars referenced in the plan or project config are set. Flag any that are missing.
 3. **Test baseline** — Run the project's test suite to establish a clean baseline. If tests fail before you've changed anything, stop and report.
 4. **Referenced paths** — Verify that files and directories referenced in the plan's task breakdown actually exist. Flag any missing paths.
+5. **Interface verification** — For key functions or classes the plan modifies, read the local file and verify the current signature matches what the plan assumes. If the plan says "add `retry_delivery` method to `NotificationService`" but `NotificationService` has been refactored locally since planning, flag it. This catches divergence between the remote state (used during planning) and local state (used during implementation).
 
 **Report findings:**
 > "Pre-flight complete. Found N issues: [list]. Proceed with implementation?"
@@ -250,18 +251,36 @@ Implement the following task from the approved plan.
 **Tests**: <from plan>
 **Constraints**: <from plan>
 
+## Code Quality Standards
+**Source**: <absolute path to codebase CLAUDE.md>
+Standards document for reference during implementation.
+Your code must comply with these standards. Key rules for this task:
+- <relevant rules from plan constraints that cite codebase standards>
+
 ## Context
 - Plan: <path to plan file>
 - Prerequisites: <paths to research/context docs>
 
 ## Instructions
 1. Read the plan for full context
-2. Implement exactly what's specified — no extras
-3. Run tests after implementation
-4. Report what you built, files touched, and any deviations
+2. Read the code quality standards document at the path above
+3. Implement exactly what's specified — no extras
+4. Verify your code follows the standards (naming, error handling, types, structure, testing patterns)
+5. Run tests after implementation
+6. Report what you built, files touched, any deviations, and any standards compliance concerns
 ```
 
 Include the full task spec — don't summarize. Copy constraints verbatim.
+
+**Code Quality Standards section:** Include this section only if a codebase standards artifact exists in the feature's research directory (search for a file containing `## Standards Source`). If no standards artifact exists, omit the Code Quality Standards section entirely AND revert to the original 4-item Instructions list:
+1. Read the plan for full context
+2. Implement exactly what's specified — no extras
+3. Run tests after implementation
+4. Report what you built, files touched, and any deviations
+
+The 6-item Instructions list (with items about reading standards and verifying compliance) is only used when the Code Quality Standards section is present. Without that section, instructions 2 and 4 would reference something that doesn't exist.
+
+**Data flow:** The implementation-guidance skill must read the standards artifact to extract the source path. In Step 1 (Read Plan and Create Tasks), after reading the plan, search for a codebase standards artifact in the feature's research directory (same detection: search for `## Standards Source`). If found, extract the absolute path from the Standards Source table's Path column. Use that absolute path as the `<Source>` in the subagent prompt — the subagent reads the authoritative, current version, not the research artifact. Key rules should be copied from the plan's constraints that cite codebase standards.
 
 ---
 
@@ -337,6 +356,7 @@ The log should always have enough context for a fresh session to continue: compl
 - Skip post-implementation bookkeeping
 - Prune or rewrite scaffolding tests during implementation — they're load-bearing until all plans are complete
 - Mix bookkeeping commits with implementation commits
+- Omit the Code Quality Standards section from subagent prompts when a standards artifact exists
 
 **Do:**
 - Read the plan before every task
@@ -348,6 +368,7 @@ The log should always have enough context for a fresh session to continue: compl
 - Run Step 5 bookkeeping after all tasks complete
 - Keep scaffolding tests intact — curation happens post-implementation via `/assess`
 - Suggest next unblocked plan (informational only)
+- Include codebase standards in subagent prompts when available — the subagent is the actor writing code and must know the quality bar
 
 ---
 
@@ -374,3 +395,4 @@ The log should always have enough context for a fresh session to continue: compl
 - [ ] **Committed?** — Is the completed task committed?
 - [ ] **Bookkeeping done?** — If all tasks complete, did I run Step 5?
 - [ ] **Feature log?** — Did I update `FEATURE_LOG.md` at implementation start and completion?
+- [ ] **Standards in subagent prompt?** — If a codebase standards artifact exists, did I include the Code Quality Standards section in the subagent prompt?
