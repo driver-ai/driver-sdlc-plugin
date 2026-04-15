@@ -181,7 +181,7 @@ def main():
         # Friction tracking config — fail open on any error
         friction_enabled = False
         try:
-            plugin_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            plugin_dir = os.environ.get('CLAUDE_PLUGIN_ROOT', os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
             config_path = os.path.join(plugin_dir, 'config.local.json')
             with open(config_path) as f:
                 config = json.load(f)

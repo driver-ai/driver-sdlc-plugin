@@ -2,13 +2,13 @@
 
 A Claude Code plugin that guides structured feature development through a full software development lifecycle. Features move through Research, Planning, Validation, Implementation, Review, and Handoff phases -- each supported by specialized skills, commands, and agents that keep work organized, traceable, and thorough.
 
-> **Note:** This plugin orchestrates many tools, agents, and file operations across its lifecycle phases. In default permission mode, you will be prompted frequently for approvals. For the best experience, run Claude Code with `--dangerously-skip-permissions`:
+> **Note:** This plugin orchestrates many tools, agents, and file operations across its lifecycle phases. For the best experience, run Claude Code with `--permission-mode auto`, which approves routine tool calls automatically while still flagging unusual operations:
 >
 > ```bash
-> claude --plugin-dir /path/to/driver-sdlc-plugin --dangerously-skip-permissions
+> claude --permission-mode auto
 > ```
 >
-> Review the [Claude Code permissions documentation](https://docs.anthropic.com/en/docs/claude-code/security) to understand what this flag does before enabling it.
+> See the [Claude Code permissions documentation](https://docs.anthropic.com/en/docs/claude-code/security) for details on permission modes.
 
 ## Prerequisites
 
@@ -37,7 +37,7 @@ claude plugin install driver-sdlc-plugin
 Or load it for a single session:
 
 ```bash
-claude --plugin-dir /path/to/driver-sdlc-plugin --dangerously-skip-permissions
+claude --plugin-dir /path/to/driver-sdlc-plugin --permission-mode auto
 ```
 
 ## Driver MCP Setup
@@ -264,45 +264,17 @@ Agents are specialized workers that run in isolated context. They are spawned by
 
 ## Hooks
 
-Hooks run automatically on specific Claude Code events. Configure them in your Claude Code `settings.json`.
+Hooks are automatically registered when the plugin is installed via `hooks/hooks.json` — no manual configuration needed.
 
 ### laziness-detector (PreToolUse)
 
 Blocks Write and Edit operations that contain lazy code patterns: TODO/FIXME comments, `NotImplementedError`, empty function bodies, placeholder returns, and similar stubs across Python, TypeScript, JavaScript, Swift, Go, Java, and C#. Test files are excluded.
 
-Add to your `.claude/settings.json`:
-
-```json
-{
-  "hooks": {
-    "PreToolUse": [
-      {
-        "matcher": "Write|Edit",
-        "command": "python3 /path/to/driver-sdlc-plugin/hooks/laziness-detector.py"
-      }
-    ]
-  }
-}
-```
-
 ### track-skill-load (PreToolUse)
 
-Tracks which skills are loaded during a session by appending skill names to a session-scoped temp file. Useful for observability and retrospectives.
+Tracks which skills are loaded during a session by appending skill names to a session-scoped temp file. Used for phase tracking and observability during retrospectives.
 
-Add to your `.claude/settings.json`:
-
-```json
-{
-  "hooks": {
-    "PreToolUse": [
-      {
-        "matcher": "Skill",
-        "command": "/path/to/driver-sdlc-plugin/hooks/track-skill-load.sh"
-      }
-    ]
-  }
-}
-```
+Both hooks resolve their configuration via the `CLAUDE_PLUGIN_ROOT` environment variable (set by Claude Code) with a fallback to relative path resolution for backward compatibility. They follow a fail-open pattern — errors never block user operations.
 
 ## Friction Tracking
 

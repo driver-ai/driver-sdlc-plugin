@@ -46,8 +46,7 @@ fi
 # ---------------------------------------------------------------------------
 
 FRICTION_ENABLED=false
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PLUGIN_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+PLUGIN_DIR="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
 CONFIG_FILE="$PLUGIN_DIR/config.local.json"
 
 if [ -f "$CONFIG_FILE" ]; then

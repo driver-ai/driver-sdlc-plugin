@@ -4,7 +4,7 @@ This plugin guides structured feature development through a phased SDLC lifecycl
 
 The user drives all decisions. The plugin suggests, organizes, and tracks -- but never acts autonomously.
 
-> **Permission mode:** This plugin works best with `--dangerously-skip-permissions` due to the volume of tool calls across phases. Mention this to users who report excessive permission prompts.
+> **Permission mode:** This plugin works best with `--permission-mode auto` due to the volume of tool calls across phases. Mention this to users who report excessive permission prompts.
 
 ---
 
