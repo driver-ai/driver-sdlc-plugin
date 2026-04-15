@@ -46,26 +46,23 @@ If the user picks option 1, ask them to `cd` to where they want the projects dir
 
 ### Step 3A: Fresh Start
 
-Interactive scaffolding for a new projects directory.
+Create a new projects directory from scratch.
 
-1. **Ask:** "What's your team or project name?"
-   - Store the answer for the CLAUDE.md template
+1. **Ask:** "Where do you want to create your projects directory?" (e.g., `~/projects`, `~/work`, `.`)
+   - Expand `~` and resolve to an absolute path
 
-2. **Ask:** "Which codebases does your team work on? For each, provide a name and local path."
-   - Example: "frontend at ~/repos/my-app, backend at ~/repos/my-api"
-   - Store for the CLAUDE.md codebases table
+2. **Ask:** "What do you want to call it?" (e.g., `my-team-sdlc`, `acme-projects`)
 
-3. **Create `features/` directory**
+3. **Create the directory** at `<parent>/<name>/`:
    ```bash
-   mkdir -p features
+   mkdir -p <parent>/<name>
    ```
 
-4. **Create `.gitignore`**
-   Read the template at `templates/gitignore.template` (relative to the plugin directory). Write its contents to `.gitignore` in the current directory.
-   - If `.gitignore` already exists, skip — do not overwrite.
+4. **Create `.gitignore`** in the new directory
+   Read the template at `templates/gitignore.template` (relative to the plugin directory). Write its contents to `<parent>/<name>/.gitignore`.
 
-5. **Create `.mcp.json`**
-   Write this exact content:
+5. **Create `.mcp.json`** in the new directory
+   Write this exact content to `<parent>/<name>/.mcp.json`:
    ```json
    {
      "mcpServers": {
@@ -76,27 +73,29 @@ Interactive scaffolding for a new projects directory.
      }
    }
    ```
-   - If `.mcp.json` already exists, skip — do not overwrite.
 
-6. **Create `CLAUDE.md`**
+6. **Create `CLAUDE.md`** in the new directory
    Read the template at `templates/CLAUDE.md.template` (relative to the plugin directory). Use it as a structural guide to generate the final CLAUDE.md:
-   - Replace `{{TEAM_NAME}}` with the team name from step 1
+   - Replace `{{TEAM_NAME}}` with the directory name from step 2
    - Replace `{{DATE}}` with today's date
-   - Fill in the Codebases table with the codebases from step 2 (expand any `~` or relative paths to absolute paths before writing)
-   - Write the result to `CLAUDE.md` in the current directory
-   - If `CLAUDE.md` already exists, skip — do not overwrite.
+   - Leave the Codebases table as a placeholder — codebases are configured per-feature during `/feature` setup
+   - Write the result to `<parent>/<name>/CLAUDE.md`
 
-7. **Git init** (if not already a git repo)
+7. **Git init** in the new directory:
    ```bash
-   git rev-parse --git-dir 2>/dev/null
+   cd <parent>/<name> && git init
    ```
-   If this fails (not a git repo), ask: "This directory isn't a git repo. Want me to initialize one?"
-   - If yes: `git init`
 
-8. **Initial commit**
-   Ask: "Want me to create an initial commit with the setup files?"
-   - If yes: `git add CLAUDE.md .gitignore features/ && git commit -m "Initialize SDLC projects directory"`
-   - Do NOT add `.mcp.json` — it's gitignored (may contain API keys)
+8. **Initial commit**:
+   ```bash
+   cd <parent>/<name> && git add CLAUDE.md .gitignore && git commit -m "Initialize SDLC projects directory"
+   ```
+   Do NOT add `.mcp.json` — it's gitignored (may contain API keys).
+
+9. **Tell the user:**
+   > "Your projects directory is ready at `<absolute-path>`. To start using it:"
+   > 1. "Open Claude Code in that directory: `cd <path> && claude --permission-mode auto`"
+   > 2. "Run `/feature <name>` to start your first feature"
 
 ### Step 3B: Existing Repo Audit
 
