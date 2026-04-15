@@ -34,6 +34,11 @@ This skill assumes research has been done. Ask the user to point you to the rese
 - Read each numbered deep-dive document for detailed findings
 - Note key decisions, open questions, and constraints
 
+**Check for codebase standards:**
+- Look for a research doc with a `## Standards Source` section (the codebase standards artifact from research)
+- If found, read it — the Key Rules and Applicable Sections will be encoded as plan constraints in Step 5
+- If not found, no codebase standards were discovered during research — proceed without standards constraints
+
 If research doesn't exist, tell the user: "This skill works best with research output as input. Want to run the research skill first?"
 
 ---
@@ -245,6 +250,7 @@ _High-level approach, key design decisions, rationale_
 **Out of scope (deferred):** ...
 
 ## Constraints
+- <constraints from codebase standards artifact, with source citations — omit if no standards artifact>
 - <specific, actionable constraints — not generic advice>
 
 ## Task Breakdown
@@ -289,6 +295,15 @@ This level of detail comes from Step 4 — using Driver's primitive tools to und
 ### Explicit Constraints
 
 Be specific. Generic advice is not a constraint.
+
+**Encode codebase standards as constraints:**
+If a codebase standards artifact exists from research, encode each applicable standard as a plan constraint. Standards-derived constraints follow the same format as other constraints — the source citation is the only difference. Use the standard's own language and cite the source:
+
+| Good Constraint (from standards) | Bad Constraint |
+|----------------------------------|---------------|
+| "§6: try/except blocks must be as narrow as possible. Source: driver/backend/CLAUDE.md" | "Follow good error handling practices" |
+| "§4: Prefer Pydantic models over raw dicts for structured data. Source: driver/backend/CLAUDE.md" | "Use appropriate data structures" |
+| "§8: Separate I/O from logic for testability. Source: driver/backend/CLAUDE.md" | "Write testable code" |
 
 | Good Constraint | Bad Constraint |
 |----------------|---------------|
@@ -377,6 +392,18 @@ Use primitive tools to verify concrete plan details:
 - **`get_file_documentation`** — do the interfaces and function signatures the plan depends on match reality?
 - **`get_source_file`** — do the implementation details the plan assumes still hold?
 
+### Local Validation
+
+Driver MCP shows committed state, not local changes. After the remote checks above, verify plan assumptions against local state:
+
+1. **File existence** — for each file in the plan's Task Breakdown, verify it exists locally at the stated path using `Glob` or `ls`. Flag files that exist in Driver but not locally (renamed? deleted?) or that exist locally but not in Driver (new? uncommitted?).
+2. **Interface check** — for key functions or classes the plan modifies or depends on, read the local version and compare against what Driver's `get_file_documentation` reported. If signatures differ, update the plan to match local state.
+3. **Uncommitted changes** — run `git status --short` in the target codebase for files the plan touches. If there are local modifications, note them: the plan should be based on local state, not Driver's committed version.
+
+If research was conducted in the same session and included local validation, focus this check on files specific to the plan's Task Breakdown (not the full codebase). If planning runs in a new session, do the full check.
+
+When divergence is found, update the plan to match local reality. Note the divergence in the self-review report.
+
 ### Report Findings
 Tell the user what you found:
 - Confirmed: what matches
@@ -433,3 +460,5 @@ Present the plan to the user for review.
 - [ ] **Constraints explicit?** — Specific rules, not generic advice
 - [ ] **Plan sized right?** — 5-12 tasks, one PR, one logical unit
 - [ ] **Feature log?** — Did I update `FEATURE_LOG.md` when creating plans or the overview?
+- [ ] **Standards encoded?** — If a codebase standards artifact exists, are applicable standards included as plan constraints with source citations?
+- [ ] **Local state validated?** — Did the self-review include local file checks alongside Driver tool checks?

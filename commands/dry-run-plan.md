@@ -48,6 +48,7 @@ For each task in the plan, walk through it as if implementing:
 9. **File conventions**: Do new file names follow the project's naming conventions?
 10. **CLI compatibility**: Do referenced CLI commands and flags exist in the expected versions?
 11. **Platform**: Are there platform-specific assumptions (e.g., bash version, OS utilities)?
+12. **Standards**: If a codebase standards artifact exists (search the feature's `research/` directory for a file containing `## Standards Source`), do the plan's constraints cover the applicable standards for this task's files? Match the artifact's Applicable Sections against the task's file paths. (Check once per unique file-type group — if multiple tasks touch the same language/framework, check once and reference that finding for the others.)
 
 Classify each gap found using the severity criteria below.
 
@@ -191,6 +192,7 @@ Default severities are starting points — override based on the specific gap.
 | **Stale references** | Files or patterns that don't exist in codebase | LOW |
 | **Missing tests** | Implementation task without corresponding test task | MEDIUM |
 | **Constraint gaps** | Generic constraints instead of specific rules | MEDIUM |
+| **Standards coverage** | Codebase standards artifact exists but plan constraints don't reference applicable standards sections | MEDIUM |
 | **Env var persistence** | Required env var not set, or won't persist across sessions | MEDIUM |
 | **Dependency path mismatch** | Import or file reference uses wrong extension or path | LOW |
 | **File naming convention** | New file doesn't follow project naming pattern | LOW |

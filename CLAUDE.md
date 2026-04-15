@@ -190,6 +190,7 @@ The plugin integrates with Driver MCP to query codebase architecture, implementa
 
 **Key gotchas:**
 - Driver shows committed state, not local uncommitted changes
+- After gather_task_context, validate key assumptions locally (branch, file existence, interface signatures) — the research and planning skills do this automatically
 - Codebase name must match Driver exactly (verify with `get_codebase_names`)
 - Large doc dumps in main context cause distraction -- use the agent
 
@@ -197,7 +198,9 @@ The plugin integrates with Driver MCP to query codebase architecture, implementa
 
 ## Engineering Practices
 
-This plugin does not prescribe coding standards. Add your team's engineering guidelines to your project's `CLAUDE.md` or to this plugin's `CLAUDE.md` under this section.
+This plugin discovers and enforces your codebase's coding standards. During research, it searches for CLAUDE.md files relative to the target codebase and captures applicable standards as a research artifact. These standards flow through planning (as constraints), implementation (in subagent prompts), and assessment (as a quality review). If your codebase doesn't have a CLAUDE.md, the plugin asks if you have standards elsewhere or proceeds without quality constraints.
+
+Add team-specific engineering guidelines to your project's `CLAUDE.md` — the plugin will discover and enforce them automatically.
 
 ---
 
