@@ -20,18 +20,12 @@ Extract project name from arguments. If not provided, ask for it.
 
 Look for `config.local.json` in the plugin directory. The plugin resolves this via `CLAUDE_PLUGIN_ROOT` when available, or relative to the plugin's installed location.
 
-If `config.local.json` doesn't exist, create it by asking:
-1. "Where should I create feature projects? (e.g., ~/driver-projects)"
+Read `config.local.json` and use the `projects_path` value to determine where feature projects are created.
 
-Save the response to `config.local.json`:
-```json
-{
-  "projects_path": "<user's answer>",
-  "friction_tracking": false
-}
-```
+If `config.local.json` doesn't exist or doesn't have a `projects_path`:
+> "No projects directory is configured. Run `/setup` first to set up your projects directory."
 
-> Optional. When `true`, hooks log friction events for `/retro` analysis.
+Stop here — do not create `config.local.json` or ask for the path. `/setup` owns that configuration.
 
 ### Step 3: Create Folder Structure
 
