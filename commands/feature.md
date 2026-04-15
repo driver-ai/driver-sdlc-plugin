@@ -18,7 +18,11 @@ Extract project name from arguments. If not provided, ask for it.
 
 ### Step 2: Check Configuration
 
-Read `config.local.json` from the well-known path: `~/.claude/plugins/local/driver-sdlc-plugin/config.local.json`
+Locate `config.local.json` using install-method detection:
+1. Read `~/.claude/plugins/installed_plugins.json`
+2. Look for a key containing `driver-sdlc-plugin`
+3. If found: read `config.local.json` from the `installPath` in that entry
+4. If not found: read `config.local.json` from `~/.claude/plugins/local/driver-sdlc-plugin/`
 
 Use the `projects_path` value to determine where feature projects are created.
 

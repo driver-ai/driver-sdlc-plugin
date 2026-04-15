@@ -179,15 +179,38 @@ def main():
         input_data = json.load(sys.stdin)
 
         # Friction tracking config — fail open on any error
-        # Check well-known local path first, then CLAUDE_PLUGIN_ROOT, then dirname fallback
+        # Resolution order: installed_plugins.json installPath, then CLAUDE_PLUGIN_ROOT, then local/, then dirname
         friction_enabled = False
         try:
-            local_config = os.path.expanduser('~/.claude/plugins/local/driver-sdlc-plugin/config.local.json')
-            if os.path.exists(local_config):
-                config_path = local_config
-            else:
-                plugin_dir = os.environ.get('CLAUDE_PLUGIN_ROOT', os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            config_path = None
+            # Check installed_plugins.json for marketplace install path
+            installed_path = os.path.expanduser('~/.claude/plugins/installed_plugins.json')
+            if os.path.exists(installed_path):
+                with open(installed_path) as f:
+                    installed = json.load(f)
+                for key, entries in installed.get('plugins', {}).items():
+                    if 'driver-sdlc-plugin' in key and entries:
+                        ip = os.path.join(entries[0].get('installPath', ''), 'config.local.json')
+                        if os.path.exists(ip):
+                            config_path = ip
+                        break
+            # Fallback: CLAUDE_PLUGIN_ROOT
+            if not config_path:
+                plugin_dir = os.environ.get('CLAUDE_PLUGIN_ROOT')
+                if plugin_dir:
+                    candidate = os.path.join(plugin_dir, 'config.local.json')
+                    if os.path.exists(candidate):
+                        config_path = candidate
+            # Fallback: local dir
+            if not config_path:
+                local_config = os.path.expanduser('~/.claude/plugins/local/driver-sdlc-plugin/config.local.json')
+                if os.path.exists(local_config):
+                    config_path = local_config
+            # Fallback: dirname
+            if not config_path:
+                plugin_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
                 config_path = os.path.join(plugin_dir, 'config.local.json')
+
             with open(config_path) as f:
                 config = json.load(f)
             friction_enabled = config.get('friction_tracking', False)

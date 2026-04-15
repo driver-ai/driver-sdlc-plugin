@@ -8,15 +8,24 @@ allowed-tools: Read, Write, Edit, Bash, Glob, Grep, AskUserQuestion, mcp__driver
 
 Set up a projects directory for the Driver SDLC plugin. This command is idempotent — safe to re-run at any time.
 
-## Config Path
+## Config Path Resolution
 
-Plugin configuration lives at a well-known, stable location:
+The plugin detects its own install method to determine where `config.local.json` lives.
 
-```
-~/.claude/plugins/local/driver-sdlc-plugin/config.local.json
-```
+**Step 1: Read `~/.claude/plugins/installed_plugins.json`**
 
-This path is the same regardless of how the plugin was installed (marketplace or plugin-dir). Always read and write config here.
+Look for a key containing `driver-sdlc-plugin` (e.g., `driver-sdlc-plugin@driver-sdlc-plugin`).
+
+**If found → Marketplace install:**
+- The entry has `installPath` (e.g., `~/.claude/plugins/cache/driver-sdlc-plugin/driver-sdlc-plugin/1.0.3`)
+- Write `config.local.json` to that `installPath` directory
+- This is version-specific — each version gets its own config if needed
+
+**If not found → Plugin-dir install:**
+- Write `config.local.json` to `~/.claude/plugins/local/driver-sdlc-plugin/`
+- Create the directory if it doesn't exist: `mkdir -p ~/.claude/plugins/local/driver-sdlc-plugin`
+
+**Reading config follows the same logic:** check `installed_plugins.json` first for marketplace path, fall back to `~/.claude/plugins/local/`.
 
 ## Workflow
 
@@ -172,15 +181,18 @@ For all paths (A, B, C), after the projects directory is set up:
    - For Path B: the current working directory (`pwd`)
    - For Path C: the cloned directory
 
-2. **Update `config.local.json`** at `~/.claude/plugins/local/driver-sdlc-plugin/config.local.json`:
-   ```bash
-   mkdir -p ~/.claude/plugins/local/driver-sdlc-plugin
-   ```
-   - Read existing `config.local.json` at that path if it exists — preserve all fields (especially `friction_tracking`)
-   - Set or update `projects_path` to the resolved absolute path
-   - Write the updated config back to `~/.claude/plugins/local/driver-sdlc-plugin/config.local.json`
+2. **Determine config location** using the Config Path Resolution logic above:
+   - Read `~/.claude/plugins/installed_plugins.json`
+   - Look for a key containing `driver-sdlc-plugin`
+   - If found: use the `installPath` from that entry as the config directory
+   - If not found: use `~/.claude/plugins/local/driver-sdlc-plugin/` (create with `mkdir -p` if needed)
 
-3. **Note:** Hooks are auto-registered via `hooks/hooks.json` — no configuration needed.
+3. **Update `config.local.json`** at the resolved config directory:
+   - Read existing `config.local.json` if it exists — preserve all fields (especially `friction_tracking`)
+   - Set or update `projects_path` to the resolved absolute path
+   - Write the updated config back
+
+4. **Note:** Hooks are auto-registered via `hooks/hooks.json` — no configuration needed.
 
 ### Step 5: MCP Connectivity Verification
 
