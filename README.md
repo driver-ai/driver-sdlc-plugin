@@ -308,3 +308,5 @@ There are two levels of customization:
 - **Plans are the source of truth during implementation.** The plugin enforces plan-driven development. Deviations are tracked, not prevented, but they must be reviewed before bookkeeping proceeds.
 - **The laziness detector skips test files.** Patterns like TODO and NotImplementedError in test files are intentionally allowed.
 - **`.mcp.json` is gitignored.** It may contain API keys, so `/setup` creates it locally but does not commit it. Each team member needs to run `/setup` on their own machine to get their local `.mcp.json`.
+- **Select the correct command when multiple plugins are installed.** For example, the Superpowers plugin also has a `/feature` command — make sure to select the one from `driver-sdlc-plugin` in the command list:
+![Command selection](docs/images/command_selection.png)
