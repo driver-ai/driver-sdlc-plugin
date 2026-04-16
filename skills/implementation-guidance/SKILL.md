@@ -20,11 +20,11 @@ You are guiding the implementation phase of a feature development lifecycle. Imp
 ### Before Writing Any Code:
 
 1. **Read the specified plan** — the single source of truth
-2. **Read prerequisites** — research docs, Driver context, or materials referenced in the plan's Context or Architecture Fit section
-3. **Extract the Task Breakdown** — find the `## Task Breakdown` section
-4. **Create a task list** — `TaskCreate` for each task in the plan
+2. **Verify task docs exist** — check `plans/<plan>/tasks/` for `.md` files. If missing: BLOCK. "No task docs found. Task documents must be materialized by planning-guidance before implementation can begin."
+3. **Validate task docs match plan** — compare task doc count and task numbers against the plan's `## Task Breakdown` sections. Mismatches: BLOCK with details.
+4. **Read prerequisites** — research docs, Driver context, or materials referenced in the plan's Context or Architecture Fit section
 5. **Pre-flight** — Step 2 runs environment checks before execution begins
-6. **Tell the user** — "I've created N tasks from the plan. Starting with Task 1."
+6. **Tell the user** — "Found N task docs matching the plan. Starting with Task 1."
 
 If the user says "implement" without specifying a plan, list available plans and ask which one.
 
