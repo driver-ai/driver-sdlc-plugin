@@ -74,12 +74,12 @@ updated: "YYYY-MM-DD"
 Features follow a phased development lifecycle. Each phase has a dedicated skill that provides guidance.
 
 ```
-/feature -> Research -> Planning -> Validation -> Implementation -> Review -> Bookkeeping -> Next Plan -> ...
-                                                                                                   |
-                                                                                      All plans complete
-                                                                                                   |
-                                                                                                   v
-                                                                          /assess -> /docs-artifacts -> Handoff
+/feature -> Research -> Planning -> Validation -> Materialization -> Implementation -> Review -> Bookkeeping -> Next Plan -> ...
+                                                                                                                      |
+                                                                                                         All plans complete
+                                                                                                                      |
+                                                                                                                      v
+                                                                                                 /assess -> /docs-artifacts -> Handoff
 ```
 
 ### Phase -> Skill Mapping
@@ -89,6 +89,7 @@ Features follow a phased development lifecycle. Each phase has a dedicated skill
 | Research | `research-guidance` | Why-What-How methodology, document organization, completion criteria |
 | Planning | `planning-guidance` | TDD-first task design, test strategy, architecture fit, task breakdown |
 | Validation | `/dry-run-plan` | Walk through plan as-if implementing, severity-classified gaps |
+| Materialization | `materialize-tasks` | Convert plan tasks into standalone task docs for sub-agent execution |
 | Implementation | `implementation-guidance` | Plan-driven task execution, deviation tracking, commit discipline |
 | Review | `sdlc-orchestration` | Present deviations for user approval before bookkeeping |
 | Bookkeeping | `implementation-guidance` | Update plan status, overview, cascade check |
@@ -122,6 +123,7 @@ Features follow a phased development lifecycle. Each phase has a dedicated skill
 |-------|---------|
 | `research-guidance` | Why-What-How methodology, document organization |
 | `planning-guidance` | TDD-first plans, test strategy, task breakdown |
+| `materialize-tasks` | Materialize approved plan tasks into standalone task docs |
 | `implementation-guidance` | Plan-driven execution, deviation tracking, bookkeeping |
 | `sdlc-orchestration` | Lifecycle coordination, phase transitions |
 
