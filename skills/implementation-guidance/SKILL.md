@@ -97,15 +97,16 @@ After completing each task:
 ### Step 1: Read Task Documents
 
 ```
-User specifies plan → Check plans/<plan>/tasks/ → Read all task docs → TaskCreate for each → Read plan for context
+User specifies plan → Check plans/<plan>/tasks/ → Read all task docs → TaskCreate for each → Read plan for context + verify approval
 ```
 
 1. **Check for task docs**: Look for `plans/<plan>/tasks/` directory containing `.md` files
 2. **If task docs exist**: Read each task doc, create `TaskCreate` for each (using `task_number` and `depends_on` from frontmatter). Set up dependencies from `depends_on` fields.
-3. **If no task docs directory, or directory exists but contains zero `.md` files**: Fall back to plan-extraction mode with a WARN: "No materialized task docs found for plan '\<plan\>'. Falling back to plan-extraction mode. Consider re-running planning guidance on this plan to generate materialized tasks for future runs." In plan-extraction mode, extract tasks from the plan's `## Task Breakdown` section (the pre-materialization approach). The fallback still attempts codebase resolution: read `research/00-overview.md` Codebases table and resolve the codebase root path. If resolved, inject a minimal `## Codebase` section (root path + "Change directory to codebase root before starting work") into the sub-agent prompt alongside the old template format. If not resolved (no overview, empty table), use the old template without codebase targeting and log a WARN: "Running in plan-extraction fallback mode — codebase could not be resolved. Sub-agents may target the wrong codebase."
+3. **If no task docs directory, or directory exists but contains zero `.md` files**: BLOCK. "No task docs found at `plans/<plan>/tasks/`. Implementation requires materialized task documents. To proceed: (1) return to planning-guidance, (2) approve the plan, (3) run Step 8 (Materialize Tasks). I cannot start implementation without materialized task docs."
 4. **Check for completed tasks**: If some tasks have `status: complete` in frontmatter, report them and start from the next incomplete task
 5. **Read the plan file** for overall context (Architecture Fit, Constraints) — task docs are for individual task execution
-6. **Detect standards artifact**: Search for `## Standards Source` in the feature's research directory. If found, extract the absolute path from the Standards Source table's Path column. Store this for subagent prompt construction.
+6. **Verify plan approval** — Read the plan file's YAML frontmatter. If `status` is not `approved`: BLOCK. "Plan '\<plan\>' has not been approved for implementation. Return to planning-guidance and approve the plan first." This check is a process invariant — it cannot be overridden.
+7. **Detect standards artifact**: Search for `## Standards Source` in the feature's research directory. If found, extract the absolute path from the Standards Source table's Path column. Store this for subagent prompt construction.
 
 CRITICAL: Task docs are the execution source of truth. The plan provides strategic context only.
 
@@ -330,12 +331,10 @@ If the agent reports design decisions needed, present each to the user with opti
 git add plans/<plan>.md plans/00-overview.md
 ```
 
-If the `plans/<plan>/tasks/` directory exists, also stage task doc status changes:
+Also stage task doc status changes:
 ```
 git add plans/<plan>/tasks/*.md
 ```
-
-In fallback mode (no task docs), omit the tasks glob — `git add` with a glob matching nothing returns a fatal error.
 
 ```
 git commit -m "chore: Update plan status and overview for plan <name>"

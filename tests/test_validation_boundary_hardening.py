@@ -156,5 +156,114 @@ class TestValidationBoundaryHardening(unittest.TestCase):
         )
 
 
+class TestBilateralMaterializationGate(unittest.TestCase):
+    """Structural tests for Plan 01: bilateral materialization gate (C1+C2)."""
+
+    planning_guidance: str
+    impl_guidance: str
+    claude_md: str
+    gate_doctrine: str
+
+    @classmethod
+    def setUpClass(cls):
+        cls.planning_guidance = (
+            PLUGIN_ROOT / "skills" / "planning-guidance" / "SKILL.md"
+        ).read_text()
+        cls.impl_guidance = (
+            PLUGIN_ROOT / "skills" / "implementation-guidance" / "SKILL.md"
+        ).read_text()
+        cls.claude_md = (PLUGIN_ROOT / "CLAUDE.md").read_text()
+        doctrine_path = PLUGIN_ROOT / "docs" / "gate-doctrine.md"
+        cls.gate_doctrine = doctrine_path.read_text() if doctrine_path.exists() else ""
+
+    # --- C1: Planning-side approval gate ---
+
+    def test_planning_approval_gate_exists(self):
+        """Planning-guidance SKILL.md contains a ### 8.0 heading (approval gate sub-step)."""
+        self.assertIn("### 8.0", self.planning_guidance)
+
+    def test_planning_dryrun_severity_check(self):
+        """Planning-guidance blocks materialization on HIGH/MEDIUM unfixed gaps."""
+        self.assertRegex(
+            self.planning_guidance,
+            re.compile(r"(HIGH|MEDIUM).*unfixed.*BLOCK|BLOCK.*(HIGH|MEDIUM).*unfixed", re.IGNORECASE),
+        )
+
+    def test_planning_approval_writes_frontmatter(self):
+        """Planning-guidance mentions writing approved_at and approved_by to plan frontmatter."""
+        self.assertIn("approved_at", self.planning_guidance)
+        self.assertIn("approved_by", self.planning_guidance)
+
+    # --- C2: Implementation-side fallback removal ---
+
+    def test_impl_no_plan_extraction_fallback(self):
+        """Implementation-guidance does NOT contain plan-extraction fallback text."""
+        self.assertNotIn("plan-extraction mode", self.impl_guidance)
+        self.assertNotIn("Fall back to plan-extraction", self.impl_guidance)
+
+    def test_impl_no_fallback_language(self):
+        """Implementation-guidance Step 1 section does not contain 'fallback'."""
+        lines = self.impl_guidance.splitlines()
+        step1_start = None
+        step2_start = None
+        for i, line in enumerate(lines):
+            if line.startswith("### Step 1"):
+                step1_start = i
+            elif line.startswith("### Step 2") and step1_start is not None:
+                step2_start = i
+                break
+        self.assertIsNotNone(step1_start, "Step 1 header not found")
+        self.assertIsNotNone(step2_start, "Step 2 header not found")
+        step1_section = "\n".join(lines[step1_start:step2_start])
+        self.assertNotIn("fallback", step1_section.lower())
+
+    def test_impl_block_no_task_docs(self):
+        """Step 1 point 3 contains BLOCK for missing task docs (scoped to point 3)."""
+        lines = self.impl_guidance.splitlines()
+        step1_start = None
+        step2_start = None
+        for i, line in enumerate(lines):
+            if line.startswith("### Step 1"):
+                step1_start = i
+            elif line.startswith("### Step 2") and step1_start is not None:
+                step2_start = i
+                break
+        self.assertIsNotNone(step1_start)
+        self.assertIsNotNone(step2_start)
+        step1_section = "\n".join(lines[step1_start:step2_start])
+        point3_match = re.search(
+            r"3\.\s+\*\*.*?\*\*.*?(?=\n\s*\d+\.\s+\*\*|\n###|\Z)",
+            step1_section,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(point3_match, "Point 3 not found in Step 1")
+        point3_text = point3_match.group(0)
+        self.assertIn("BLOCK", point3_text)
+
+    def test_impl_plan_approval_check(self):
+        """Implementation-guidance contains 'Verify plan approval' bold heading."""
+        self.assertIn("**Verify plan approval**", self.impl_guidance)
+
+    # --- CLAUDE.md and doctrine ---
+
+    def test_claude_md_plan_approved_fields(self):
+        """CLAUDE.md type-specific fields table includes approved_at and approved_by for plan type."""
+        self.assertIn("approved_at", self.claude_md)
+        self.assertIn("approved_by", self.claude_md)
+
+    def test_gate_doctrine_exists(self):
+        """docs/gate-doctrine.md exists with required content."""
+        self.assertTrue(
+            len(self.gate_doctrine) > 0,
+            "gate-doctrine.md does not exist or is empty",
+        )
+        self.assertIn("Process Invariant", self.gate_doctrine)
+        self.assertIn("User Decision", self.gate_doctrine)
+        self.assertIn("Pattern A", self.gate_doctrine)
+        self.assertIn("Pattern B", self.gate_doctrine)
+        self.assertIn("Pattern C", self.gate_doctrine)
+        self.assertIn("No silent fallbacks", self.gate_doctrine)
+
+
 if __name__ == "__main__":
     unittest.main()
