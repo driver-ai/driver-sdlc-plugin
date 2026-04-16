@@ -18,7 +18,7 @@ Examples: whether to run a dry-run, whether a deviation is acceptable, whether t
 
 A process invariant is documented as prose ("always do X", "after the user approves") but no mechanism refuses to proceed when violated. The invariant is advisory, not enforced.
 
-Example: planning-guidance Step 8 said "after the user approves the plan" but nothing verified approval had occurred. A plan could be finalized without tasks ever being materialized.
+Example: the materialization step said "after the user approves the plan" but nothing verified approval had occurred. A plan could be finalized without tasks ever being materialized.
 
 ### Pattern B: Explicit Fallback Bypasses Gate
 
@@ -36,4 +36,4 @@ Example: the "don't handoff before assessment" check lived only in sdlc-orchestr
 
 - **No silent fallbacks** for process invariants. If a process invariant is violated, the system must BLOCK with remediation text. Graceful degradation is for runtime errors, not missing process steps.
 - **Guards live in the callee** when the callee has the required access. When the callee cannot check (e.g., no tool access), duplicate the guard across all callers.
-- **Hard gates state remediation** — a BLOCK says what is wrong AND how to fix it. "Missing task docs" is insufficient; "Missing task docs. Return to planning-guidance and run Step 8" is correct.
+- **Hard gates state remediation** — a BLOCK says what is wrong AND how to fix it. "Missing task docs" is insufficient; "Missing task docs. Return to planning-guidance to approve, then run materialize-tasks" is correct.

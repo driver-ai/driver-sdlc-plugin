@@ -86,7 +86,7 @@ For each downstream plan identified in step 2:
 
 6. **Report stale tasks**: List each stale incomplete task doc with its status and `materialized_at` timestamp.
 
-**CRITICAL: Re-materialization boundary.** The cascade-check agent **reports the need only** — it does NOT write new task docs and CANNOT invoke other skills (no Agent tool available). The user must manually trigger re-materialization by re-running planning guidance on the affected plan (e.g., "re-materialize tasks for plan \<name\>"). Include this instruction in the return format.
+**CRITICAL: Re-materialization boundary.** The cascade-check agent **reports the need only** — it does NOT write new task docs and CANNOT invoke other skills (no Agent tool available). The user must manually trigger re-materialization by re-running materialize-tasks on the affected plan (e.g., "re-materialize tasks for plan \<name\>"). Include this instruction in the return format.
 
 If no downstream plans have task docs, skip this step entirely.
 
@@ -114,7 +114,7 @@ Return a structured summary:
 - Plan <name>: N incomplete tasks need re-materialization (task docs stale after plan revision)
   - tasks/01-foo.md (status: not_started, materialized_at: <timestamp>)
   - tasks/03-bar.md (status: in_progress, materialized_at: <timestamp>)
-  - **Action required by user:** re-run planning guidance on plan <name> to re-materialize N stale task docs. The cascade-check agent cannot perform this automatically.
+  - **Action required by user:** re-run materialize-tasks on plan <name> to re-materialize N stale task docs. The cascade-check agent cannot perform this automatically.
 
 Or if no re-materialization needed:
 - None — no downstream plans were revised, or all task docs are current.

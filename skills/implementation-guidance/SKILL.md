@@ -20,7 +20,7 @@ You are guiding the implementation phase of a feature development lifecycle. Imp
 ### Before Writing Any Code:
 
 1. **Read the specified plan** — the single source of truth
-2. **Verify task docs exist** — check `plans/<plan>/tasks/` for `.md` files. If missing: BLOCK. "No task docs found. Task documents must be materialized by planning-guidance before implementation can begin."
+2. **Verify task docs exist** — check `plans/<plan>/tasks/` for `.md` files. If missing: BLOCK. "No task docs found. Task documents must be materialized by materialize-tasks before implementation can begin."
 3. **Validate task docs match plan** — compare task doc count and task numbers against the plan's `## Task Breakdown` sections. Mismatches: BLOCK with details.
 4. **Read prerequisites** — research docs, Driver context, or materials referenced in the plan's Context or Architecture Fit section
 5. **Pre-flight** — Step 2 runs environment checks before execution begins
@@ -102,7 +102,7 @@ User specifies plan → Check plans/<plan>/tasks/ → Read all task docs → Tas
 
 1. **Check for task docs**: Look for `plans/<plan>/tasks/` directory containing `.md` files
 2. **If task docs exist**: Read each task doc, create `TaskCreate` for each (using `task_number` and `depends_on` from frontmatter). Set up dependencies from `depends_on` fields.
-3. **If no task docs directory, or directory exists but contains zero `.md` files**: BLOCK. "No task docs found at `plans/<plan>/tasks/`. Implementation requires materialized task documents. To proceed: (1) return to planning-guidance, (2) approve the plan, (3) run Step 8 (Materialize Tasks). I cannot start implementation without materialized task docs."
+3. **If no task docs directory, or directory exists but contains zero `.md` files**: BLOCK. "No task docs found at `plans/<plan>/tasks/`. Implementation requires materialized task documents. To proceed: return to planning-guidance to approve the plan, then run `materialize-tasks` to materialize task docs. I cannot start implementation without materialized task docs."
 4. **Check for completed tasks**: If some tasks have `status: complete` in frontmatter, report them and start from the next incomplete task
 5. **Read the plan file** for overall context (Architecture Fit, Constraints) — task docs are for individual task execution
 6. **Verify plan approval** — Read the plan file's YAML frontmatter. If `status` is not `approved`: BLOCK. "Plan '\<plan\>' has not been approved for implementation. Return to planning-guidance and approve the plan first." This check is a process invariant — it cannot be overridden.
