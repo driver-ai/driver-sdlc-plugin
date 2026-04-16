@@ -14,7 +14,6 @@ A Claude Code plugin that guides structured feature development through a full s
 
 - [Claude Code](https://docs.anthropic.com/en/docs/claude-code) installed and configured
 - A [Driver](https://driverai.com) account with your codebases onboarded
-- Driver MCP server configured in Claude Code (see [Driver MCP Setup](#driver-mcp-setup) below)
 - `python3` available in PATH — required for the laziness detector hook
 
 ## Installation
@@ -38,47 +37,14 @@ Or load it for a single session:
 claude --plugin-dir /path/to/driver-sdlc-plugin --permission-mode auto
 ```
 
-## Driver MCP Setup
-
-The plugin uses [Driver MCP](https://driverai.com) to access pre-computed codebase documentation — architecture overviews, code maps, symbol-level docs, and changelogs. This is the plugin's core dependency.
-
-### Configuration
-
-Add the Driver MCP server to your project's `.mcp.json` or Claude Code settings. The server name **must** be `driver-mcp` — all plugin agents reference tools using the `mcp__driver-mcp__` prefix. Using a different name will cause agent failures.
-
-**Project-level** (`.mcp.json` in your project root):
-
-```json
-{
-  "mcpServers": {
-    "driver-mcp": {
-      "type": "http",
-      "url": "https://api.us1.driverai.com/mcp/v1"
-    }
-  }
-}
-```
-
-### Verify Connectivity
-
-After configuring, verify the connection works by asking Claude Code:
-
-> "Call `get_codebase_names` from Driver MCP"
-
-You should see a list of your onboarded codebases. If you get an error, check:
-- Your Driver API token is configured (see [Driver docs](https://driverai.com))
-- The server name is exactly `driver-mcp` (not `driver`, `my-driver`, etc.)
-- The URL matches your region (`us1` for US)
-
 ## Getting Started
 
-After installing the plugin, run `/setup` to configure your projects directory:
+After installing the plugin, run `/setup` to configure your projects directory. It handles everything: creating the directory structure, generating CLAUDE.md, configuring the Driver MCP server, and verifying connectivity.
 
 ### New Team / Solo Developer
 
-1. Create a directory for your SDLC projects (or use an existing repo)
-2. Open Claude Code in that directory with `--permission-mode auto`
-3. Run `/setup` — it will guide you through creating CLAUDE.md, .mcp.json, and initial structure
+1. Open Claude Code with `--permission-mode auto`
+2. Run `/setup` — it will guide you through creating a projects directory with all required configuration
 
 ### Joining an Existing Team
 
@@ -87,6 +53,8 @@ After installing the plugin, run `/setup` to configure your projects directory:
 3. Run `/setup` — it will verify your configuration and fill any gaps
 
 You can also pass a clone URL directly: `/setup git@github.com:my-org/my-team-sdlc.git`
+
+> **Note:** `/setup` is idempotent — safe to re-run at any time. It also creates `.mcp.json` locally (gitignored, since it may contain API keys), so each team member needs to run `/setup` on their own machine.
 
 ### Verify
 
@@ -105,14 +73,12 @@ The plugin generates most artifacts through guided workflows. Your job is to pro
 ## SDLC Workflow
 
 ```
-Research --> Planning --> Validation --> Implementation --> Review --> Handoff
-   |            |            |               |                          |
-   |            |            |               +-- deviations reviewed    |
-   |            |            +-- /dry-run-plan identifies gaps          |
-   |            +-- TDD-first plans with test strategy                  |
-   +-- Why-What-How methodology                                        |
-                                                                       |
-                                              All plans complete --> /assess --> /docs-artifacts
+/feature --> Research --> Planning --> Validation --> Implementation --> Review --> Bookkeeping --> Next Plan --> ...
+                                                                                                       |
+                                                                                          All plans complete
+                                                                                                       |
+                                                                                                       v
+                                                                                  /assess --> /docs-artifacts --> Ship
 ```
 
 ### Phase Descriptions
@@ -161,7 +127,7 @@ Build a complete feature through all phases.
 > (research phase: answer questions about requirements, explore options)
 > "ready to plan"
 > (planning phase: review the generated plan, adjust tasks)
-/dry-run-plan add-export-csv
+/dry-run-plan 01-export-logic
 > (fix any gaps found)
 > "let's implement"
 > (implementation phase: tasks executed, tests written, code committed)
@@ -179,7 +145,7 @@ Use the structured approach for complex bugs that need root-cause analysis.
 > (research phase: document symptoms, reproduce conditions, identify root cause)
 > "ready to plan"
 > (plan the fix with regression tests)
-/dry-run-plan fix-race-condition
+/dry-run-plan 01-fix-race-condition
 > "let's implement"
 ```
 
@@ -247,6 +213,7 @@ For high-stakes features, run every plan through validation before writing any c
 
 | Command | Description | Example |
 |---------|-------------|---------|
+| `/setup [clone-url]` | Set up a projects directory -- configure MCP, create structure, verify connectivity | `/setup` or `/setup git@github.com:my-org/sdlc.git` |
 | `/feature <name>` | Scaffold a new feature project with research, plans, and implementation structure | `/feature user-notifications` |
 | `/orchestrate <path>` | Resume work on a feature -- read the feature log, report current state, suggest next action | `/orchestrate features/user-notifications` |
 | `/dry-run-plan <plan>` | Walk through a plan as-if implementing to identify gaps before real implementation | `/dry-run-plan 02-api-endpoints` |
@@ -300,37 +267,26 @@ Both hooks resolve their configuration via the `CLAUDE_PLUGIN_ROOT` environment 
 
 Observational friction logging -- detects wrong-tool usage, wrong-path edits, and laziness blocks during sessions.
 
-- **Enable**: Set `"friction_tracking": true` in `config.local.json`
+- **Enable**: Set `"friction_tracking": true` in `~/.driver/config.json`
 - **Data**: Events logged to `/tmp/driver-friction-{SESSION_ID}.log` in JSONL format
 - **Review**: Run `/retro` -- the Friction Events section summarizes session friction
 - **Reference**: See `hooks/friction-taxonomy.md` for the full taxonomy
 
-## Driver Context
-
-The `driver-task-context` agent is the primary mechanism for gathering codebase context. When you use `/context` or when skills need to understand your code, this agent:
-
-1. Spawns in an isolated context (keeping your main conversation clean)
-2. Calls Driver MCP to read architecture overviews, code maps, and file documentation
-3. Synthesizes the information into a task-specific summary
-4. Returns only what is relevant to your current task
-
-This approach keeps large Driver responses out of your main context window while still giving you comprehensive codebase understanding. Always prefer the agent over direct Driver MCP calls for this reason.
-
 ## Customization
 
-Fork this plugin to customize for your workflow. Common customizations:
+There are two levels of customization:
 
-- **Engineering guidelines**: Add domain-specific coding standards, naming conventions, or architectural constraints to the plugin's `CLAUDE.md`
-- **Custom hooks**: Add pre/post hooks for your team's conventions (e.g., enforce commit message format, check for required test coverage)
-- **Skill trigger phrases**: Modify skill descriptions to match your team's vocabulary
-- **Agent models**: Adjust which model each agent uses based on your cost/quality preferences
+- **Team standards** (recommended): Edit the `CLAUDE.md` in your projects repo (generated by `/setup`) to add coding standards, naming conventions, testing strategy, and engineering guidelines. The plugin discovers and enforces these during research, planning, and implementation.
+- **Plugin behavior**: Fork the plugin to customize hooks, skill trigger phrases, or agent model preferences in agent markdown frontmatter.
 
 ## Troubleshooting
 
 **MCP connection failures**
+- Run `/setup` -- it verifies MCP connectivity and reports issues
 - Verify your Driver API token is valid and configured in Claude Code
 - Check network connectivity to Driver's API
 - Confirm your codebases are onboarded in Driver -- use `get_codebase_names` to verify
+- The MCP server **must** be named `driver-mcp` -- all plugin agents reference tools using the `mcp__driver-mcp__` prefix. Using a different name will cause agent failures.
 
 **Rate limits**
 - Wait and retry. Driver MCP calls have rate limits.
@@ -351,3 +307,4 @@ Fork this plugin to customize for your workflow. Common customizations:
 - **Large Driver responses should go through the agent.** Calling Driver MCP directly for architecture overviews or onboarding guides can consume significant context. Route these through `driver-task-context` instead.
 - **Plans are the source of truth during implementation.** The plugin enforces plan-driven development. Deviations are tracked, not prevented, but they must be reviewed before bookkeeping proceeds.
 - **The laziness detector skips test files.** Patterns like TODO and NotImplementedError in test files are intentionally allowed.
+- **`.mcp.json` is gitignored.** It may contain API keys, so `/setup` creates it locally but does not commit it. Each team member needs to run `/setup` on their own machine to get their local `.mcp.json`.
