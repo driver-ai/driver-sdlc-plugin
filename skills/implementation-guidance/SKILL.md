@@ -94,29 +94,130 @@ After completing each task:
 
 ## Execution Workflow
 
-### Step 1: Read Plan and Create Tasks
+### Step 1: Read Task Documents
 
 ```
-User specifies plan → Read it → Read prerequisites → Extract Task Breakdown → TaskCreate for each
+User specifies plan → Check plans/<plan>/tasks/ → Read all task docs → TaskCreate for each → Read plan for context
 ```
 
-Set up dependencies if tasks are sequential (`addBlockedBy`).
+1. **Check for task docs**: Look for `plans/<plan>/tasks/` directory containing `.md` files
+2. **If task docs exist**: Read each task doc, create `TaskCreate` for each (using `task_number` and `depends_on` from frontmatter). Set up dependencies from `depends_on` fields.
+3. **If no task docs directory, or directory exists but contains zero `.md` files**: Fall back to plan-extraction mode with a WARN: "No materialized task docs found for plan '\<plan\>'. Falling back to plan-extraction mode. Consider re-running planning guidance on this plan to generate materialized tasks for future runs." In plan-extraction mode, extract tasks from the plan's `## Task Breakdown` section (the pre-materialization approach). The fallback still attempts codebase resolution: read `research/00-overview.md` Codebases table and resolve the codebase root path. If resolved, inject a minimal `## Codebase` section (root path + "Change directory to codebase root before starting work") into the sub-agent prompt alongside the old template format. If not resolved (no overview, empty table), use the old template without codebase targeting and log a WARN: "Running in plan-extraction fallback mode — codebase could not be resolved. Sub-agents may target the wrong codebase."
+4. **Check for completed tasks**: If some tasks have `status: complete` in frontmatter, report them and start from the next incomplete task
+5. **Read the plan file** for overall context (Architecture Fit, Constraints) — task docs are for individual task execution
+6. **Detect standards artifact**: Search for `## Standards Source` in the feature's research directory. If found, extract the absolute path from the Standards Source table's Path column. Store this for subagent prompt construction.
+
+CRITICAL: Task docs are the execution source of truth. The plan provides strategic context only.
 
 ### Step 2: Pre-Flight Validation
 
-Before executing any tasks, verify the environment is ready:
+Before executing any tasks, run the 5-phase pre-flight validation. Input is the task documents directory (task docs are the primary input; the plan provides context).
 
-1. **Required tools** — Check that tools referenced in the plan exist and are accessible (`which <tool>` or `command -v <tool>`). Examples: compilers, build tools, database CLIs, linters.
-2. **Environment variables** — Check that env vars referenced in the plan or project config are set. Flag any that are missing.
-3. **Test baseline** — Run the project's test suite to establish a clean baseline. If tests fail before you've changed anything, stop and report.
-4. **Referenced paths** — Verify that files and directories referenced in the plan's task breakdown actually exist. Flag any missing paths.
-5. **Interface verification** — For key functions or classes the plan modifies, read the local file and verify the current signature matches what the plan assumes. If the plan says "add `retry_delivery` method to `NotificationService`" but `NotificationService` has been refactored locally since planning, flag it. This catches divergence between the remote state (used during planning) and local state (used during implementation).
+**Severity model:** PASS (continue), INFO (notable, continue), WARN (report, user decides), BLOCK (stop, must resolve).
 
-**Report findings:**
-> "Pre-flight complete. Found N issues: [list]. Proceed with implementation?"
+#### Phase 1: Task Document Integrity
 
-**If critical issues found** (tools missing, tests failing):
-> "Pre-flight found critical issues that will block implementation: [list]. These should be resolved before proceeding."
+Fast checks — no codebase access needed.
+
+- **1.1 Task docs exist** — Read `plans/<plan>/tasks/` directory. Verify task documents exist. If no task docs: BLOCK. If count doesn't match plan: BLOCK with missing task numbers.
+- **1.2 Frontmatter validation** — For each task doc, verify required fields: `type: task`, `status`, `plan` (must match current plan), `task_number`, `depends_on`, `created`, `materialized_at`. Missing fields: WARN. Wrong plan reference: BLOCK.
+- **1.3 Dependency graph validation** — Build dependency graph from `depends_on` fields. Circular dependencies: BLOCK. Missing dependency targets: BLOCK. Ordering violations: WARN.
+- **1.4 Already-completed tasks** — Check for tasks with `status: complete`. Report: "Tasks 1-N are already complete (from prior session). Starting from Task N+1." Verify completed task commits exist in git history; if not: WARN. **Severity:** INFO.
+
+#### Phase 2: Codebase Targeting
+
+Validate the codebase target from task docs' `## Codebase` section.
+
+- **2.1 Codebase root exists** — Read the codebase root path from any task doc. Verify the path exists on disk and is a directory. If not: BLOCK.
+- **2.2 Git repository check** — Verify the codebase root is a git repo: `git -C <root> rev-parse --is-inside-work-tree`. If not: WARN.
+- **2.3 Branch check** — Compare `git -C <root> branch --show-current` against the branch in task docs. Mismatch: WARN. Detached HEAD: WARN.
+- **2.4 Uncommitted changes** — Run `git -C <root> status --short`. Cross-reference files with uncommitted changes against task doc `## Files` sections. Overlapping files: WARN per file. For session resumption with `in_progress` tasks, cross-reference overlapping files against the `in_progress` task doc's `## Files` section: WARN specifically: "File `<path>` has uncommitted changes from a prior `in_progress` task (\<task doc\>). These may be partial implementation artifacts. Review or discard before restarting this task."
+
+#### Phase 3: Staleness Detection
+
+Determine if task docs are still fresh relative to the codebase.
+
+- **3.1 Materialization age** — Compare `materialized_at` against current time. < 24 hours: PASS. >= 24 hours: WARN (triggers enhanced 3.2 and 3.3). Missing timestamp: WARN.
+- **3.2 Codebase changes since materialization** — If stale or session resumption: `git -C <root> log --oneline --since="<materialized_at>" -- <files from all task docs>`. Changes detected: WARN per file.
+- **3.3 Interface drift check** — For stale task docs, verify key interfaces referenced in tasks still match local signatures. Mismatch: WARN.
+- **3.4 Upstream plan completion check** — Read the current plan's `depends_on` frontmatter (or `plans/00-overview.md` dependency graph). For each upstream plan, check for `## Implementation Status: COMPLETE`. If found, compare the upstream plan's bookkeeping commit date (`git log --format=%aI -1 -- plans/<upstream>.md`) against task doc `materialized_at`. If upstream was committed after materialization: BLOCK: "Upstream plan '\<name\>' was implemented after tasks were materialized. Re-materialize to pick up changes."
+
+#### Phase 4: Environment Readiness
+
+Existing checks, adapted to read from task docs.
+
+- **4.1 Required tools** — Scan task docs for tool references (test runners, build tools, linters). Check accessibility. Missing: BLOCK.
+- **4.2 Environment variables** — Scan task docs and plan constraints for env var references. Missing: WARN.
+- **4.3 Test baseline** — Run the test suite from the codebase root. Test command comes from: task doc constraints → plan constraints → codebase CLAUDE.md → common defaults. Tests fail: BLOCK. No test command found: WARN.
+- **4.4 Referenced file paths** — For each task doc, verify every file in `## Files` exists (resolved as `<codebase_root>/<relative_path>`). File missing + task says modify: BLOCK. File missing + task says create: OK. File exists + task says create: WARN.
+- **4.5 Interface verification** — For task docs that reference modifying specific functions/classes, read the local file and verify the current signature. Runs unconditionally (not just when stale). Mismatch: WARN.
+
+#### Phase 5: Standards Readiness
+
+- **5.1 Standards path resolves** — If task docs reference a standards file path in `## Code Quality Standards`, verify it exists. Missing: WARN.
+- **5.2 Standards content unchanged** — If stale, compare standards file last-modified time against `materialized_at`. Standards updated after materialization: WARN.
+
+#### Check Summary
+
+- **Blocking checks** (8 total): 1.1, 1.2 (plan mismatch), 1.3 (circular deps), 2.1, 3.4, 4.1, 4.3, 4.4 (modify files)
+- **Warning checks** (10 total): 2.2, 2.3, 2.4, 3.1, 3.2, 3.3, 4.2, 4.5, 5.1, 5.2
+- **Info checks** (1 total): 1.4
+
+#### Pre-Flight Report Format
+
+```
+## Pre-Flight Report
+
+**Plan:** <plan-name>
+**Task docs:** N found (M complete, K pending)
+**Codebase:** <name> at <root>
+**Branch:** <branch> (matches task docs / WARN: mismatch)
+**Materialized:** <timestamp> (<age> — fresh / stale)
+
+### Checks
+
+| Phase | Check | Result | Details |
+|-------|-------|--------|---------|
+| Integrity | Task docs exist | PASS | N/N found |
+| Integrity | Frontmatter valid | PASS | All fields present |
+| Integrity | Dependency graph | PASS | No circular deps |
+| Integrity | Completed tasks | INFO | Tasks 1-3 complete |
+| Targeting | Codebase root | PASS | Path exists, is git repo |
+| Targeting | Branch | PASS | On <branch> |
+| Targeting | Uncommitted changes | WARN | 1 file overlaps |
+| Staleness | Age | PASS | < 24 hours |
+| Environment | Tools | PASS | pytest, black found |
+| Environment | Test baseline | PASS | N tests passing |
+| Environment | Referenced paths | PASS | All files resolved |
+| Environment | Interfaces | PASS | Signatures match |
+| Standards | Path resolves | PASS | CLAUDE.md found |
+| Standards | Content unchanged | PASS | No changes |
+
+### Warnings
+<numbered list, or "None">
+
+### Blockers
+<numbered list, or "None">
+
+**Proceed with implementation?**
+```
+
+#### Session Resumption Variant
+
+When resuming (detected by finding task docs with `status: complete` or `status: in_progress`):
+1. **Always run staleness checks** (Phase 3) regardless of age — session gap means codebase may have changed
+2. **Verify completed task commits** (1.4) — confirm prior work is still in git history
+3. **Re-run test baseline** (4.3) — confirm tests still pass after prior session's changes
+4. **Report starting point:** "Resuming from Task N. Tasks 1-(N-1) complete in prior session."
+5. **In-progress tasks from crashed sessions**: Treat `status: in_progress` as incomplete — restart the task
+
+#### After Pre-Flight
+
+- **All PASS, no WARN:** Proceed automatically. "Pre-flight passed. Starting Task 1."
+- **PASS with WARN:** Report and ask. "Pre-flight found N warnings. [details]. Proceed?"
+- **Any BLOCK:** Stop. "Pre-flight found N blockers. [details]. Resolve before proceeding."
+
+If user proceeds despite warnings, note in implementation log: "Pre-flight warnings acknowledged by user: [list]."
 
 This is a gate — the user decides whether to proceed, skip, or fix issues first.
 
@@ -124,15 +225,17 @@ This is a gate — the user decides whether to proceed, skip, or fix issues firs
 
 For each task:
 
-1. **Set status** — `TaskUpdate` to `in_progress`
-2. **Read the task spec** — Goal, Files, Tests, Constraints
-3. **Execute** — spawn subagent or do it directly (see below)
-4. **Review the result** — verify it matches the plan
-5. **Run tests** — verify nothing is broken
-6. **Track deviations** — compare actual vs. planned
-7. **Commit** — if tests pass
-8. **Update log** — write to `implementation/log-<plan>.md`
-9. **Set status** — `TaskUpdate` to `completed`
+1. **Update task doc frontmatter** — Set `status: in_progress`, `updated: <today>`
+2. **Read the task doc** — All execution context is embedded (Codebase, Goal, Files, Tests, Constraints, Standards, Instructions)
+3. **Execute** — Spawn subagent with task doc content or do directly (see below)
+4. **Review the result** — Verify it matches the task doc's Goal
+5. **Run tests** — Verify nothing is broken
+6. **Track deviations** — Compare actual vs. task doc spec
+7. **Commit** — If tests pass
+8. **Update implementation log** — Write to `implementation/log-<plan>.md`, referencing task doc path: `plans/<plan>/tasks/NN-name.md`
+9. **Update task doc frontmatter** — Set `status: complete`, `updated: <today>`
+
+The in-memory TaskList (if created via TaskCreate) should also be updated for session display, but the task doc frontmatter is the persistent source of truth.
 
 #### When to Spawn a Subagent vs. Do It Directly
 
@@ -151,6 +254,8 @@ For each task:
 Adjacent tasks that are tightly coupled should be batched into a single subagent call:
 - Test + implementation pairs: "Write tests for X" + "Implement X" → one subagent call
 - Small related tasks: "Create config" + "Update manifest" + "Register route" → one call
+
+**For batched tasks**: Construct the sub-agent prompt with multiple `## Task` sections, one per task doc. Header: "Implement the following N tasks." Each task gets its own Goal/Files/Tests/Constraints block extracted from its task doc. Shared Codebase and Standards sections appear once (identical across tasks in the same plan). Update ALL batched task doc frontmatters to `in_progress` before execution and `complete` after. Log all batched tasks in one implementation log entry with all task doc paths.
 
 Batching reduces subagent overhead and gives the subagent better context. Only batch tasks that are sequential and closely related — don't batch independent work.
 
@@ -223,6 +328,16 @@ If the agent reports design decisions needed, present each to the user with opti
 
 ```
 git add plans/<plan>.md plans/00-overview.md
+```
+
+If the `plans/<plan>/tasks/` directory exists, also stage task doc status changes:
+```
+git add plans/<plan>/tasks/*.md
+```
+
+In fallback mode (no task docs), omit the tasks glob — `git add` with a glob matching nothing returns a fatal error.
+
+```
 git commit -m "chore: Update plan status and overview for plan <name>"
 ```
 
@@ -240,47 +355,85 @@ This is informational — the user decides what to do.
 
 ## Subagent Task Prompts
 
-When spawning subagents, construct prompts from the plan's task spec:
+When spawning subagents, construct prompts from task document content:
 
 ```
-Implement the following task from the approved plan.
+Implement the following task.
 
-## Task: <name>
-**Goal**: <from plan>
-**Files**: <from plan>
-**Tests**: <from plan>
-**Constraints**: <from plan>
+## Codebase
+**Root**: <from task doc ## Codebase section>
+**Branch**: <from task doc ## Codebase section>
+
+All file paths are relative to the codebase root.
+Change directory to the codebase root before starting work.
+Do NOT navigate to or modify files outside this directory.
+
+## Task: <name from task doc>
+**Goal**: <from task doc>
+**Files**: <from task doc>
+**Tests**: <from task doc>
+**Constraints**: <from task doc>
 
 ## Code Quality Standards
-**Source**: <absolute path to codebase CLAUDE.md>
-Standards document for reference during implementation.
-Your code must comply with these standards. Key rules for this task:
-- <relevant rules from plan constraints that cite codebase standards>
+<from task doc — key rules + source path>
 
 ## Context
-- Plan: <path to plan file>
-- Prerequisites: <paths to research/context docs>
+- Plan: <from task doc ## Context section>
+- Prerequisites: <from task doc ## Context section>
 
 ## Instructions
-1. Read the plan for full context
-2. Read the code quality standards document at the path above
-3. Implement exactly what's specified — no extras
-4. Verify your code follows the standards (naming, error handling, types, structure, testing patterns)
-5. Run tests after implementation
-6. Report what you built, files touched, any deviations, and any standards compliance concerns
+1. Change directory to the codebase root above
+2. Read the plan file for full architectural context
+3. Read the code quality standards document at the source path above
+4. Implement exactly what's specified in the Goal — no extras
+5. Verify your code follows the listed standards rules
+6. Run tests after implementation
+7. Report: what you built, files touched, any deviations from the spec, and any standards compliance concerns
 ```
 
 Include the full task spec — don't summarize. Copy constraints verbatim.
 
-**Code Quality Standards section:** Include this section only if a codebase standards artifact exists in the feature's research directory (search for a file containing `## Standards Source`). If no standards artifact exists, omit the Code Quality Standards section entirely AND revert to the original 4-item Instructions list:
-1. Read the plan for full context
-2. Implement exactly what's specified — no extras
-3. Run tests after implementation
-4. Report what you built, files touched, and any deviations
+**Data flow:** Implementation-guidance reads task docs to construct the prompt. Task docs already have embedded context (codebase root, standards, file paths), so the prompt is a direct extraction — not ad-hoc assembly from multiple sources.
 
-The 6-item Instructions list (with items about reading standards and verifying compliance) is only used when the Code Quality Standards section is present. Without that section, instructions 2 and 4 would reference something that doesn't exist.
+**Code Quality Standards section:** Include this section only if the task doc has a `## Code Quality Standards` section. If the task doc has no Code Quality Standards section (because no standards artifact existed during materialization), omit it from the prompt AND use this shorter Instructions list:
+1. Change directory to the codebase root above
+2. Read the plan file for full architectural context
+3. Implement exactly what's specified in the Goal — no extras
+4. Run tests after implementation
+5. Report: what you built, files touched, and any deviations from the spec
 
-**Data flow:** The implementation-guidance skill must read the standards artifact to extract the source path. In Step 1 (Read Plan and Create Tasks), after reading the plan, search for a codebase standards artifact in the feature's research directory (same detection: search for `## Standards Source`). If found, extract the absolute path from the Standards Source table's Path column. Use that absolute path as the `<Source>` in the subagent prompt — the subagent reads the authoritative, current version, not the research artifact. Key rules should be copied from the plan's constraints that cite codebase standards.
+The 7-item Instructions list (with items about reading standards and verifying compliance) is only used when the Code Quality Standards section is present.
+
+**Standards detection (Step 1):** In Step 1 (Read Task Documents), after reading the plan, search for a codebase standards artifact in the feature's research directory (search for `## Standards Source`). If found, extract the absolute path from the Standards Source table's Path column. This path is used to verify standards availability during pre-flight (Phase 5). Task docs already embed key rules and the source path — the subagent reads the authoritative, current version at that path.
+
+**Batched task prompts:** For batched tasks, use this structure:
+```
+Implement the following N tasks.
+
+## Codebase
+<shared — from any task doc>
+
+## Task 1: <name>
+**Goal**: ...
+**Files**: ...
+**Tests**: ...
+**Constraints**: ...
+
+## Task 2: <name>
+**Goal**: ...
+**Files**: ...
+**Tests**: ...
+**Constraints**: ...
+
+## Code Quality Standards
+<shared — from any task doc>
+
+## Context
+<shared — from any task doc>
+
+## Instructions
+<same as single-task, applies to all tasks>
+```
 
 ---
 
@@ -299,6 +452,7 @@ Write to `implementation/log-<plan>.md` (e.g., `implementation/log-01a.md`).
 
 ## Task 1: <name>
 
+**Task doc:** `plans/<plan>/tasks/NN-name.md`
 **Status:** Complete
 **Commit:** `<hash>` — <message>
 
@@ -331,23 +485,34 @@ Write to `implementation/log-<plan>.md` (e.g., `implementation/log-01a.md`).
 
 ## Cross-Session Continuity
 
-Implementation often spans multiple sessions. The **implementation log** is the cross-session artifact — TaskList does not persist across sessions.
+Implementation often spans multiple sessions. Two artifacts persist across sessions:
+
+1. **Implementation log** (`implementation/log-<plan>.md`) — what was done, deviations, commit hashes
+2. **Task documents** (`plans/<plan>/tasks/*.md`) — frontmatter `status` field tracks completion
+
+TaskList (from TaskCreate) does NOT persist across sessions — it's session-only display state.
 
 ### Starting a New Session Mid-Implementation
 
 1. **Read the implementation log** — it tells you what's done, what's next, and what deviated
-2. **Read the plan** — refresh on remaining task specs
-3. **Recreate tasks** if needed (TaskList is session-only)
-4. **Continue from the next incomplete task**
+2. **Read task documents** — check `status` field in each task doc frontmatter. Completed tasks have `status: complete`. No need to reconstruct completion state.
+3. **Read the plan** — refresh on overall context (Architecture Fit, Constraints)
+4. **Identify next incomplete task** — first task doc where `status` is not `complete`
+5. **Recreate TaskList** if needed (for session display only)
+6. **Run pre-flight session resumption variant** — always run staleness checks (Phase 3), verify completed task commits, re-run test baseline
+7. **Continue from the next incomplete task**
 
-The log should always have enough context for a fresh session to continue: completed tasks with commit hashes, what's next, blockers, and deviations affecting remaining tasks.
+Task docs are the persistent source of truth for task state. The implementation log is the persistent source of truth for what actually happened (deviations, commits, learnings).
 
 ---
 
 ## Anti-Patterns
 
 **Don't:**
-- Start coding without reading the plan
+- Start coding without reading the plan and task docs
+- Extract tasks from the plan inline — read task docs from `plans/<plan>/tasks/`
+- Spawn sub-agents without the codebase root path from the task doc
+- Skip pre-flight staleness checks when resuming from a prior session
 - Skip deviation tracking
 - Commit broken state
 - Implement things not in the plan ("while I'm here...")
@@ -359,7 +524,10 @@ The log should always have enough context for a fresh session to continue: compl
 - Omit the Code Quality Standards section from subagent prompts when a standards artifact exists
 
 **Do:**
-- Read the plan before every task
+- Read task docs as the execution source of truth
+- Read the plan and task doc before every task
+- Update task doc status (`in_progress`, `complete`) during execution
+- Run the full 5-phase pre-flight before executing any task
 - Track deviations for every task, even "None"
 - Commit at task boundaries
 - Batch tightly coupled tasks for subagent efficiency
@@ -385,9 +553,12 @@ The log should always have enough context for a fresh session to continue: compl
 ## Before Responding Checklist
 
 - [ ] **Read plan?** — Have I read the specific plan the user specified?
+- [ ] **Task docs read?** — Am I reading from `plans/<plan>/tasks/`, not extracting from the plan?
 - [ ] **Tasks created?** — Is there a task list tracking progress?
-- [ ] **Pre-flight done?** — Ran environment checks before starting task execution
+- [ ] **Pre-flight complete?** — Did all 5 phases run with no unresolved BLOCKs?
+- [ ] **Codebase resolved?** — Does the pre-flight report show the correct codebase target?
 - [ ] **Current task in_progress?** — Is the active task marked correctly?
+- [ ] **Task doc status updated?** — Is the current task marked `in_progress`? Are complete tasks marked `complete`?
 - [ ] **Deviations tracked?** — Did I compare actual vs. planned?
 - [ ] **Verified?** — Did I run a verification command before claiming this task is done?
 - [ ] **Tests passing?** — Are tests green before committing?
