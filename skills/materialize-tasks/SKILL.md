@@ -64,7 +64,7 @@ Read `research/00-overview.md` and find the `## Codebases` section and its table
 
 Search the feature's `research/` directory for a standards artifact (file containing `## Standards Source`). If found, extract the source path and key rules. If not found, omit the Code Quality Standards section from task docs.
 
-If multiple files match, select the one whose Standards Source path is within the resolved codebase root from Step 2. If none match or multiple match, use the first alphabetically and warn the user.
+If multiple files match, select the one whose Standards Source path is within the resolved codebase root from Step 2. If none match or multiple match, use the first alphabetically and warn the user. <!-- TODO: For multi-codebase features, this fallback could silently pick the wrong standards. Consider prompting the user instead of defaulting to first-alphabetically. -->
 
 ---
 
