@@ -43,6 +43,7 @@ When a user returns to a feature ("returning to feature/X", "resume feature X", 
    - Implementation logs without a matching plan status header → implementation was in progress
    - Plan files without dry-run results → plan needs validation
    - Research docs with open questions → research may be incomplete
+   - Plan with `status: approved` in frontmatter but task doc count < plan task count (or no `plans/<plan>/tasks/` directory) → phase is **Materialization**. Suggest: "Plan X is approved but not fully materialized. Activate `materialize-tasks`."
    - Phase detection resolves to **Assessment** (all plans COMPLETE, no `assessment/test-curation-*.md`) → suggest `/assess`
 4. **Report current state:**
 
@@ -71,11 +72,21 @@ When a plan is written:
 - If the feature has an overview with interface contracts, run consumer validation: check whether downstream plans' assumptions match this plan's definitions
 - Suggest: "Want to run `/dry-run-plan <name>`?"
 
-### Validation → Implementation
-When the user wants to implement:
-- **Task docs check** — Verify `plans/<plan>/tasks/` exists and contains `.md` files. If missing: BLOCK. "No task docs found. Return to planning-guidance to approve and materialize tasks before implementation."
+### Validation → Materialization
+When the plan is approved and ready for materialization:
+- **Approval check** — Verify plan has `status: approved` in frontmatter. If not: this transition does not apply.
+- **Approval staleness check** — If `approved_at` exists and the plan's `updated` field is a more recent date than `approved_at`, WARN: "Plan was modified after approval (approved: <date>, updated: <date>). Consider re-approving before materialization." This is advisory, not blocking — the user decides.
 - **Dry-run verdict check** — Read the latest `dry-runs/<plan>-*.md` (sort by filename descending — ISO dates in filenames give chronological order). Check the Verdict section. If "Needs plan updates first": WARN. "Dry-run verdict is not 'Ready for implementation'. Proceed anyway?" If no dry-run found: note "No dry-run found for this plan" (informational, not blocking).
-- The user decides whether to proceed with warnings
+- **Task doc completeness check** — Count `### Task N` sections in the plan's `## Task Breakdown`. Count `.md` files in `plans/<plan>/tasks/`. Three checks:
+  1. **Count check**: If task doc count < plan task count: trigger materialization (partial). Report: "N of M task docs exist — triggering materialization to complete the remaining K."
+  2. **Freshness check**: If task doc count equals plan task count, read `materialized_at` from any task doc and compare against the plan's `updated` date. If `materialized_at` predates `updated`: task docs are stale (plan was revised after materialization). Trigger re-materialization: "Task docs are stale (materialized before plan was last updated). Triggering re-materialization." materialize-tasks Step 4 handles this by preserving completed tasks and overwriting incomplete ones.
+  3. **Complete and fresh**: If count matches AND task docs are fresh, skip to implementation.
+- Activate `materialize-tasks`
+
+### Materialization → Implementation
+When materialization is complete:
+- **Task doc gate** — Verify task docs exist in `plans/<plan>/tasks/` AND count matches plan task count. If count mismatch: BLOCK. "Task doc count (N) does not match plan task count (M). Re-run `materialize-tasks`."
+- The user decides whether to proceed
 
 ### Implementation → Review Deviations
 When implementation-guidance reports all tasks complete:
@@ -134,6 +145,8 @@ The lifecycle is not linear. These backward transitions are normal:
 | Bookkeeping → Planning | Cascade affects a downstream plan | User updates the downstream plan |
 | Next Plan → Research | Next plan needs research first | Start research for new topic |
 | Planning → Research | Planning surfaces unanswered question | Research the question first |
+| Materialization → Planning | materialize-tasks blocks on gaps or missing codebase | Fix plan, re-approve |
+| Implementation → Materialization | Pre-flight finds stale task docs | Re-materialize affected tasks |
 
 When a loop occurs, note: "Going back to [phase] because [reason]."
 
@@ -153,6 +166,7 @@ Each skill appends to the log at transition moments:
 | `research-guidance` | Research doc created, wireframe created |
 | `planning-guidance` | Planning started, overview created, plan created |
 | `/dry-run-plan` | Dry-run completed (with gap count and verdict) |
+| `materialize-tasks` | Tasks materialized (with task count and codebase target) |
 | `implementation-guidance` | Implementation started, implementation complete (with test count) |
 | `/assess` | Assessment complete (with prune/keep/promote counts) |
 | `sdlc-orchestration` | Bookkeeping complete, phase transitions |
@@ -183,6 +197,7 @@ Update the "Current State" header to reflect the new phase and active work.
 - [/orchestrate](../../commands/orchestrate.md) — resume an existing feature
 - [research-guidance](../research-guidance/SKILL.md)
 - [planning-guidance](../planning-guidance/SKILL.md)
+- [materialize-tasks](../materialize-tasks/SKILL.md)
 - [implementation-guidance](../implementation-guidance/SKILL.md)
 - [/dry-run-plan](../../commands/dry-run-plan.md)
 - [/assess](../../commands/assess.md)
