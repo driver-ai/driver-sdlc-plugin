@@ -73,12 +73,12 @@ The plugin generates most artifacts through guided workflows. Your job is to pro
 ## SDLC Workflow
 
 ```
-/feature --> Research --> Planning --> Validation --> Implementation --> Review --> Bookkeeping --> Next Plan --> ...
-                                                                                                       |
-                                                                                          All plans complete
-                                                                                                       |
-                                                                                                       v
-                                                                                  /assess --> /docs-artifacts --> Ship
+/feature --> Research --> Planning --> Validation --> Materialization --> Implementation --> Review --> Bookkeeping --> Next Plan --> ...
+                                                                                                                          |
+                                                                                                             All plans complete
+                                                                                                                          |
+                                                                                                                          v
+                                                                                                     /assess --> /docs-artifacts --> Ship
 ```
 
 ### Phase Descriptions
@@ -88,7 +88,8 @@ The plugin generates most artifacts through guided workflows. Your job is to pro
 | **Research** | Explore the problem space using structured Why-What-How questioning. Produce research docs and design decisions. |
 | **Planning** | Write implementation plans with TDD-first task ordering, test strategy, and explicit constraints. |
 | **Validation** | Dry-run each plan to find gaps before writing code. All gaps are reviewed, classified by severity. |
-| **Implementation** | Execute plans task-by-task. Track deviations from the plan. Commit after each task. |
+| **Materialization** | Approved plan tasks are converted into standalone task documents. Each embeds codebase root, file paths, standards, and instructions for sub-agent execution. |
+| **Implementation** | Execute materialized task documents. Track deviations from the plan. Commit after each task. |
 | **Review** | Present deviations for approval. Run cascade checks against downstream plans. |
 | **Bookkeeping** | Update plan statuses, overview progress, and feature log. |
 | **Assessment** | Curate the test suite -- prune scaffolding tests, promote valuable ones. |
@@ -118,9 +119,21 @@ Gather targeted context before fixing a bug.
 
 Review the returned context, fix the bug, and commit. No full SDLC needed for a straightforward fix.
 
+### Easy: Session Retrospective
+
+Reflect on what happened in the current session and capture improvements.
+
+```
+/retro
+> (analyzes session: what phase you were in, what was accomplished, friction events)
+> (evaluates work quality, identifies patterns from prior retros)
+> "write it"
+> (retro saved to retrospectives/ with actionable improvements)
+```
+
 ### Medium: Single-Plan Feature End-to-End
 
-Build a complete feature through all phases.
+Build a complete feature through all phases, from research through approval, materialization, and handoff.
 
 ```
 /feature add-export-csv
@@ -128,12 +141,17 @@ Build a complete feature through all phases.
 > "ready to plan"
 > (planning phase: review the generated plan, adjust tasks)
 /dry-run-plan 01-export-logic
-> (fix any gaps found)
+> (fix any gaps found, re-run if needed)
+> "approve plan 01"
+> (plan approved — tasks materialize into standalone task docs)
 > "let's implement"
-> (implementation phase: tasks executed, tests written, code committed)
+> (implementation: tasks executed from materialized docs, tests written, code committed)
+> (deviations reviewed, bookkeeping updates plan status)
 /assess features/add-export-csv
-> (curate test suite, verify quality)
+> (curate test suite — prune scaffolding, promote valuable tests, keep durable ones)
 /docs-artifacts features/add-export-csv
+> (generates: feature-overview, architecture, testing-guide, risk-assessment)
+> Ready for PR review
 ```
 
 ### Medium: Bug Investigation with SDLC
@@ -146,7 +164,12 @@ Use the structured approach for complex bugs that need root-cause analysis.
 > "ready to plan"
 > (plan the fix with regression tests)
 /dry-run-plan 01-fix-race-condition
+> "approve plan 01"
+> (tasks materialize)
 > "let's implement"
+> (fix applied, regression tests pass)
+/assess features/investigate-race-condition
+/docs-artifacts features/investigate-race-condition
 ```
 
 ### Advanced: Multi-Plan Feature with Dependencies
@@ -160,10 +183,15 @@ Coordinate backend and frontend work with dependency ordering.
 > (create plans: 01-data-model, 02-api-endpoints, 03-frontend-ui)
 > (overview tracks dependencies: 03 depends on 02, 02 depends on 01)
 /dry-run-plan 01-data-model
+> "approve plan 01"
+> (tasks materialize)
 > "let's implement"
-> (complete plan 01, bookkeeping updates overview)
+> (complete plan 01, deviations reviewed, bookkeeping updates overview)
 > "what's next"
 > (orchestration identifies 02-api-endpoints as next unblocked plan)
+> (repeat: dry-run → approve → materialize → implement for each plan)
+/assess features/support-ticket-system
+/docs-artifacts features/support-ticket-system
 ```
 
 ### Advanced: Cross-Session Feature Development
@@ -186,10 +214,16 @@ Full orchestration at scale with multiple plans and dependency management.
 > (planning: 5 plans with dependency graph in 00-overview.md)
 /dry-run-plan 01-schema-design
 /dry-run-plan 02-api-layer
-> (implement plans in dependency order)
-> (cascade-check verifies deviations don't break downstream plans)
-/assess
+> (validate all plans before implementing any)
+> "approve plan 01"
+> (tasks materialize, implement plan 01)
+> (deviations reviewed — cascade-check verifies no impact on downstream plans)
+> (bookkeeping, next plan)
+> (repeat for each plan in dependency order)
+/assess features/data-pipeline-migration
+> (curate tests across all plans — prune, promote, keep)
 /docs-artifacts features/data-pipeline-migration
+> (handoff docs generated for PR review)
 ```
 
 ### Expert: Dry-Run Driven Development
@@ -205,8 +239,11 @@ For high-stakes features, run every plan through validation before writing any c
 /dry-run-plan 03-webhook-handlers
 /dry-run-plan 04-refund-flow
 > (fix all identified gaps across all plans)
-> "let's implement"
-> (implement with confidence -- gaps were caught early)
+> "approve plan 01"
+> (materialize and implement each plan in sequence)
+> (cascade-check after each plan ensures no downstream breakage)
+/assess features/payment-processing
+/docs-artifacts features/payment-processing
 ```
 
 ## Commands Reference
@@ -231,6 +268,7 @@ Skills activate automatically based on the current SDLC phase or trigger phrases
 | **research-guidance** | Structured Why-What-How questioning, document organization, and research completion criteria. | Trigger phrases: "let's research", "investigate", "explore", "understand how", "what's the best approach" |
 | **planning-guidance** | TDD-first task design, test strategy, architecture fit, explicit constraints, and task breakdown. Plans are always written to files, never in chat. | Trigger phrases: "let's plan", "ready to plan", "create a plan", "test strategy", "TDD" |
 | **implementation-guidance** | Plan-driven task execution, subagent delegation for context gathering, deviation tracking, and commit discipline. | Trigger phrases: "let's implement", "start implementing", "ready to build", "execute the plan" |
+| **materialize-tasks** | Converts approved plan tasks into standalone task docs for sub-agent execution. Validates dry-run gaps, resolves codebase target, embeds standards. | Trigger phrases: "materialize tasks", "materialize tasks for plan X", "re-materialize", "create task docs" |
 | **sdlc-orchestration** | Coordinates phase transitions, loads the right skills, manages bookkeeping, and handles session resumption. | Trigger phrases: "where are we", "what's next", "resume feature", "feature status" |
 
 ## Agents
