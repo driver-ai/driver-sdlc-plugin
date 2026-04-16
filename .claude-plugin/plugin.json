@@ -6,6 +6,7 @@
     "./skills/research-guidance",
     "./skills/planning-guidance",
     "./skills/implementation-guidance",
+    "./skills/materialize-tasks",
     "./skills/sdlc-orchestration"
   ],
   "agents": [
