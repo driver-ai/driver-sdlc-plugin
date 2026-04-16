@@ -308,3 +308,6 @@ There are two levels of customization:
 - **Plans are the source of truth during implementation.** The plugin enforces plan-driven development. Deviations are tracked, not prevented, but they must be reviewed before bookkeeping proceeds.
 - **The laziness detector skips test files.** Patterns like TODO and NotImplementedError in test files are intentionally allowed.
 - **`.mcp.json` is gitignored.** It may contain API keys, so `/setup` creates it locally but does not commit it. Each team member needs to run `/setup` on their own machine to get their local `.mcp.json`.
+- **Select the correct command when multiple plugins are installed.** For example, typing `/feature` in Claude Code may match commands from other plugins — make sure to select the one with the full name `driver-sdlc-plugin:feature` in the list below. Here's a screenshot that shows an example:
+
+![Command selection](docs/images/command_selection.png)
