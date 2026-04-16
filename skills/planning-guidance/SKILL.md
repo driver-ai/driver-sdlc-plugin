@@ -424,6 +424,143 @@ Present the plan to the user for review.
 
 ---
 
+## Step 8: Materialize Tasks
+
+After the user approves the plan (and dry-run gaps are fixed), materialize each task as a standalone document. Task docs embed everything a sub-agent needs for atomic, self-contained execution — codebase root, absolute paths, standards, and explicit instructions. The task doc IS the sub-agent's execution contract.
+
+**When to run:** After the plan is approved and all dry-run gaps are resolved. This is the final planning step before implementation.
+
+### 8.1 Resolve Codebase Target
+
+Read `research/00-overview.md` and find the `## Codebases` section and its table. The table header is `| Name | Local Path | Driver Name | Branch |`. Extract the `Local Path` column (second column) from each data row.
+
+**Parsing rules:**
+- Ignore rows where Local Path is `_TBD_`, empty, contains only whitespace, or contains other placeholder text (e.g., `_fill in_`)
+- Verify each extracted path is an absolute path (starts with `/`) and exists on disk
+- If no valid Local Path entries remain after filtering, BLOCK: "No valid codebase paths in Codebases table. Fill in the Local Path column in `research/00-overview.md`."
+- If `research/00-overview.md` does not exist, BLOCK: "No research overview found. Run research phase first."
+
+**Multi-codebase resolution:** If the Codebases table has multiple valid rows:
+1. First, try to infer the target codebase from the plan's `## Task Breakdown` file paths. Collect all file paths from `**Files**:` fields across tasks. For each codebase's Local Path, check if the plan's file paths resolve under it (e.g., `<Local Path>/<relative file path>` exists). If all files resolve under exactly one codebase, auto-resolve to that codebase.
+2. If files resolve under multiple codebases (ambiguous), or no files resolve under any codebase, ask the user: "This plan's file paths match multiple codebases. Which codebase does this plan target? [list options]"
+3. Report the resolution in 8.5: "Codebase auto-resolved from file paths" or "Codebase selected by user."
+
+### 8.2 Resolve Standards
+
+Search the feature's `research/` directory for a standards artifact (file containing `## Standards Source`). If found, extract the source path and key rules. If not found, omit the Code Quality Standards section from task docs.
+
+If multiple files match, select the one whose Standards Source path is within the resolved codebase root from Step 8.1. If none match or multiple match, use the first alphabetically and warn the user.
+
+### 8.3 Write Task Documents
+
+For each `### Task N` in the plan's `## Task Breakdown`:
+
+**If no `### Task N` sections are found**, report "No tasks found in plan — skipping materialization" and return without creating the `tasks/` directory.
+
+**If `plans/<plan-name>/tasks/` already exists with task docs**, WARN: "Task docs already exist for this plan. Re-materializing will overwrite incomplete tasks. Completed tasks (status: complete) will be preserved. Proceed?" For each task: if a corresponding task doc exists and is `status: complete`, skip it (preserve). If `not_started` or `in_progress`, overwrite it. If no corresponding task doc exists (new task added to revised plan), create it. After writing, report: "N created, M overwritten, K preserved."
+
+**Create the directory** `plans/<plan-name>/tasks/` if it doesn't exist. The `<plan-name>` is the plan filename without its `.md` extension — the plan `.md` file and its directory coexist as siblings under `plans/`.
+
+**Write each task doc** as `NN-slugified-task-name.md`:
+- Slugify by: lowercase, replace spaces and underscores with hyphens, remove non-alphanumeric characters except hyphens, collapse consecutive hyphens, trim leading/trailing hyphens
+- Truncate the slugified name to 60 characters (excluding the `NN-` prefix and `.md` extension) — if truncated, ensure the slug does not end with a hyphen
+- Task names should use ASCII-only text for reliable filenames. If a task name produces an empty slug after stripping, fall back to `NN-task.md`
+
+**Task document template:**
+
+```markdown
+---
+type: task
+status: not_started
+plan: <plan-name>
+task_number: <N>
+depends_on:
+  - <dependency-filename.md>
+created: "YYYY-MM-DD"
+materialized_at: "<ISO 8601 local time, e.g., 2026-04-15T14:32:00>"
+---
+
+# Task N: <name>
+
+## Codebase
+**Root**: <absolute path from Codebases table>
+**Branch**: <branch from Codebases table>
+
+All file paths below are relative to the codebase root.
+Execute all commands from the codebase root directory.
+Do NOT navigate to or modify files outside this directory.
+
+## Goal
+<copied from plan — verbatim>
+
+## Files
+<copied from plan — verbatim>
+
+## Tests
+<copied from plan — verbatim>
+
+## Constraints
+<copied from plan — verbatim>
+
+## Code Quality Standards
+**Source**: <absolute path to codebase CLAUDE.md>
+
+Key rules for this task:
+- <key rules from standards artifact relevant to this task>
+
+## Context
+**Plan**: `plans/<plan-file>.md`
+**Prerequisites**: <paths to research/context docs referenced in plan>
+
+Read the plan for full architectural context if needed.
+
+## Instructions
+1. Change directory to the codebase root
+2. Read the plan for full context
+3. Read the code quality standards at the source path above
+4. Implement exactly what's specified — no extras
+5. Verify your code follows the standards
+6. Run tests after implementation
+7. Report what you built, files touched, any deviations, and standards compliance
+```
+
+**If no Code Quality Standards section** (no standards artifact found), omit that section and use a 5-step Instructions list:
+1. Change directory to the codebase root
+2. Read the plan for full context
+3. Implement exactly what's specified — no extras
+4. Run tests after implementation
+5. Report what you built, files touched, and any deviations
+
+**Frontmatter rules:**
+- `created` and `updated` use `YYYY-MM-DD` format (to pass `test_date_format` validation)
+- `materialized_at` uses ISO 8601 local time without timezone suffix (e.g., `2026-04-15T14:32:00`)
+- `status` values use the canonical set: `not_started`, `in_progress`, `complete`
+- `depends_on` uses YAML block list format — NOT inline `["..."]` syntax. Values must be **unquoted** (the plugin's `parse_frontmatter` does not strip quotes from block list items). Example:
+  ```yaml
+  depends_on:
+    - 01-write-tests.md
+  ```
+- If a task has no dependencies, **omit the `depends_on` field entirely** — do NOT use `depends_on:` with empty value
+- Infer dependencies from TDD pairs: Task N+1 depends on Task N within test/implement pairs. Non-paired tasks have empty depends_on unless plan Constraints state otherwise
+
+### CRITICAL: 8.4 Post-Materialization Validation (Checkpoint 1)
+
+After writing all task docs, run a quick metadata check:
+
+1. **Codebase root path** exists on disk
+2. **Codebase root is a git repo** (`<root>/.git` exists)
+3. **Standards path resolves** (if referenced in task docs)
+4. **All task numbers** are sequential and unique
+5. **Task dependency targets** reference existing task files within the `tasks/` directory
+
+Report: "Checkpoint 1: N/5 checks passed." If any check fails, report the specific failure and ask the user how to proceed.
+
+### 8.5 Report
+
+"Materialized N tasks to `plans/<plan-name>/tasks/`. Codebase: <name> at <path>. [Checkpoint 1 results]."
+
+---
+
 ## Anti-Patterns
 
 **Do NOT:**
@@ -436,6 +573,8 @@ Present the plan to the user for review.
 - Order implementation tasks before test tasks
 - Skip the self-review step
 - Suggest moving to implementation — the user controls phase transitions
+- Finalize a plan without materializing tasks — task docs are the execution contract
+- Materialize tasks before the plan is approved and dry-run gaps are fixed
 
 **DO:**
 - Call `gather_task_context` with detailed, planning-focused task descriptions
@@ -445,6 +584,8 @@ Present the plan to the user for review.
 - Order tests before implementation (TDD)
 - Validate the plan against the codebase before presenting to the user
 - Include explicit, actionable constraints — not generic advice
+- Materialize tasks as the final planning step — they embed everything sub-agents need
+- Run Checkpoint 1 after materialization — verify codebase paths and task integrity
 
 ---
 
@@ -462,3 +603,5 @@ Present the plan to the user for review.
 - [ ] **Feature log?** — Did I update `FEATURE_LOG.md` when creating plans or the overview?
 - [ ] **Standards encoded?** — If a codebase standards artifact exists, are applicable standards included as plan constraints with source citations?
 - [ ] **Local state validated?** — Did the self-review include local file checks alongside Driver tool checks?
+- [ ] **Tasks materialized?** — After user approval, are task docs written to `plans/<plan>/tasks/`?
+- [ ] **Post-materialization validated?** — Did Checkpoint 1 pass (codebase root, standards path, task numbering)?

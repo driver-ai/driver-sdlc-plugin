@@ -20,7 +20,10 @@ Running `/feature <name>` scaffolds this structure:
 │   └── NN-topic.md          # Individual research documents
 ├── plans/                   # Implementation plans
 │   ├── 00-overview.md       # Multi-plan overview with dependency graph
-│   └── NN-plan-name.md      # Individual plans with tasks and acceptance criteria
+│   ├── NN-plan-name.md      # Individual plans with tasks and acceptance criteria
+│   └── NN-plan-name/        # Directory named after plan file (sans .md)
+│       └── tasks/           # Materialized task documents
+│           └── NN-task-name.md
 ├── dry-runs/                # Plan validation results
 ├── implementation/          # Implementation logs per plan
 │   └── log-<plan>.md       # Implementation log (flat file per plan)
@@ -60,7 +63,9 @@ updated: "YYYY-MM-DD"
 | Type | Field | Purpose |
 |------|-------|---------|
 | `task` | `plan` | Parent plan name |
+| `task` | `task_number` | Sequential position (integer) |
 | `task` | `depends_on` | List of task paths this task depends on |
+| `task` | `materialized_at` | ISO 8601 timestamp of materialization |
 | `decision` | `topic` | What the decision is about |
 | `decision` | `choice` | What was decided |
 | `deviation` | `severity` | `low`, `medium`, or `high` |

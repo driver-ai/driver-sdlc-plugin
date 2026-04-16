@@ -16,7 +16,10 @@ This repository organizes development work by feature, with each feature contain
 │       ├── FEATURE_LOG.md   # Lifecycle state — the source of truth
 │       ├── research/        # Problem exploration and design decisions
 │       ├── plans/           # Implementation plans
-│       │   └── 00-overview.md  # Multi-plan overview (when needed)
+│       │   ├── 00-overview.md  # Multi-plan overview (when needed)
+│       │   └── NN-plan-name/   # Directory named after plan file (sans .md)
+│       │       └── tasks/      # Materialized task documents
+│       │           └── NN-task-name.md
 │       ├── dry-runs/        # Plan validation results
 │       ├── implementation/  # Implementation logs per plan
 │       ├── assessment/      # Test suite curation results
@@ -59,7 +62,7 @@ updated: "YYYY-MM-DD"
 **Statuses:** `not_started`, `in_progress`, `complete`, `approved`, `accepted`, `pending_review`, `resolved`, `open`, `confirmed`, `unverified`
 
 **Type-specific fields:**
-- `task`: `plan` (parent plan name), `depends_on` (list of task paths)
+- `task`: `plan` (parent plan name), `task_number` (sequential position, integer), `depends_on` (list of task paths), `materialized_at` (ISO 8601 timestamp)
 - `decision`: `topic`, `choice`
 - `deviation`: `severity` (low/medium/high), `task` (source task)
 - `plan`: `depends_on`, `blocks` (for dependency graph resolution)
