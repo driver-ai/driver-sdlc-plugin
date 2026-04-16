@@ -161,44 +161,44 @@ class TestValidationBoundaryHardening(unittest.TestCase):
 
     # --- C3: sdlc-orchestration Validation→Implementation checks ---
 
-    def test_sdlc_orch_validation_task_docs_check(self):
-        """sdlc-orchestration Validation→Implementation has task-docs check with BLOCK."""
+    def test_sdlc_orch_materialization_task_docs_check(self):
+        """sdlc-orchestration Materialization→Implementation has task-doc gate with BLOCK."""
         lines = self.sdlc_orch.splitlines()
         section_start = None
         section_end = None
         for i, line in enumerate(lines):
-            if "Validation" in line and "Implementation" in line and line.startswith("###"):
+            if "Materialization" in line and "Implementation" in line and line.startswith("###"):
                 section_start = i
             elif section_start is not None and line.startswith("### ") and i > section_start:
                 section_end = i
                 break
-        self.assertIsNotNone(section_start, "Validation → Implementation section header not found")
+        self.assertIsNotNone(section_start, "Materialization → Implementation section header not found")
         if section_end is None:
             section_end = len(lines)
         section = "\n".join(lines[section_start:section_end])
-        self.assertIn("task docs", section.lower(), "Task docs check not found in Validation→Implementation")
-        self.assertIn("BLOCK", section, "BLOCK severity not found in Validation→Implementation task docs check")
+        self.assertIn("task doc", section.lower(), "Task doc check not found in Materialization→Implementation")
+        self.assertIn("BLOCK", section, "BLOCK severity not found in Materialization→Implementation task doc check")
 
     def test_sdlc_orch_validation_dryrun_verdict_check(self):
-        """sdlc-orchestration Validation→Implementation has dry-run verdict check with WARN."""
+        """sdlc-orchestration Validation→Materialization has dry-run verdict check with WARN."""
         lines = self.sdlc_orch.splitlines()
         section_start = None
         section_end = None
         for i, line in enumerate(lines):
-            if "Validation" in line and "Implementation" in line and line.startswith("###"):
+            if "Validation" in line and "Materialization" in line and line.startswith("###"):
                 section_start = i
             elif section_start is not None and line.startswith("### ") and i > section_start:
                 section_end = i
                 break
-        self.assertIsNotNone(section_start, "Validation → Implementation section header not found")
+        self.assertIsNotNone(section_start, "Validation → Materialization section header not found")
         if section_end is None:
             section_end = len(lines)
         section = "\n".join(lines[section_start:section_end])
         self.assertTrue(
             "dry-run verdict" in section.lower() or "dry-run" in section.lower(),
-            "Dry-run verdict check not found in Validation→Implementation",
+            "Dry-run verdict check not found in Validation→Materialization",
         )
-        self.assertIn("WARN", section, "WARN severity not found in Validation→Implementation dry-run check")
+        self.assertIn("WARN", section, "WARN severity not found in Validation→Materialization dry-run check")
 
     # --- C4: /docs-artifacts assessment prerequisite ---
 
@@ -244,13 +244,16 @@ class TestBilateralMaterializationGate(unittest.TestCase):
     # --- C1: Planning-side approval gate ---
 
     def test_planning_approval_gate_exists(self):
-        """Planning-guidance SKILL.md contains a ### 8.0 heading (approval gate sub-step)."""
-        self.assertIn("### 8.0", self.planning_guidance)
+        """Planning-guidance Step 7 contains the approval flow."""
+        self.assertIn("## Step 7: Approve", self.planning_guidance)
 
-    def test_planning_dryrun_severity_check(self):
-        """Planning-guidance blocks materialization on HIGH/MEDIUM unfixed gaps."""
+    def test_materialize_tasks_dryrun_severity_check(self):
+        """materialize-tasks blocks materialization on HIGH/MEDIUM unfixed gaps."""
+        materialize_tasks = (
+            PLUGIN_ROOT / "skills" / "materialize-tasks" / "SKILL.md"
+        ).read_text()
         self.assertRegex(
-            self.planning_guidance,
+            materialize_tasks,
             re.compile(r"(HIGH|MEDIUM).*unfixed.*BLOCK|BLOCK.*(HIGH|MEDIUM).*unfixed", re.IGNORECASE),
         )
 
