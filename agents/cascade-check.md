@@ -20,6 +20,10 @@ You will receive:
 - **Overview path** — `plans/00-overview.md` with dependency graph and interface contracts
 - **Downstream plan paths** — plan files that depend on the completed plan
 
+## Design Boundary
+
+This agent does not verify git history or upstream commit existence. Upstream commits are verified by the caller — both implementation-guidance (Step 5.3) and sdlc-orchestration (Review→Bookkeeping) verify commits before spawning this agent. This keeps the cascade-check agent read-only with minimal tool access.
+
 ## Algorithm
 
 ### 1. Extract Deviations

@@ -72,6 +72,8 @@ updated: "YYYY-MM-DD"
 | `deviation` | `task` | Source task that deviated |
 | `plan` | `depends_on` | Plans that must complete first |
 | `plan` | `blocks` | Plans that depend on this one |
+| `plan` | `approved_at` | ISO 8601 UTC timestamp of plan approval |
+| `plan` | `approved_by` | Identity of user who approved the plan |
 
 ---
 

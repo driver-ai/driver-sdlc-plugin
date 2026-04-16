@@ -426,9 +426,33 @@ Present the plan to the user for review.
 
 ## Step 8: Materialize Tasks
 
-After the user approves the plan (and dry-run gaps are fixed), materialize each task as a standalone document. Task docs embed everything a sub-agent needs for atomic, self-contained execution — codebase root, absolute paths, standards, and explicit instructions. The task doc IS the sub-agent's execution contract.
+After plan approval (Step 8.0) and dry-run gap verification (Step 8.0a), materialize each task as a standalone document. Task docs embed everything a sub-agent needs for atomic, self-contained execution — codebase root, absolute paths, standards, and explicit instructions. The task doc IS the sub-agent's execution contract.
 
-**When to run:** After the plan is approved and all dry-run gaps are resolved. This is the final planning step before implementation.
+**When to run:** After the plan has been presented to the user (Step 7) and all dry-run iterations are complete. Steps 8.0 and 8.0a below handle approval and gap verification before materialization proceeds.
+
+### 8.0 Plan Approval
+
+Before materialization, the plan must be explicitly approved by the user. This is a process invariant — it cannot be skipped or inferred.
+
+**Prompt the user:** "Do you approve plan `<plan-name>` for implementation?"
+
+- **If the user approves:** Write the following fields to the plan's YAML frontmatter:
+  - `status: approved`
+  - `approved_at: <ISO 8601 UTC timestamp>` (e.g., `2026-04-16T14:30:00Z`)
+  - `approved_by: <user identity>` — use the `userEmail` setting if available in conversation context, otherwise `"user"`
+- **If the user declines:** List what needs to change. Do not proceed to Step 8.0a or beyond. The user controls when to re-present for approval.
+
+### 8.0a Dry-Run Gap Verification
+
+After approval, verify that outstanding dry-run gaps do not block materialization.
+
+**Find the latest dry-run:** Match dry-run files whose filename begins with the plan's filename stem (without `.md`). For example, for plan `01-bilateral-materialization-gate.md`, match files in `dry-runs/` starting with `01-bilateral-materialization-gate-`. Sort matched files by file modification time (most recent first) — filename-based sorting is unreliable since dry-run files use inconsistent suffixes like `-deep`, `-round4`.
+
+- **If no dry-run files match:** WARN. "No dry-run found for this plan. Consider running `/dry-run-plan` to validate before materializing. Proceed without dry-run verification?"
+- **If files found:** Read the latest. Scan the gap table for rows whose Description column is NOT prefixed with `[FIXED]`. Count unfixed rows by severity:
+  - Any unfixed HIGH or MEDIUM gaps → BLOCK. "N HIGH/MEDIUM gaps remain unfixed in the latest dry-run. Fix these gaps before materializing."
+  - Only unfixed LOW gaps → WARN. "N LOW-severity gaps remain unfixed. These are minor — proceed with materialization?"
+  - All gaps fixed or no gap table → proceed.
 
 ### 8.1 Resolve Codebase Target
 

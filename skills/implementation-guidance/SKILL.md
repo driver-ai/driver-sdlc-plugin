@@ -20,11 +20,11 @@ You are guiding the implementation phase of a feature development lifecycle. Imp
 ### Before Writing Any Code:
 
 1. **Read the specified plan** — the single source of truth
-2. **Read prerequisites** — research docs, Driver context, or materials referenced in the plan's Context or Architecture Fit section
-3. **Extract the Task Breakdown** — find the `## Task Breakdown` section
-4. **Create a task list** — `TaskCreate` for each task in the plan
+2. **Verify task docs exist** — check `plans/<plan>/tasks/` for `.md` files. If missing: BLOCK. "No task docs found. Task documents must be materialized by planning-guidance before implementation can begin."
+3. **Validate task docs match plan** — compare task doc count and task numbers against the plan's `## Task Breakdown` sections. Mismatches: BLOCK with details.
+4. **Read prerequisites** — research docs, Driver context, or materials referenced in the plan's Context or Architecture Fit section
 5. **Pre-flight** — Step 2 runs environment checks before execution begins
-6. **Tell the user** — "I've created N tasks from the plan. Starting with Task 1."
+6. **Tell the user** — "Found N task docs matching the plan. Starting with Task 1."
 
 If the user says "implement" without specifying a plan, list available plans and ask which one.
 
@@ -97,15 +97,16 @@ After completing each task:
 ### Step 1: Read Task Documents
 
 ```
-User specifies plan → Check plans/<plan>/tasks/ → Read all task docs → TaskCreate for each → Read plan for context
+User specifies plan → Check plans/<plan>/tasks/ → Read all task docs → TaskCreate for each → Read plan for context + verify approval
 ```
 
 1. **Check for task docs**: Look for `plans/<plan>/tasks/` directory containing `.md` files
 2. **If task docs exist**: Read each task doc, create `TaskCreate` for each (using `task_number` and `depends_on` from frontmatter). Set up dependencies from `depends_on` fields.
-3. **If no task docs directory, or directory exists but contains zero `.md` files**: Fall back to plan-extraction mode with a WARN: "No materialized task docs found for plan '\<plan\>'. Falling back to plan-extraction mode. Consider re-running planning guidance on this plan to generate materialized tasks for future runs." In plan-extraction mode, extract tasks from the plan's `## Task Breakdown` section (the pre-materialization approach). The fallback still attempts codebase resolution: read `research/00-overview.md` Codebases table and resolve the codebase root path. If resolved, inject a minimal `## Codebase` section (root path + "Change directory to codebase root before starting work") into the sub-agent prompt alongside the old template format. If not resolved (no overview, empty table), use the old template without codebase targeting and log a WARN: "Running in plan-extraction fallback mode — codebase could not be resolved. Sub-agents may target the wrong codebase."
+3. **If no task docs directory, or directory exists but contains zero `.md` files**: BLOCK. "No task docs found at `plans/<plan>/tasks/`. Implementation requires materialized task documents. To proceed: (1) return to planning-guidance, (2) approve the plan, (3) run Step 8 (Materialize Tasks). I cannot start implementation without materialized task docs."
 4. **Check for completed tasks**: If some tasks have `status: complete` in frontmatter, report them and start from the next incomplete task
 5. **Read the plan file** for overall context (Architecture Fit, Constraints) — task docs are for individual task execution
-6. **Detect standards artifact**: Search for `## Standards Source` in the feature's research directory. If found, extract the absolute path from the Standards Source table's Path column. Store this for subagent prompt construction.
+6. **Verify plan approval** — Read the plan file's YAML frontmatter. If `status` is not `approved`: BLOCK. "Plan '\<plan\>' has not been approved for implementation. Return to planning-guidance and approve the plan first." This check is a process invariant — it cannot be overridden.
+7. **Detect standards artifact**: Search for `## Standards Source` in the feature's research directory. If found, extract the absolute path from the Standards Source table's Path column. Store this for subagent prompt construction.
 
 CRITICAL: Task docs are the execution source of truth. The plan provides strategic context only.
 
@@ -132,6 +133,10 @@ Validate the codebase target from task docs' `## Codebase` section.
 - **2.2 Git repository check** — Verify the codebase root is a git repo: `git -C <root> rev-parse --is-inside-work-tree`. If not: WARN.
 - **2.3 Branch check** — Compare `git -C <root> branch --show-current` against the branch in task docs. Mismatch: WARN. Detached HEAD: WARN.
 - **2.4 Uncommitted changes** — Run `git -C <root> status --short`. Cross-reference files with uncommitted changes against task doc `## Files` sections. Overlapping files: WARN per file. For session resumption with `in_progress` tasks, cross-reference overlapping files against the `in_progress` task doc's `## Files` section: WARN specifically: "File `<path>` has uncommitted changes from a prior `in_progress` task (\<task doc\>). These may be partial implementation artifacts. Review or discard before restarting this task."
+- **2.5 Codebase table consistency** — Read `research/00-overview.md` Codebases table. Parsing rules: ignore rows where Local Path is `_TBD_`, empty, whitespace-only, or contains placeholder text (e.g., `_fill in_`). Two comparisons:
+  1. **Task doc vs table**: Compare the task doc's codebase root path against Local Path entries. If a matching codebase name exists but paths differ: BLOCK. "Task docs point to `<task-doc-root>` but Codebases table says `<table-path>`. Task docs may have been materialized from a different clone. Re-materialize from the correct clone."
+  2. **Working directory vs table**: Run `pwd` in the shell to determine the current working directory. Compare against Local Path entries. If paths differ: BLOCK. "Running from `<cwd>` but Codebases table says `<table-path>`. You may be running from a different clone. Switch to the correct clone or update the Codebases table."
+  If Codebases table is missing, empty, or has no matching entry for either comparison: INFO (not blocking — table may not reference this codebase).
 
 #### Phase 3: Staleness Detection
 
@@ -159,7 +164,7 @@ Existing checks, adapted to read from task docs.
 
 #### Check Summary
 
-- **Blocking checks** (8 total): 1.1, 1.2 (plan mismatch), 1.3 (circular deps), 2.1, 3.4, 4.1, 4.3, 4.4 (modify files)
+- **Blocking checks** (9 total): 1.1, 1.2 (plan mismatch), 1.3 (circular deps), 2.1, 2.5, 3.4, 4.1, 4.3, 4.4 (modify files)
 - **Warning checks** (10 total): 2.2, 2.3, 2.4, 3.1, 3.2, 3.3, 4.2, 4.5, 5.1, 5.2
 - **Info checks** (1 total): 1.4
 
@@ -185,6 +190,7 @@ Existing checks, adapted to read from task docs.
 | Targeting | Codebase root | PASS | Path exists, is git repo |
 | Targeting | Branch | PASS | On <branch> |
 | Targeting | Uncommitted changes | WARN | 1 file overlaps |
+| Targeting | Codebase table | PASS | Task doc root and working directory match Codebases entry |
 | Staleness | Age | PASS | < 24 hours |
 | Environment | Tools | PASS | pytest, black found |
 | Environment | Test baseline | PASS | N tests passing |
@@ -315,6 +321,8 @@ If `plans/00-overview.md` exists:
 
 #### 5.3: Cascade Check
 
+**Verify upstream commits:** Before spawning cascade-check, verify upstream plan commits exist in the local git history. Read the implementation log for commit hashes. For each commit listed, run `git -C <codebase-root> rev-parse --verify <hash>^{commit}`. If any commit is not found: WARN. "Upstream commit `<hash>` from `<task>` not found in local git history. This may indicate implementation happened in a different clone. Proceed with cascade-check anyway?"
+
 Spawn the [cascade-check](../../agents/cascade-check.md) agent with:
 - Implementation log path
 - Overview path
@@ -330,12 +338,10 @@ If the agent reports design decisions needed, present each to the user with opti
 git add plans/<plan>.md plans/00-overview.md
 ```
 
-If the `plans/<plan>/tasks/` directory exists, also stage task doc status changes:
+Also stage task doc status changes:
 ```
 git add plans/<plan>/tasks/*.md
 ```
-
-In fallback mode (no task docs), omit the tasks glob — `git add` with a glob matching nothing returns a fatal error.
 
 ```
 git commit -m "chore: Update plan status and overview for plan <name>"
