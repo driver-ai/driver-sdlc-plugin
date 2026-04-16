@@ -2,14 +2,6 @@
 
 A Claude Code plugin that guides structured feature development through a full software development lifecycle. Features move through Research, Planning, Validation, Implementation, Review, and Handoff phases -- each supported by specialized skills, commands, and agents that keep work organized, traceable, and thorough.
 
-> **Note:** This plugin orchestrates many tools, agents, and file operations across its lifecycle phases. For the best experience, run Claude Code with `--permission-mode auto`, which approves routine tool calls automatically while still flagging unusual operations:
->
-> ```bash
-> claude --permission-mode auto
-> ```
->
-> See the [Claude Code permissions documentation](https://docs.anthropic.com/en/docs/claude-code/security) for details on permission modes.
-
 ## Prerequisites
 
 - [Claude Code](https://docs.anthropic.com/en/docs/claude-code) installed and configured
@@ -38,6 +30,14 @@ claude --plugin-dir /path/to/driver-sdlc-plugin --permission-mode auto
 ```
 
 ## Getting Started
+
+> **Note:** This plugin orchestrates many tools, agents, and file operations across its lifecycle phases. For the best experience, run Claude Code with `--permission-mode auto`, which approves routine tool calls automatically while still flagging unusual operations:
+>
+> ```bash
+> claude --permission-mode auto
+> ```
+>
+> See the [Claude Code permissions documentation](https://docs.anthropic.com/en/docs/claude-code/security) for details on permission modes.
 
 After installing the plugin, run `/setup` to configure your projects directory. It handles everything: creating the directory structure, generating CLAUDE.md, configuring the Driver MCP server, and verifying connectivity.
 
