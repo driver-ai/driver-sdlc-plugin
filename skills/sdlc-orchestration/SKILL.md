@@ -73,8 +73,9 @@ When a plan is written:
 
 ### Validation → Implementation
 When the user wants to implement:
-- Check if a dry-run exists for the plan. If not, note: "No dry-run found for this plan."
-- The user decides whether to proceed without one
+- **Task docs check** — Verify `plans/<plan>/tasks/` exists and contains `.md` files. If missing: BLOCK. "No task docs found. Return to planning-guidance to approve and materialize tasks before implementation."
+- **Dry-run verdict check** — Read the latest `dry-runs/<plan>-*.md` (sort by filename descending — ISO dates in filenames give chronological order). Check the Verdict section. If "Needs plan updates first": WARN. "Dry-run verdict is not 'Ready for implementation'. Proceed anyway?" If no dry-run found: note "No dry-run found for this plan" (informational, not blocking).
+- The user decides whether to proceed with warnings
 
 ### Implementation → Review Deviations
 When implementation-guidance reports all tasks complete:
@@ -88,6 +89,7 @@ When implementation-guidance reports all tasks complete:
 After the user approves deviations, execute all bookkeeping steps automatically without pausing:
 - Update plan status header (mark checkboxes, add Implementation Status)
 - Update overview progress table
+- Verify upstream plan commits — read the implementation log for commit hashes. For each, verify the commit exists locally via `git rev-parse --verify <hash>^{commit}`. If missing: WARN. "Commit `<hash>` not found in local git history — cascade-check results may be unreliable. Proceed?"
 - Spawn [cascade-check](../../agents/cascade-check.md) agent to analyze whether deviations affect downstream plans
 - Present cascade results to user (pause only if design-impact decisions are flagged)
 - Commit bookkeeping: `"chore: Update plan status and overview for plan <name>"`

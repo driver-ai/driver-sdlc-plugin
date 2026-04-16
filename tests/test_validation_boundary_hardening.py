@@ -23,6 +23,7 @@ class TestValidationBoundaryHardening(unittest.TestCase):
     impl_guidance: str
     sdlc_orch: str
     cascade_check: str
+    docs_artifacts: str
 
     @classmethod
     def setUpClass(cls):
@@ -34,6 +35,9 @@ class TestValidationBoundaryHardening(unittest.TestCase):
         ).read_text()
         cls.cascade_check = (
             PLUGIN_ROOT / "agents" / "cascade-check.md"
+        ).read_text()
+        cls.docs_artifacts = (
+            PLUGIN_ROOT / "commands" / "docs-artifacts.md"
         ).read_text()
 
     # --- Pre-flight check 2.5 ---
@@ -60,7 +64,7 @@ class TestValidationBoundaryHardening(unittest.TestCase):
 
     def test_preflight_blocking_count_updated(self):
         """Check summary lists 9 blocking checks including 2.5."""
-        match = re.search(r"Blocking checks.*\(9 total\)", self.impl_guidance)
+        match = re.search(r".*Blocking checks.*\(9 total\).*", self.impl_guidance)
         self.assertIsNotNone(
             match, "Blocking checks line with (9 total) not found"
         )
@@ -154,6 +158,67 @@ class TestValidationBoundaryHardening(unittest.TestCase):
             or "does not verify git history" in self.cascade_check,
             "Design boundary note not found in cascade-check.md",
         )
+
+    # --- C3: sdlc-orchestration Validation→Implementation checks ---
+
+    def test_sdlc_orch_validation_task_docs_check(self):
+        """sdlc-orchestration Validation→Implementation has task-docs check with BLOCK."""
+        lines = self.sdlc_orch.splitlines()
+        section_start = None
+        section_end = None
+        for i, line in enumerate(lines):
+            if "Validation" in line and "Implementation" in line and line.startswith("###"):
+                section_start = i
+            elif section_start is not None and line.startswith("### ") and i > section_start:
+                section_end = i
+                break
+        self.assertIsNotNone(section_start, "Validation → Implementation section header not found")
+        if section_end is None:
+            section_end = len(lines)
+        section = "\n".join(lines[section_start:section_end])
+        self.assertIn("task docs", section.lower(), "Task docs check not found in Validation→Implementation")
+        self.assertIn("BLOCK", section, "BLOCK severity not found in Validation→Implementation task docs check")
+
+    def test_sdlc_orch_validation_dryrun_verdict_check(self):
+        """sdlc-orchestration Validation→Implementation has dry-run verdict check with WARN."""
+        lines = self.sdlc_orch.splitlines()
+        section_start = None
+        section_end = None
+        for i, line in enumerate(lines):
+            if "Validation" in line and "Implementation" in line and line.startswith("###"):
+                section_start = i
+            elif section_start is not None and line.startswith("### ") and i > section_start:
+                section_end = i
+                break
+        self.assertIsNotNone(section_start, "Validation → Implementation section header not found")
+        if section_end is None:
+            section_end = len(lines)
+        section = "\n".join(lines[section_start:section_end])
+        self.assertTrue(
+            "dry-run verdict" in section.lower() or "dry-run" in section.lower(),
+            "Dry-run verdict check not found in Validation→Implementation",
+        )
+        self.assertIn("WARN", section, "WARN severity not found in Validation→Implementation dry-run check")
+
+    # --- C4: /docs-artifacts assessment prerequisite ---
+
+    def test_docs_artifacts_assessment_prerequisite(self):
+        """docs-artifacts.md Step 2 contains assessment check referencing test-curation."""
+        lines = self.docs_artifacts.splitlines()
+        step2_start = None
+        step3_start = None
+        for i, line in enumerate(lines):
+            if "Step 2" in line and line.startswith("###"):
+                step2_start = i
+            elif step2_start is not None and line.startswith("### ") and i > step2_start:
+                step3_start = i
+                break
+        self.assertIsNotNone(step2_start, "Step 2 header not found in docs-artifacts")
+        if step3_start is None:
+            step3_start = len(lines)
+        section = "\n".join(lines[step2_start:step3_start])
+        self.assertIn("assessment", section.lower(), "Assessment check not found in Step 2")
+        self.assertIn("test-curation", section, "test-curation reference not found in Step 2")
 
 
 class TestBilateralMaterializationGate(unittest.TestCase):
