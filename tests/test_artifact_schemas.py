@@ -36,7 +36,7 @@ def _parse_artifact_frontmatter(path: Path) -> dict:
 ALLOWED_TYPES = {
     "research", "plan", "task", "implementation_log", "feature_log",
     "decision", "deviation", "learning", "test_plan", "test_result",
-    "assessment", "open_question",
+    "assessment", "open_question", "dry_run",
 }
 
 ALLOWED_STATUSES = {
@@ -45,6 +45,7 @@ ALLOWED_STATUSES = {
 }
 
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+TIMESTAMP_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}")
 
 # ---------------------------------------------------------------------------
 # Discover feature projects once at module level
@@ -76,6 +77,20 @@ def _collect_decision_docs():
             continue
         for md in decisions_dir.glob("*.md"):
             docs.append(md)
+    return docs
+
+
+def _collect_task_docs():
+    """Return task docs (plans/*/tasks/*.md) across all feature projects."""
+    docs = []
+    for proj in _FEATURE_PROJECTS:
+        plans_dir = proj / "plans"
+        if not plans_dir.is_dir():
+            continue
+        for tasks_dir in plans_dir.glob("*/tasks"):
+            if tasks_dir.is_dir():
+                for md in sorted(tasks_dir.glob("[0-9][0-9]-*.md")):
+                    docs.append(md)
     return docs
 
 
@@ -221,6 +236,25 @@ class TestArtifactSchemas(unittest.TestCase):
         if tested == 0:
             warnings.warn("No artifacts with date fields found; none validated")
 
+    def test_materialized_at_timestamp_format(self):
+        """Any artifact with materialized_at field must match ISO 8601 timestamp format."""
+        docs = _collect_all_artifacts()
+        self.assertTrue(docs, "No artifacts found to test")
+        tested = 0
+        for doc in docs:
+            with self.subTest(doc=str(doc)):
+                fm = _parse_artifact_frontmatter(doc)
+                if not fm:
+                    continue
+                if "materialized_at" not in fm:
+                    continue
+                tested += 1
+                value = _strip_quotes(fm["materialized_at"])
+                self.assertTrue(TIMESTAMP_RE.match(value),
+                    f"{doc.name} materialized_at='{value}' does not match ISO 8601 timestamp")
+        if tested == 0:
+            warnings.warn("No artifacts with materialized_at field found; none validated")
+
 
 # ---------------------------------------------------------------------------
 # Structural section validation
@@ -278,6 +312,24 @@ class TestStructuralSections(unittest.TestCase):
                 missing = required - sections
                 self.assertFalse(missing,
                     f"{project.name} research/00-overview.md missing sections: {missing}")
+
+    def test_task_doc_sections(self):
+        """Task docs must have required H2 sections."""
+        # NOTE: This test is meaningful only after Plan 01 materializes task docs.
+        # Until then, it skips gracefully.
+        # Tests and Code Quality Standards are conditional (omitted when no test strategy
+        # or standards artifact). Constraints and Context are always present per the
+        # task doc template.
+        required = {"Codebase", "Goal", "Files", "Constraints", "Context", "Instructions"}
+        docs = _collect_task_docs()
+        if not docs:
+            self.skipTest("No task docs found")
+        for doc in docs:
+            with self.subTest(doc=str(doc)):
+                sections = set(get_md_sections(doc))
+                missing = required - sections
+                self.assertFalse(missing,
+                    f"{doc.name} missing required sections: {missing}")
 
     def test_plan_doc_sections(self):
         """Plan docs (01-*.md, 02-*.md, etc.) have required H2 sections."""

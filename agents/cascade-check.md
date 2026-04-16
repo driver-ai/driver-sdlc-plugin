@@ -63,7 +63,30 @@ For informational cascades, write a new entry in the overview's "Gaps to Address
 
 Number sequentially after existing entries.
 
-### 6. Return Results
+### 6. Check Task Doc Staleness
+
+For each downstream plan identified in step 2:
+
+1. **Check if task docs exist**: Use `Glob` to find `plans/<plan-name>/tasks/*.md` (where `<plan-name>` is the plan filename without `.md`). If no task docs exist, skip this plan — it hasn't been materialized yet.
+
+2. **If task docs exist**, read `materialized_at` from each task doc's frontmatter.
+
+3. **Read the downstream plan's `updated` frontmatter field** (YYYY-MM-DD date). If no `updated` field, fall back to `created`.
+
+4. **Compare dates**: Extract the date portion from `materialized_at` (characters before the `T` separator, giving `YYYY-MM-DD`). Compare against the plan's `updated` value:
+   - **Task doc date is before plan's `updated` date**: Task doc is stale — the plan was revised after materialization.
+   - **Same day**: Inconclusive. Check whether step 4 identified design-impact deviations affecting this downstream plan. If yes, flag as stale (the cascade just triggered the revision). If no design-impact cascades affect this plan, treat as fresh.
+   - **Task doc date is after or equal to plan's `updated` date**: Fresh — no action needed.
+
+5. **Identify stale incomplete tasks**: For each stale plan, find task docs where `status` is NOT `complete`. These need re-materialization.
+
+6. **Report stale tasks**: List each stale incomplete task doc with its status and `materialized_at` timestamp.
+
+**CRITICAL: Re-materialization boundary.** The cascade-check agent **reports the need only** — it does NOT write new task docs and CANNOT invoke other skills (no Agent tool available). The user must manually trigger re-materialization by re-running planning guidance on the affected plan (e.g., "re-materialize tasks for plan \<name\>"). Include this instruction in the return format.
+
+If no downstream plans have task docs, skip this step entirely.
+
+### 7. Return Results
 
 Return a structured summary:
 
@@ -83,8 +106,17 @@ Return a structured summary:
 ### Gaps Added to Overview
 - <title> — affects <plan>
 
+### Task Re-Materialization Needed
+- Plan <name>: N incomplete tasks need re-materialization (task docs stale after plan revision)
+  - tasks/01-foo.md (status: not_started, materialized_at: <timestamp>)
+  - tasks/03-bar.md (status: in_progress, materialized_at: <timestamp>)
+  - **Action required by user:** re-run planning guidance on plan <name> to re-materialize N stale task docs. The cascade-check agent cannot perform this automatically.
+
+Or if no re-materialization needed:
+- None — no downstream plans were revised, or all task docs are current.
+
 ### Summary
-<"No cascading needed" or "N informational cascades added, M design decisions need user input">
+<"No cascading needed" or "N informational cascades added, M design decisions need user input, K task docs need re-materialization" (or "no re-materialization needed")>
 ```
 
 ## Worked Example
