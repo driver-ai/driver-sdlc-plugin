@@ -455,6 +455,15 @@ Tell the user what you found:
 
 Update the plan to address any discrepancies before the user reviews it.
 
+### Data Structures & Callables Self-Review
+
+After drafting, verify:
+
+1. **Rollup exists** — the plan has a `## Data Structures & Callables` section with Added / Modified / Removed sub-sections (empty sub-sections are fine; absent section is not).
+2. **Rollup↔snippet consistency** — every row in Added and Modified has a corresponding inline snippet (`#### Snippet:`) inside its Owning Task. Every inline snippet has a matching rollup row. No orphans in either direction.
+3. **Signature drift on modified items** — for each Modified row, use `get_file_documentation` on the target file and verify the snippet signature matches the current codebase signature. If drifted, update the plan to match reality, OR mark the signature change as intentional in the Constraints section (breaking change).
+4. **Collision check on added items** — for each Added row, verify the name does not already exist in the target file (`get_file_documentation`).
+
 ---
 
 ## Step 7: Approve
