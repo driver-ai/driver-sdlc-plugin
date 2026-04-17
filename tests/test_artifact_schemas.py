@@ -340,7 +340,14 @@ class TestStructuralSections(unittest.TestCase):
 
     def test_plan_doc_sections(self):
         """Plan docs (01-*.md, 02-*.md, etc.) have required H2 sections."""
-        required = {"Context", "Acceptance Criteria", "Test Strategy", "Task Breakdown"}
+        required = {
+            "Context",
+            "Architecture Fit",
+            "Data Structures & Callables",
+            "Acceptance Criteria",
+            "Test Strategy",
+            "Task Breakdown",
+        }
         tested = 0
         active_projects = [p for p in _FEATURE_PROJECTS if is_active_feature(p)]
         for project in active_projects:
