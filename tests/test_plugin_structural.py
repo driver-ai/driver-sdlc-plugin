@@ -299,6 +299,8 @@ class TestCommandQualification(unittest.TestCase):
         re.compile(r'feature_log'),
         re.compile(r'\btype:\s'),
         re.compile(r'branch\s*[:=]'),
+        re.compile(r'[Bb]ackward\s+compat'),
+        re.compile(r'/drvr:'),
     ]
 
     @classmethod

@@ -10,7 +10,7 @@ import unittest
 import warnings
 from pathlib import Path
 
-from conftest import discover_feature_projects, get_md_body, get_md_sections, parse_frontmatter
+from conftest import discover_feature_projects, get_md_body, get_md_sections, is_active_feature, parse_frontmatter
 
 
 def _has_real_frontmatter(path: Path) -> bool:
@@ -42,6 +42,7 @@ ALLOWED_TYPES = {
 ALLOWED_STATUSES = {
     "not_started", "in_progress", "complete", "approved", "accepted",
     "pending_review", "resolved", "open", "confirmed", "unverified",
+    "invalidated",
 }
 
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
@@ -324,6 +325,12 @@ class TestStructuralSections(unittest.TestCase):
         docs = _collect_task_docs()
         if not docs:
             self.skipTest("No task docs found")
+        # Filter to only task docs from active features.
+        # Task doc path: features/<name>/plans/<plan>/tasks/<task>.md
+        # Feature root is 4 levels up from the task doc.
+        docs = [d for d in docs if is_active_feature(d.parent.parent.parent.parent)]
+        if not docs:
+            self.skipTest("No task docs from active features found")
         for doc in docs:
             with self.subTest(doc=str(doc)):
                 sections = set(get_md_sections(doc))
@@ -335,7 +342,8 @@ class TestStructuralSections(unittest.TestCase):
         """Plan docs (01-*.md, 02-*.md, etc.) have required H2 sections."""
         required = {"Context", "Acceptance Criteria", "Test Strategy", "Task Breakdown"}
         tested = 0
-        for project in _FEATURE_PROJECTS:
+        active_projects = [p for p in _FEATURE_PROJECTS if is_active_feature(p)]
+        for project in active_projects:
             plans_dir = project / "plans"
             if not plans_dir.is_dir():
                 continue
@@ -354,7 +362,8 @@ class TestStructuralSections(unittest.TestCase):
         """plans/00-overview.md has required H2 sections and a Progress table."""
         required = {"Planning Strategy", "Dependency Graph", "Interface Contracts Between Plans"}
         tested = 0
-        for project in _FEATURE_PROJECTS:
+        active_projects = [p for p in _FEATURE_PROJECTS if is_active_feature(p)]
+        for project in active_projects:
             with self.subTest(project=project.name):
                 overview = project / "plans" / "00-overview.md"
                 if not overview.exists():

@@ -16,6 +16,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -28,18 +29,19 @@ def _unique_sid(label):
     return f"friction-{label}-{os.getpid()}"
 
 
-def _write_config(friction_tracking: bool) -> Path:
-    """Write a config.local.json in the plugin root. Returns path."""
-    config_path = PLUGIN_ROOT / "config.local.json"
-    config_path.write_text(json.dumps({"friction_tracking": friction_tracking}))
-    return config_path
+def _setup_test_home(friction_tracking: bool) -> str:
+    """Create isolated HOME with config for hook testing."""
+    tmp = tempfile.mkdtemp(prefix="driver-test-")
+    driver_dir = Path(tmp) / ".driver"
+    driver_dir.mkdir()
+    (driver_dir / "config.json").write_text(json.dumps({"friction_tracking": friction_tracking}))
+    return tmp
 
 
-def _cleanup_config():
-    """Remove config.local.json if it exists."""
-    config_path = PLUGIN_ROOT / "config.local.json"
-    if config_path.exists():
-        config_path.unlink()
+def _cleanup_test_home(test_home):
+    """Remove isolated test HOME directory."""
+    if test_home and Path(test_home).exists():
+        shutil.rmtree(test_home)
 
 
 def _cleanup_tmp(session_id):
@@ -54,7 +56,7 @@ def _cleanup_tmp(session_id):
             p.unlink()
 
 
-def run_track_skill_load(skill_name, session_id):
+def run_track_skill_load(skill_name, session_id, env=None):
     """Run track-skill-load.sh with crafted Skill tool JSON."""
     input_data = json.dumps({
         "tool_name": "Skill",
@@ -64,11 +66,12 @@ def run_track_skill_load(skill_name, session_id):
     result = subprocess.run(
         ["bash", str(HOOKS_DIR / "track-skill-load.sh")],
         input=input_data, capture_output=True, text=True, timeout=10,
+        env=env,
     )
     return result.returncode, result.stdout, result.stderr
 
 
-def run_laziness_detector(tool_name, tool_input, session_id=None):
+def run_laziness_detector(tool_name, tool_input, session_id=None, env=None):
     """Run laziness-detector.py with crafted JSON stdin."""
     input_data = {
         "tool_name": tool_name,
@@ -79,6 +82,7 @@ def run_laziness_detector(tool_name, tool_input, session_id=None):
     result = subprocess.run(
         [sys.executable, str(HOOKS_DIR / "laziness-detector.py")],
         input=json.dumps(input_data), capture_output=True, text=True, timeout=10,
+        env=env,
     )
     parsed = None
     if result.stdout.strip():
@@ -98,7 +102,6 @@ class TestPhaseTracking(unittest.TestCase):
 
     def tearDown(self):
         _cleanup_tmp(self.sid)
-        _cleanup_config()
 
     @unittest.skipIf(shutil.which("jq") is None, "jq not installed")
     def test_research_guidance_sets_research_phase(self):
@@ -106,6 +109,14 @@ class TestPhaseTracking(unittest.TestCase):
         self.assertEqual(rc, 0)
         phase_file = Path(f"/tmp/driver-phase-{self.sid}.txt")
         self.assertTrue(phase_file.exists(), "Phase file should be created")
+        self.assertEqual(phase_file.read_text().strip(), "Research")
+
+    @unittest.skipIf(shutil.which("jq") is None, "jq not installed")
+    def test_qualified_skill_sets_phase(self):
+        rc, _, _ = run_track_skill_load("drvr:research-guidance", self.sid)
+        self.assertEqual(rc, 0)
+        phase_file = Path(f"/tmp/driver-phase-{self.sid}.txt")
+        self.assertTrue(phase_file.exists(), "Phase file should be created for qualified skill name")
         self.assertEqual(phase_file.read_text().strip(), "Research")
 
 
@@ -119,13 +130,19 @@ class TestPhaseMapping(unittest.TestCase):
         "sdlc-orchestration": "Orchestration",
     }
 
+    QUALIFIED_EXPECTED = {
+        "drvr:research-guidance": "Research",
+        "drvr:planning-guidance": "Planning",
+        "drvr:implementation-guidance": "Implementation",
+        "drvr:sdlc-orchestration": "Orchestration",
+    }
+
     def setUp(self):
         self._sids = []
 
     def tearDown(self):
         for sid in self._sids:
             _cleanup_tmp(sid)
-        _cleanup_config()
 
     def _sid(self, label):
         sid = _unique_sid(f"phase-map-{label}")
@@ -152,6 +169,26 @@ class TestPhaseMapping(unittest.TestCase):
         self.assertFalse(phase_file.exists(),
                          "Phase file should NOT be created for unknown skill")
 
+    @unittest.skipIf(shutil.which("jq") is None, "jq not installed")
+    def test_all_qualified_skill_phase_mappings(self):
+        for skill, expected_phase in self.QUALIFIED_EXPECTED.items():
+            sid = self._sid(skill)
+            rc, _, _ = run_track_skill_load(skill, sid)
+            self.assertEqual(rc, 0)
+            phase_file = Path(f"/tmp/driver-phase-{sid}.txt")
+            self.assertTrue(phase_file.exists(), f"Phase file missing for {skill}")
+            self.assertEqual(phase_file.read_text().strip(), expected_phase,
+                             f"Wrong phase for {skill}")
+
+    @unittest.skipIf(shutil.which("jq") is None, "jq not installed")
+    def test_old_prefix_still_works(self):
+        sid = self._sid("old-prefix")
+        rc, _, _ = run_track_skill_load("driver-sdlc-plugin:research-guidance", sid)
+        self.assertEqual(rc, 0)
+        phase_file = Path(f"/tmp/driver-phase-{sid}.txt")
+        self.assertTrue(phase_file.exists(), "Phase file should be created for old prefix")
+        self.assertEqual(phase_file.read_text().strip(), "Research")
+
 
 class TestFrictionLog(unittest.TestCase):
     """With friction_tracking: true, verify JSONL friction log."""
@@ -159,15 +196,16 @@ class TestFrictionLog(unittest.TestCase):
     def setUp(self):
         self.sid = _unique_sid("friction-log")
         _cleanup_tmp(self.sid)
-        _write_config(True)
+        self.test_home = _setup_test_home(True)
+        self.env = {**os.environ, "HOME": self.test_home}
 
     def tearDown(self):
         _cleanup_tmp(self.sid)
-        _cleanup_config()
+        _cleanup_test_home(self.test_home)
 
     @unittest.skipIf(shutil.which("jq") is None, "jq not installed")
     def test_skill_load_creates_friction_event(self):
-        rc, _, _ = run_track_skill_load("research-guidance", self.sid)
+        rc, _, _ = run_track_skill_load("research-guidance", self.sid, env=self.env)
         self.assertEqual(rc, 0)
         log_file = Path(f"/tmp/driver-friction-{self.sid}.log")
         self.assertTrue(log_file.exists(), "Friction log should be created")
@@ -186,15 +224,16 @@ class TestFrictionDisabled(unittest.TestCase):
     def setUp(self):
         self.sid = _unique_sid("friction-disabled")
         _cleanup_tmp(self.sid)
-        _write_config(False)
+        self.test_home = _setup_test_home(False)
+        self.env = {**os.environ, "HOME": self.test_home}
 
     def tearDown(self):
         _cleanup_tmp(self.sid)
-        _cleanup_config()
+        _cleanup_test_home(self.test_home)
 
     @unittest.skipIf(shutil.which("jq") is None, "jq not installed")
     def test_no_friction_log_when_disabled(self):
-        rc, _, _ = run_track_skill_load("research-guidance", self.sid)
+        rc, _, _ = run_track_skill_load("research-guidance", self.sid, env=self.env)
         self.assertEqual(rc, 0)
         log_file = Path(f"/tmp/driver-friction-{self.sid}.log")
         self.assertFalse(log_file.exists(),
@@ -207,11 +246,12 @@ class TestWrongPathDetection(unittest.TestCase):
     def setUp(self):
         self.sid = _unique_sid("wrong-path")
         _cleanup_tmp(self.sid)
-        _write_config(True)
+        self.test_home = _setup_test_home(True)
+        self.env = {**os.environ, "HOME": self.test_home}
 
     def tearDown(self):
         _cleanup_tmp(self.sid)
-        _cleanup_config()
+        _cleanup_test_home(self.test_home)
 
     def test_edit_nonexistent_file_logs_wrong_path(self):
         rc, _, _ = run_laziness_detector(
@@ -219,6 +259,7 @@ class TestWrongPathDetection(unittest.TestCase):
             {"file_path": "/tmp/does-not-exist-ever-12345.py",
              "new_string": "def real_code():\n    return 42\n"},
             session_id=self.sid,
+            env=self.env,
         )
         self.assertEqual(rc, 0)
         log_file = Path(f"/tmp/driver-friction-{self.sid}.log")
@@ -234,17 +275,19 @@ class TestLazinessAsFriction(unittest.TestCase):
     def setUp(self):
         self.sid = _unique_sid("laziness-friction")
         _cleanup_tmp(self.sid)
-        _write_config(True)
+        self.test_home = _setup_test_home(True)
+        self.env = {**os.environ, "HOME": self.test_home}
 
     def tearDown(self):
         _cleanup_tmp(self.sid)
-        _cleanup_config()
+        _cleanup_test_home(self.test_home)
 
     def test_laziness_block_logs_friction(self):
         rc, stdout, parsed = run_laziness_detector(
             "Write",
             {"file_path": "src/app.py", "content": "# TODO: implement\n"},
             session_id=self.sid,
+            env=self.env,
         )
         self.assertEqual(rc, 0)
         # Should still block
@@ -267,7 +310,6 @@ class TestBackwardCompatibility(unittest.TestCase):
 
     def tearDown(self):
         _cleanup_tmp(self.sid)
-        _cleanup_config()
 
     @unittest.skipIf(shutil.which("jq") is None, "jq not installed")
     def test_skills_file_still_written(self):
