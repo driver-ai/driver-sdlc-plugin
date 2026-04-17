@@ -353,7 +353,7 @@ Use the overview's progress table and dependency graph to identify the next unbl
 - "Next unblocked plan is X. It has [a plan document / no plan document yet]."
 - Multiple unblocked: "Two plans are unblocked: X and Y."
 - None unblocked: "All dependencies for remaining plans are not yet complete."
-- All complete: "All plans complete. Run `/assess` to curate the test suite before handoff."
+- All complete: "All plans complete. Run `/drvr:assess` to curate the test suite before handoff."
 
 This is informational — the user decides what to do.
 
@@ -540,7 +540,7 @@ Task docs are the persistent source of truth for task state. The implementation 
 - Do simple tasks directly, spawn subagents for complex ones
 - Write to the implementation log as you go
 - Run Step 5 bookkeeping after all tasks complete
-- Keep scaffolding tests intact — curation happens post-implementation via `/assess`
+- Keep scaffolding tests intact — curation happens post-implementation via `/drvr:assess`
 - Suggest next unblocked plan (informational only)
 - Include codebase standards in subagent prompts when available — the subagent is the actor writing code and must know the quality bar
 
@@ -548,11 +548,11 @@ Task docs are the persistent source of truth for task state. The implementation 
 
 ## Related
 
-- Previous phase: [planning-guidance](../planning-guidance/SKILL.md) → [/dry-run-plan](../../commands/dry-run-plan.md)
+- Previous phase: [planning-guidance](../planning-guidance/SKILL.md) → [/drvr:dry-run-plan](../../commands/dry-run-plan.md)
 - Context gathering: [driver-task-context](../../agents/driver-task-context.md)
 - Cascade check: [cascade-check](../../agents/cascade-check.md)
 - After completion: [sdlc-orchestration](../sdlc-orchestration/SKILL.md)
-- Handoff: [/docs-artifacts](../../commands/docs-artifacts.md)
+- Handoff: [/drvr:docs-artifacts](../../commands/docs-artifacts.md)
 
 ---
 

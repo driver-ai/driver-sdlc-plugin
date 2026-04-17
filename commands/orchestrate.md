@@ -4,7 +4,7 @@ argument-hint: <feature-path>
 allowed-tools: Read, Write, Edit, Glob, Grep, Agent
 ---
 
-# /orchestrate Command
+# /drvr:orchestrate Command
 
 Resume work on an existing feature project.
 

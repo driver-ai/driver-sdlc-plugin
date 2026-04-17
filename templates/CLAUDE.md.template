@@ -1,6 +1,6 @@
 # {{TEAM_NAME}} — SDLC Project Instructions
 
-This repository organizes development work by feature, with each feature containing its own lifecycle of artifacts. It is managed by the [Driver SDLC Plugin](https://github.com/driver-ai/driver-sdlc-plugin) for Claude Code.
+This repository organizes development work by feature, with each feature containing its own lifecycle of artifacts. It is managed by the [Driver SDLC Plugin (drvr)](https://github.com/driver-ai/driver-sdlc-plugin) for Claude Code.
 
 ---
 
@@ -30,16 +30,16 @@ This repository organizes development work by feature, with each feature contain
 
 | Folder | Purpose | When Created |
 |--------|---------|-------------|
-| `FEATURE_LOG.md` | Source of truth for lifecycle state | `/feature` scaffolding |
-| `research/` | Problem statements, explorations, trade-off analysis | `/feature` scaffolding |
+| `FEATURE_LOG.md` | Source of truth for lifecycle state | `/drvr:feature` scaffolding |
+| `research/` | Problem statements, explorations, trade-off analysis | `/drvr:feature` scaffolding |
 | `plans/` | Implementation plans with concrete steps | Planning phase |
-| `dry-runs/` | Plan validation results with gap analysis | `/dry-run-plan` |
+| `dry-runs/` | Plan validation results with gap analysis | `/drvr:dry-run-plan` |
 | `implementation/` | Implementation logs tracking deviations per plan | Implementation phase |
-| `assessment/` | Test suite curation results | `/assess` |
+| `assessment/` | Test suite curation results | `/drvr:assess` |
 | `tests/` | Markdown test plans executed by LLM agents | When manual testing is needed |
-| `driver-docs/` | Handoff documentation | `/docs-artifacts` |
+| `driver-docs/` | Handoff documentation | `/drvr:docs-artifacts` |
 
-Use `/feature <name>` to scaffold a new feature project. Use `/orchestrate <feature-path>` to resume an existing feature.
+Use `/drvr:feature <name>` to scaffold a new feature project. Use `/drvr:orchestrate <feature-path>` to resume an existing feature.
 
 ---
 
@@ -74,12 +74,12 @@ updated: "YYYY-MM-DD"
 Features follow a phased development lifecycle. Each phase has a dedicated skill that provides guidance.
 
 ```
-/feature -> Research -> Planning -> Validation -> Materialization -> Implementation -> Review -> Bookkeeping -> Next Plan -> ...
-                                                                                                                      |
-                                                                                                         All plans complete
-                                                                                                                      |
-                                                                                                                      v
-                                                                                                 /assess -> /docs-artifacts -> Handoff
+/drvr:feature -> Research -> Planning -> Validation -> Materialization -> Implementation -> Review -> Bookkeeping -> Next Plan -> ...
+                                                                                                                            |
+                                                                                                               All plans complete
+                                                                                                                            |
+                                                                                                                            v
+                                                                                                      /drvr:assess -> /drvr:docs-artifacts -> Handoff
 ```
 
 ### Phase -> Skill Mapping
@@ -88,13 +88,13 @@ Features follow a phased development lifecycle. Each phase has a dedicated skill
 |-------|----------------|-------------|
 | Research | `research-guidance` | Why-What-How methodology, document organization, completion criteria |
 | Planning | `planning-guidance` | TDD-first task design, test strategy, architecture fit, task breakdown |
-| Validation | `/dry-run-plan` | Walk through plan as-if implementing, severity-classified gaps |
+| Validation | `/drvr:dry-run-plan` | Walk through plan as-if implementing, severity-classified gaps |
 | Materialization | `materialize-tasks` | Convert plan tasks into standalone task docs for sub-agent execution |
 | Implementation | `implementation-guidance` | Plan-driven task execution, deviation tracking, commit discipline |
 | Review | `sdlc-orchestration` | Present deviations for user approval before bookkeeping |
 | Bookkeeping | `implementation-guidance` | Update plan status, overview, cascade check |
-| Assessment | `/assess` | Curate test suite — categorize, prune scaffolding, promote valuable tests |
-| Handoff | `/docs-artifacts` | Generate feature-overview, architecture, testing-guide, risk-assessment |
+| Assessment | `/drvr:assess` | Curate test suite — categorize, prune scaffolding, promote valuable tests |
+| Handoff | `/drvr:docs-artifacts` | Generate feature-overview, architecture, testing-guide, risk-assessment |
 
 ### Key Principles
 
@@ -109,13 +109,13 @@ Features follow a phased development lifecycle. Each phase has a dedicated skill
 
 | Command | Purpose |
 |---------|---------|
-| `/setup` | Set up this projects directory (first-time configuration) |
-| `/feature <name>` | Scaffold a new feature project with FEATURE_LOG.md |
-| `/orchestrate <path>` | Resume a feature — read log, report state, suggest next action |
-| `/dry-run-plan <plan>` | Walk through a plan to identify gaps before implementation |
-| `/assess` | Curate test suite after implementation — categorize, prune, promote |
-| `/docs-artifacts` | Generate handoff documentation for code review |
-| `/retro` | Evaluate session quality, patterns, and improvements |
+| `/drvr:setup` | Set up this projects directory (first-time configuration) |
+| `/drvr:feature <name>` | Scaffold a new feature project with FEATURE_LOG.md |
+| `/drvr:orchestrate <path>` | Resume a feature — read log, report state, suggest next action |
+| `/drvr:dry-run-plan <plan>` | Walk through a plan to identify gaps before implementation |
+| `/drvr:assess` | Curate test suite after implementation — categorize, prune, promote |
+| `/drvr:docs-artifacts` | Generate handoff documentation for code review |
+| `/drvr:retro` | Evaluate session quality, patterns, and improvements |
 
 ## Skills
 
@@ -186,4 +186,4 @@ _Describe your team's testing approach. Examples:_
 
 ---
 
-_Generated by `/setup` on {{DATE}}_
+_Generated by `/drvr:setup` on {{DATE}}_

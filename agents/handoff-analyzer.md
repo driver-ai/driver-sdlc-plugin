@@ -1,6 +1,6 @@
 ---
 name: handoff-analyzer
-description: "Prepare code for review. Orchestrates specialized extraction agents to produce comprehensive handoff documentation. Use when: implementation is complete and you're ready to open a PR, or when preparing for code review. Typically called via /docs-artifacts command."
+description: "Prepare code for review. Orchestrates specialized extraction agents to produce comprehensive handoff documentation. Use when: implementation is complete and you're ready to open a PR, or when preparing for code review. Typically called via /drvr:docs-artifacts command."
 model: opus
 allowed-tools:
   - Bash

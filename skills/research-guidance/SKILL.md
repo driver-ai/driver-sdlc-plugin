@@ -113,7 +113,7 @@ Now explore implementation approaches.
 
 **Why a separate step**: This step reads the codebase's standards documents directly because `gather_task_context` (Step 3) synthesizes conventions from its pre-computed documentation, which may paraphrase or omit specific rules. The raw CLAUDE.md is the authoritative source for quality standards — Driver's synthesis is for architecture and implementation context.
 
-**Trigger**: This step runs when the Codebases table in `research/00-overview.md` has at least one entry with a Local Path filled in. This may happen during Step 1's probing questions, or it may already be filled from `/feature` setup. If the Codebases table was already filled during `/feature` setup, proceed directly to path verification.
+**Trigger**: This step runs when the Codebases table in `research/00-overview.md` has at least one entry with a Local Path filled in. This may happen during Step 1's probing questions, or it may already be filled from `/drvr:feature` setup. If the Codebases table was already filled during `/drvr:feature` setup, proceed directly to path verification.
 
 **Check setup question answer first**: Read the Setup Questions section in `research/00-overview.md`. If the user already answered the standards question with a specific path, verify it exists and use it as the primary source (still check for subdirectory-level overrides). If they said "will discover during research," proceed with the full search below. If they said "none" or equivalent, do a quick check (CLAUDE.md at repo root only) to confirm, then accept their answer — don't ask again.
 
@@ -188,7 +188,7 @@ Write to `research/NN-codebase-standards.md` with this template:
 
 All paths in the artifact must be absolute (not relative, not using `~`).
 
-Index this artifact in `research/00-overview.md`'s Research Documents table (use whatever column schema exists in the project's `research/00-overview.md` at the time — the `/feature` command and research-guidance may use different table schemas).
+Index this artifact in `research/00-overview.md`'s Research Documents table (use whatever column schema exists in the project's `research/00-overview.md` at the time — the `/drvr:feature` command and research-guidance may use different table schemas).
 
 ---
 

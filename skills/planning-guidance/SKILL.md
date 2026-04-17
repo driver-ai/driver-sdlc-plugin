@@ -352,7 +352,7 @@ During planning, design both kinds deliberately:
 - Durable tests validate behavior that should survive refactoring
 - Coverage targets (above) apply to durable tests — scaffolding tests don't count toward long-term coverage
 
-After all plans are implemented, `/assess` curates the test suite by categorizing each test as **PRUNE** (scaffolding that's served its purpose), **KEEP** (durable tests covering observable behavior), or **PROMOTE** (tests worth keeping but needing refactoring to assert behavior instead of implementation details). Plan accordingly: write scaffolding tests freely during TDD, knowing they'll be categorized and acted on during assessment.
+After all plans are implemented, `/drvr:assess` curates the test suite by categorizing each test as **PRUNE** (scaffolding that's served its purpose), **KEEP** (durable tests covering observable behavior), or **PROMOTE** (tests worth keeping but needing refactoring to assert behavior instead of implementation details). Plan accordingly: write scaffolding tests freely during TDD, knowing they'll be categorized and acted on during assessment.
 
 #### Fixture Sourcing
 
@@ -427,7 +427,7 @@ Present the plan to the user for review.
 
 1. Present the plan for review
 2. Address any questions or change requests
-3. Suggest dry-run: "Want to run `/dry-run-plan <plan-name>` before approving?" — this is advisory, the user can skip
+3. Suggest dry-run: "Want to run `/drvr:dry-run-plan <plan-name>` before approving?" — this is advisory, the user can skip
 4. After the user returns from dry-run (or declines), prompt: "Do you approve plan `<plan-name>` for implementation?"
 5. **If the user approves:** Write the following fields to the plan's YAML frontmatter:
    - `status: approved`

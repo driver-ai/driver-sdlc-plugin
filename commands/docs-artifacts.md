@@ -4,7 +4,7 @@ argument-hint: <process-artifacts-path> [codebase-paths...]
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash, Agent
 ---
 
-# /docs-artifacts Command
+# /drvr:docs-artifacts Command
 
 Generate or update handoff documentation for the Handoff phase of the SDLC workflow.
 
@@ -27,8 +27,8 @@ Extract from arguments:
 
 Example invocations:
 ```
-/docs-artifacts ./features/oauth-support ~/work/driver/python-backend ~/work/driver/webapp-frontend
-/docs-artifacts ./features/search-improvements
+/drvr:docs-artifacts ./features/oauth-support ~/work/driver/python-backend ~/work/driver/webapp-frontend
+/drvr:docs-artifacts ./features/search-improvements
 ```
 
 ### Step 2: Check Prerequisites
@@ -37,11 +37,11 @@ Example invocations:
 2. Verify each codebase path is a git repository
 3. Check that Driver MCP is available (required)
 4. Detect if `driver-docs/` folder exists in the feature folder (determines create vs update mode)
-5. **Assessment check** — Look for `assessment/test-curation-*.md` in the feature folder. If found, read the `Scope` line (format: `**Scope:** plan-name-1, plan-name-2` — comma-separated plan names matching filenames in `plans/`). Verify the scope covers all plans listed as COMPLETE in `plans/00-overview.md`. If `plans/00-overview.md` doesn't exist (single-plan feature), verify the assessment covers the current plan instead. If no assessment artifact exists, or its scope doesn't cover all complete plans: BLOCK. "Assessment has not been completed for all implemented plans. Run `/assess` first."
+5. **Assessment check** — Look for `assessment/test-curation-*.md` in the feature folder. If found, read the `Scope` line (format: `**Scope:** plan-name-1, plan-name-2` — comma-separated plan names matching filenames in `plans/`). Verify the scope covers all plans listed as COMPLETE in `plans/00-overview.md`. If `plans/00-overview.md` doesn't exist (single-plan feature), verify the assessment covers the current plan instead. If no assessment artifact exists, or its scope doesn't cover all complete plans: BLOCK. "Assessment has not been completed for all implemented plans. Run `/drvr:assess` first."
 
 If Driver MCP is unavailable:
 ```
-Error: Driver MCP is required for /docs-artifacts.
+Error: Driver MCP is required for /drvr:docs-artifacts.
 Please ensure Driver MCP server is running.
 ```
 

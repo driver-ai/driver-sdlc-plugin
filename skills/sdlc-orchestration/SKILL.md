@@ -1,7 +1,7 @@
 ---
 name: sdlc-orchestration
 description: |
-  SDLC lifecycle orchestration. Coordinates phase transitions, loads the right skills,
+  SDLC lifecycle orchestration for the drvr plugin. Coordinates phase transitions, loads the right skills,
   manages bookkeeping, and handles session resumption for feature projects.
   Trigger phrases: "returning to feature", "where are we", "what's next",
   "resume feature", "feature status".
@@ -44,7 +44,7 @@ When a user returns to a feature ("returning to feature/X", "resume feature X", 
    - Plan files without dry-run results → plan needs validation
    - Research docs with open questions → research may be incomplete
    - Plan with `status: approved` in frontmatter but task doc count < plan task count (or no `plans/<plan>/tasks/` directory) → phase is **Materialization**. Suggest: "Plan X is approved but not fully materialized. Activate `materialize-tasks`."
-   - Phase detection resolves to **Assessment** (all plans COMPLETE, no `assessment/test-curation-*.md`) → suggest `/assess`
+   - Phase detection resolves to **Assessment** (all plans COMPLETE, no `assessment/test-curation-*.md`) → suggest `/drvr:assess`
 4. **Report current state:**
 
 ```
@@ -52,7 +52,7 @@ Feature: <name>
 Progress: N/M plans complete
 Current state: <what's in progress or what's next>
 Last activity: <most recent artifact modified>
-Next action: <suggestion based on state — if assessment phase, "Run /assess to curate the test suite before handoff">
+Next action: <suggestion based on state — if assessment phase, "Run /drvr:assess to curate the test suite before handoff">
 ```
 
 If no overview exists, check for `research/` and `plans/` directories to infer the phase.
@@ -70,7 +70,7 @@ When the user signals "let's plan" or "ready to plan":
 ### Planning → Validation
 When a plan is written:
 - If the feature has an overview with interface contracts, run consumer validation: check whether downstream plans' assumptions match this plan's definitions
-- Suggest: "Want to run `/dry-run-plan <name>`?"
+- Suggest: "Want to run `/drvr:dry-run-plan <name>`?"
 
 ### Validation → Materialization
 When the plan is approved and ready for materialization:
@@ -112,18 +112,18 @@ After bookkeeping is complete:
 - Present: "Next unblocked plan is X. It [has a plan document / needs planning]."
 - If multiple unblocked: "Two plans are unblocked: X and Y. Which to start?"
 - If none unblocked: "No plans are currently unblocked."
-- If all complete: "All plans complete. Run `/assess` to curate the test suite before handoff."
+- If all complete: "All plans complete. Run `/drvr:assess` to curate the test suite before handoff."
 
 ### All Complete → Assessment
 
 When all plans are complete, the next step is test suite assessment — not handoff.
 
-- "All plans complete. Next step: `/assess` to curate the test suite before handoff."
-- `/assess` handles the workflow independently and updates the feature log when done
-- After `/assess` completes, suggest `/docs-artifacts`
-- Do NOT suggest `/docs-artifacts` until assessment is complete
+- "All plans complete. Next step: `/drvr:assess` to curate the test suite before handoff."
+- `/drvr:assess` handles the workflow independently and updates the feature log when done
+- After `/drvr:assess` completes, suggest `/drvr:docs-artifacts`
+- Do NOT suggest `/drvr:docs-artifacts` until assessment is complete
 
-**Mid-implementation assessment**: Users may invoke `/assess` before all plans are complete. This is allowed — `/assess` handles scoping and warnings internally. A partial assessment does not satisfy the mandatory pre-handoff requirement; the final assessment must cover all plans.
+**Mid-implementation assessment**: Users may invoke `/drvr:assess` before all plans are complete. This is allowed — `/drvr:assess` handles scoping and warnings internally. A partial assessment does not satisfy the mandatory pre-handoff requirement; the final assessment must cover all plans.
 
 ### Phase Detection: Assessment
 
@@ -162,13 +162,13 @@ Each skill appends to the log at transition moments:
 
 | Skill | Events to Log |
 |-------|--------------|
-| `/feature` | Feature created, research started |
+| `/drvr:feature` | Feature created, research started |
 | `research-guidance` | Research doc created, wireframe created |
 | `planning-guidance` | Planning started, overview created, plan created |
-| `/dry-run-plan` | Dry-run completed (with gap count and verdict) |
+| `/drvr:dry-run-plan` | Dry-run completed (with gap count and verdict) |
 | `materialize-tasks` | Tasks materialized (with task count and codebase target) |
 | `implementation-guidance` | Implementation started, implementation complete (with test count) |
-| `/assess` | Assessment complete (with prune/keep/promote counts) |
+| `/drvr:assess` | Assessment complete (with prune/keep/promote counts) |
 | `sdlc-orchestration` | Bookkeeping complete, phase transitions |
 
 ### Log Entry Format
@@ -193,14 +193,14 @@ Update the "Current State" header to reflect the new phase and active work.
 
 ## Related
 
-- [/feature](../../commands/feature.md) — create a new feature project
-- [/orchestrate](../../commands/orchestrate.md) — resume an existing feature
+- [/drvr:feature](../../commands/feature.md) — create a new feature project
+- [/drvr:orchestrate](../../commands/orchestrate.md) — resume an existing feature
 - [research-guidance](../research-guidance/SKILL.md)
 - [planning-guidance](../planning-guidance/SKILL.md)
 - [materialize-tasks](../materialize-tasks/SKILL.md)
 - [implementation-guidance](../implementation-guidance/SKILL.md)
-- [/dry-run-plan](../../commands/dry-run-plan.md)
-- [/assess](../../commands/assess.md)
-- [/docs-artifacts](../../commands/docs-artifacts.md)
+- [/drvr:dry-run-plan](../../commands/dry-run-plan.md)
+- [/drvr:assess](../../commands/assess.md)
+- [/drvr:docs-artifacts](../../commands/docs-artifacts.md)
 - [cascade-check](../../agents/cascade-check.md)
 - [driver-task-context](../../agents/driver-task-context.md)

@@ -1,4 +1,4 @@
-"""Shared helpers for driver-sdlc-plugin tests.
+"""Shared helpers for drvr tests.
 
 All stdlib Python — no external dependencies.
 """

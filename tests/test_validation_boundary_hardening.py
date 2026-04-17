@@ -200,7 +200,7 @@ class TestValidationBoundaryHardening(unittest.TestCase):
         )
         self.assertIn("WARN", section, "WARN severity not found in Validation→Materialization dry-run check")
 
-    # --- C4: /docs-artifacts assessment prerequisite ---
+    # --- C4: /drvr:docs-artifacts assessment prerequisite ---
 
     def test_docs_artifacts_assessment_prerequisite(self):
         """docs-artifacts.md Step 2 contains assessment check referencing test-curation."""

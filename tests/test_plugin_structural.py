@@ -280,5 +280,69 @@ class TestCrossReferences(unittest.TestCase):
                 )
 
 
+class TestCommandQualification(unittest.TestCase):
+    """Tests that all command references use fully qualified drvr:* names."""
+
+    COMMANDS = [
+        "feature", "assess", "context", "dry-run-plan",
+        "docs-artifacts", "orchestrate", "retro", "setup",
+    ]
+
+    SCAN_DIRS = ["commands", "skills", "agents", "docs", "hooks", "templates"]
+    SCAN_ROOT_FILES = ["CLAUDE.md", "README.md"]
+
+    FALSE_POSITIVE_PATTERNS = [
+        re.compile(r'commands/'),
+        re.compile(r'features/'),
+        re.compile(r'assessment/'),
+        re.compile(r'FEATURE_LOG'),
+        re.compile(r'feature_log'),
+        re.compile(r'\btype:\s'),
+        re.compile(r'branch\s*[:=]'),
+    ]
+
+    @classmethod
+    def setUpClass(cls):
+        cls.md_files = []
+        for dir_name in cls.SCAN_DIRS:
+            dir_path = PLUGIN_ROOT / dir_name
+            if dir_path.is_dir():
+                cls.md_files.extend(dir_path.rglob("*.md"))
+        for fname in cls.SCAN_ROOT_FILES:
+            fpath = PLUGIN_ROOT / fname
+            if fpath.is_file():
+                cls.md_files.append(fpath)
+
+    def test_no_bare_command_references(self):
+        """All command references must use fully qualified drvr:* names."""
+        violations = []
+
+        for md_file in self.md_files:
+            content = md_file.read_text(encoding="utf-8")
+            lines = content.splitlines()
+
+            for line_num, line in enumerate(lines, 1):
+                if any(p.search(line) for p in self.FALSE_POSITIVE_PATTERNS):
+                    continue
+
+                for cmd in self.COMMANDS:
+                    pattern = re.compile(
+                        rf'(?<![:\w./])'
+                        rf'/{re.escape(cmd)}'
+                        rf'(?=[\s`\])<>,:;"\'|]|$)'
+                    )
+                    for match in pattern.finditer(line):
+                        rel_path = md_file.relative_to(PLUGIN_ROOT)
+                        violations.append(
+                            f"  {rel_path}:{line_num}: /{cmd} -> {line.strip()[:80]}"
+                        )
+
+        if violations:
+            self.fail(
+                f"Found {len(violations)} bare command reference(s):\n"
+                + "\n".join(violations)
+            )
+
+
 if __name__ == "__main__":
     unittest.main()
