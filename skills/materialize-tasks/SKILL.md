@@ -35,7 +35,7 @@ After approval, verify that outstanding dry-run gaps do not block materializatio
 
 **Find the latest dry-run:** Match dry-run files whose filename begins with the plan's filename stem (without `.md`). For example, for plan `01-bilateral-materialization-gate.md`, match files in `dry-runs/` starting with `01-bilateral-materialization-gate-`. Sort matched files by file modification time (most recent first) — filename-based sorting is unreliable since dry-run files use inconsistent suffixes like `-deep`, `-round4`.
 
-- **If no dry-run files match:** WARN. "No dry-run found for this plan. Consider running `/dry-run-plan` to validate before materializing. Proceed without dry-run verification?"
+- **If no dry-run files match:** WARN. "No dry-run found for this plan. Consider running `/drvr:dry-run-plan` to validate before materializing. Proceed without dry-run verification?"
 - **If files found:** Read the latest. Scan the gap table for rows whose Description column is NOT prefixed with `[FIXED]`. Count unfixed rows by severity:
   - Any unfixed HIGH or MEDIUM gaps → BLOCK. "N HIGH/MEDIUM gaps remain unfixed in the latest dry-run. Fix these gaps before materializing."
   - Only unfixed LOW gaps → WARN. "N LOW-severity gaps remain unfixed. These are minor — proceed with materialization?"
