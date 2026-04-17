@@ -310,13 +310,13 @@ Features follow a phased development lifecycle. Each phase has a dedicated skill
 
 | Phase | Skill / Command | What It Does |
 |-------|----------------|-------------|
-| Research | `research-guidance` | Why-What-How methodology, document organization, completion criteria |
-| Planning | `planning-guidance` | TDD-first task design, test strategy, architecture fit, task breakdown |
+| Research | `drvr:research-guidance` | Why-What-How methodology, document organization, completion criteria |
+| Planning | `drvr:planning-guidance` | TDD-first task design, test strategy, architecture fit, task breakdown |
 | Validation | `/drvr:dry-run-plan` | Walk through plan as-if implementing, severity-classified gaps |
-| Materialization | `materialize-tasks` | Convert plan tasks into standalone task docs for sub-agent execution |
-| Implementation | `implementation-guidance` | Plan-driven task execution, deviation tracking, commit discipline |
-| Review | `sdlc-orchestration` | Present deviations for user approval before bookkeeping |
-| Bookkeeping | `implementation-guidance` | Update plan status, overview, cascade check |
+| Materialization | `drvr:materialize-tasks` | Convert plan tasks into standalone task docs for sub-agent execution |
+| Implementation | `drvr:implementation-guidance` | Plan-driven task execution, deviation tracking, commit discipline |
+| Review | `drvr:sdlc-orchestration` | Present deviations for user approval before bookkeeping |
+| Bookkeeping | `drvr:implementation-guidance` | Update plan status, overview, cascade check |
 | Assessment | `/drvr:assess` | Curate test suite — categorize, prune scaffolding, promote valuable tests |
 | Handoff | `/drvr:docs-artifacts` | Generate feature-overview, architecture, testing-guide, risk-assessment |
 
@@ -345,11 +345,11 @@ Features follow a phased development lifecycle. Each phase has a dedicated skill
 
 | Skill | Purpose |
 |-------|---------|
-| `research-guidance` | Why-What-How methodology, document organization |
-| `planning-guidance` | TDD-first plans, test strategy, task breakdown |
-| `materialize-tasks` | Materialize approved plan tasks into standalone task docs |
-| `implementation-guidance` | Plan-driven execution, deviation tracking, bookkeeping |
-| `sdlc-orchestration` | Lifecycle coordination, phase transitions |
+| `drvr:research-guidance` | Why-What-How methodology, document organization |
+| `drvr:planning-guidance` | TDD-first plans, test strategy, task breakdown |
+| `drvr:materialize-tasks` | Materialize approved plan tasks into standalone task docs |
+| `drvr:implementation-guidance` | Plan-driven execution, deviation tracking, bookkeeping |
+| `drvr:sdlc-orchestration` | Lifecycle coordination, phase transitions |
 
 ## Agents
 

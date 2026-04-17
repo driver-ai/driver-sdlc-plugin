@@ -433,7 +433,7 @@ Present the plan to the user for review.
    - `status: approved`
    - `approved_at: <ISO 8601 UTC timestamp>` (e.g., `2026-04-16T14:30:00Z`)
    - `approved_by: <user identity>` — use the `userEmail` setting if available in conversation context, otherwise `"user"`
-6. End with: "Plan approved. Activate `materialize-tasks` to materialize task documents for plan `<plan-name>`."
+6. End with: "Plan approved. Activate `drvr:materialize-tasks` to materialize task documents for plan `<plan-name>`."
 
 **If the user declines:** List what needs to change. Do not proceed. The user controls when to re-present for approval.
 

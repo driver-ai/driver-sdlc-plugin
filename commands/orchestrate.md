@@ -15,4 +15,4 @@ Resume work on an existing feature project.
 3. **Scan parent directories**: Check up to 3 levels up for `FEATURE_LOG.md`
 4. **Ask user**: "I can't find a feature project. Which directory should I use?"
 
-Once located, activate the `sdlc-orchestration` skill for session resumption — it handles reading the feature log, reporting state, and suggesting next actions.
+Once located, activate the `drvr:sdlc-orchestration` skill for session resumption — it handles reading the feature log, reporting state, and suggesting next actions.
