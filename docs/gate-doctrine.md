@@ -30,7 +30,7 @@ Example: implementation-guidance Step 1 had a "plan-extraction mode" fallback wh
 
 A validation check exists in one entry point but not others. Direct invocation of the callee bypasses the guard entirely.
 
-Example: the "don't handoff before assessment" check lived only in sdlc-orchestration prose. Direct invocation of `/docs-artifacts` bypassed it.
+Example: the "don't handoff before assessment" check lived only in sdlc-orchestration prose. Direct invocation of `/drvr:docs-artifacts` bypassed it.
 
 ## Rules
 

@@ -1,4 +1,4 @@
-# Driver SDLC Plugin for Claude Code
+# drvr — SDLC Plugin for Claude Code
 
 This plugin guides structured feature development through a phased SDLC lifecycle: Research, Planning, Validation, Implementation, Review, and Ship. It provides skills (always-on guidance), commands (user-invoked actions), and agents (spawnable specialists) that coordinate the process.
 
@@ -10,7 +10,7 @@ The user drives all decisions. The plugin suggests, organizes, and tracks -- but
 
 ## Project Structure
 
-Running `/feature <name>` scaffolds this structure:
+Running `/drvr:feature <name>` scaffolds this structure:
 
 ```
 <feature>/
@@ -82,29 +82,29 @@ updated: "YYYY-MM-DD"
 Features follow a phased development lifecycle. Each phase has a dedicated skill or command that provides guidance.
 
 ```
-/feature --> Research --> Planning --> Validation --> Materialization --> Implementation --> Review --> Bookkeeping --> Next Plan --> ...
-                                                                                                                          |
-                                                                                                             All plans complete
-                                                                                                                          |
-                                                                                                                          v
-                                                                                                     /assess --> /docs-artifacts --> Ship
+/drvr:feature --> Research --> Planning --> Validation --> Materialization --> Implementation --> Review --> Bookkeeping --> Next Plan --> ...
+                                                                                                                                |
+                                                                                                                   All plans complete
+                                                                                                                                |
+                                                                                                                                v
+                                                                                                        /drvr:assess --> /drvr:docs-artifacts --> Ship
 ```
 
 ### Phase-Skill Mapping
 
 | Phase | Skill / Command | What It Does | Entry Signal |
 |-------|----------------|--------------|-------------|
-| Research | `research-guidance` | Why-What-How methodology, document organization, completion criteria | `/feature`, "let's research", "explore" |
+| Research | `research-guidance` | Why-What-How methodology, document organization, completion criteria | `/drvr:feature`, "let's research", "explore" |
 | Planning | `planning-guidance` | TDD-first task design, test strategy, architecture fit, task breakdown | "let's plan", "ready to plan" |
-| Validation | `/dry-run-plan` | Walk through plan to find gaps before implementation | "dry-run plan X" |
+| Validation | `/drvr:dry-run-plan` | Walk through plan to find gaps before implementation | "dry-run plan X" |
 | Materialization | `materialize-tasks` | Convert plan tasks into standalone task docs for sub-agent execution | plan approved (`status: approved`), no task docs |
 | Implementation | `implementation-guidance` | Plan-driven task execution, deviation tracking, commit discipline | "implement plan X" |
 | Review | `sdlc-orchestration` | Present deviations for user review | implementation complete |
 | Bookkeeping | `implementation-guidance` Step 4 | Update plan status, overview, cascade check | deviations approved |
 | Transition | `sdlc-orchestration` | Identify next unblocked plan from dependency graph | bookkeeping complete |
-| Assessment | `/assess` | Curate test suite — categorize, prune scaffolding, promote | all plans complete, "assess tests" |
-| Handoff | `/docs-artifacts` | Generate feature overview, architecture, testing guide, risks | assessment complete |
-| Retro | `/retro` | Evaluate session quality, identify improvements | "retro", end of session |
+| Assessment | `/drvr:assess` | Curate test suite — categorize, prune scaffolding, promote | all plans complete, "assess tests" |
+| Handoff | `/drvr:docs-artifacts` | Generate feature overview, architecture, testing guide, risks | assessment complete |
+| Retro | `/drvr:retro` | Evaluate session quality, identify improvements | "retro", end of session |
 
 ---
 
@@ -137,13 +137,13 @@ Every feature has a `FEATURE_LOG.md` at its root -- the source of truth for life
 
 | Command | Description |
 |---------|-------------|
-| `/feature <name>` | Start a new feature project with research, plans, and implementation structure |
-| `/orchestrate <path>` | Resume work on a feature -- read the feature log, report current state, suggest next action |
-| `/dry-run-plan <plan>` | Dry run a plan to identify gaps before implementation |
-| `/assess` | Curate the test suite after implementation -- categorize, prune scaffolding, promote valuable tests |
-| `/docs-artifacts <path>` | Generate handoff docs (overview, architecture, testing guide, risks) for code review |
-| `/context <task>` | Gather codebase context for a specific task via Driver MCP |
-| `/retro` | Analyze current session -- evaluate work quality, identify improvements |
+| `/drvr:feature <name>` | Start a new feature project with research, plans, and implementation structure |
+| `/drvr:orchestrate <path>` | Resume work on a feature -- read the feature log, report current state, suggest next action |
+| `/drvr:dry-run-plan <plan>` | Dry run a plan to identify gaps before implementation |
+| `/drvr:assess` | Curate the test suite after implementation -- categorize, prune scaffolding, promote valuable tests |
+| `/drvr:docs-artifacts <path>` | Generate handoff docs (overview, architecture, testing guide, risks) for code review |
+| `/drvr:context <task>` | Gather codebase context for a specific task via Driver MCP |
+| `/drvr:retro` | Analyze current session -- evaluate work quality, identify improvements |
 
 ### Skills
 

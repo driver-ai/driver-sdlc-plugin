@@ -27,8 +27,11 @@ echo "$SKILL_NAME" >> "$SKILLS_FILE"
 # Phase tracking
 # ---------------------------------------------------------------------------
 
+# Strip plugin prefix (e.g. "drvr:research-guidance" -> "research-guidance")
+SKILL_SHORT=$(echo "$SKILL_NAME" | sed 's/^[^:]*://')
+
 PHASE=""
-case "$SKILL_NAME" in
+case "$SKILL_SHORT" in
     research-guidance)    PHASE="Research" ;;
     planning-guidance)    PHASE="Planning" ;;
     implementation-guidance) PHASE="Implementation" ;;

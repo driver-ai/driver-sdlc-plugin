@@ -1,6 +1,6 @@
 # Friction Taxonomy
 
-Reference document for friction types detected by hooks and analyzed by `/retro`.
+Reference document for friction types detected by hooks and analyzed by `/drvr:retro`.
 
 | Type | Description | Cost | Tier |
 |------|-------------|------|------|
