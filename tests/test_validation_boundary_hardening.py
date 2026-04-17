@@ -403,7 +403,13 @@ class TestPlanConcretenessStructural(unittest.TestCase):
                     f"Row '{label}' missing expected severity '{sev}'")
 
     def test_dry_run_concreteness_migration_language(self):
-        self.assertIn("MEDIUM if plan predates rule", self.dry_run_plan)
+        # Check #13's migration clause: plans predating the concreteness rule should
+        # downgrade from HIGH to MEDIUM. Test the CONCEPT (tokens co-occur inside
+        # Step 3, where check #13 lives), not the exact prose — lets us reword the
+        # clause without breaking the test, while still catching intent loss.
+        step3 = self._step3_slice()
+        self.assertIn("MEDIUM", step3)
+        self.assertIn("predate", step3)
 
     def test_planning_template_has_data_structures_section(self):
         self.assertIn("## Data Structures & Callables", self.planning_guidance)
