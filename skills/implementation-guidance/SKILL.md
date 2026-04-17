@@ -155,7 +155,7 @@ Existing checks, adapted to read from task docs.
 - **4.2 Environment variables** — Scan task docs and plan constraints for env var references. Missing: WARN.
 - **4.3 Test baseline** — Run the test suite from the codebase root. Test command comes from: task doc constraints → plan constraints → codebase CLAUDE.md → common defaults. Tests fail: BLOCK. No test command found: WARN.
 - **4.4 Referenced file paths** — For each task doc, verify every file in `## Files` exists (resolved as `<codebase_root>/<relative_path>`). File missing + task says modify: BLOCK. File missing + task says create: OK. File exists + task says create: WARN.
-- **4.5 Interface verification** — For task docs that reference modifying specific functions/classes, read the local file and verify the current signature. Runs unconditionally (not just when stale). Mismatch: WARN.
+- **4.5 Interface verification** — For task docs that reference modifying specific functions/classes, read the local file and verify the current signature. Runs unconditionally (not just when stale). Mismatch: WARN. Additionally, if the task doc contains an inline snippet (`#### Snippet:`) for a modified callable, diff the snippet's signature against the local file directly — this catches signature drift that the plan-level check may have missed. Mismatch: WARN.
 
 #### Phase 5: Standards Readiness
 
