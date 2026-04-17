@@ -381,7 +381,10 @@ class TestPlanConcretenessStructural(unittest.TestCase):
             "Collision on addition",
         ]:
             with self.subTest(row=row):
-                pattern = rf"^\|\s*\*\*{re.escape(row)}\*\*\s*\|.*\|.*\|$"
+                # Match a table-shaped row: | **Label** | cell | cell | — without
+                # relying on ^/$ line anchors (assertRegex uses re.search without
+                # re.MULTILINE; [^\n]* keeps each row within one line).
+                pattern = rf"\|\s*\*\*{re.escape(row)}\*\*\s*\|[^\n]*\|[^\n]*\|"
                 self.assertRegex(gap_types, pattern,
                     f"Gap Types table missing table-shaped row for: {row}")
 
