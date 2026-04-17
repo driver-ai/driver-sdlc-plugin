@@ -1,3 +1,4 @@
+<!-- drvr:template-version:1.0.0 -->
 # {{TEAM_NAME}} — SDLC Project Instructions
 
 This repository organizes development work by feature, with each feature containing its own lifecycle of artifacts. It is managed by the [Driver SDLC Plugin (drvr)](https://github.com/driver-ai/driver-sdlc-plugin) for Claude Code.
