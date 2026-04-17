@@ -33,6 +33,8 @@ Determine:
 
 **Context compaction note**: If the conversation was compacted, note which portions are missing from your analysis.
 
+> **Backward compatibility**: Features created before the `drvr:` prefix rename may reference unqualified command names (`/feature`, `/docs-artifacts`, `/dry-run-plan`, `/assess`). Treat these as equivalent to their qualified versions (`/drvr:feature`, etc.).
+
 Phase signals:
 
 | Phase | Signals |

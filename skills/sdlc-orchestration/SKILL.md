@@ -29,7 +29,7 @@ You manage process, not decisions. Present information, suggest next steps, but 
 
 See [CLAUDE.md Phase-Skill Mapping](../../CLAUDE.md#phase-skill-mapping) for the full phase-to-skill table with entry signals.
 
-When you detect an entry signal, ensure the corresponding skill is active. If the user is in research and says "let's plan", acknowledge the transition and activate planning-guidance.
+When you detect an entry signal, ensure the corresponding skill is active. If the user is in research and says "let's plan", acknowledge the transition and activate `drvr:planning-guidance`.
 
 ---
 
@@ -43,7 +43,7 @@ When a user returns to a feature ("returning to feature/X", "resume feature X", 
    - Implementation logs without a matching plan status header → implementation was in progress
    - Plan files without dry-run results → plan needs validation
    - Research docs with open questions → research may be incomplete
-   - Plan with `status: approved` in frontmatter but task doc count < plan task count (or no `plans/<plan>/tasks/` directory) → phase is **Materialization**. Suggest: "Plan X is approved but not fully materialized. Activate `materialize-tasks`."
+   - Plan with `status: approved` in frontmatter but task doc count < plan task count (or no `plans/<plan>/tasks/` directory) → phase is **Materialization**. Suggest: "Plan X is approved but not fully materialized. Activate `drvr:materialize-tasks`."
    - Phase detection resolves to **Assessment** (all plans COMPLETE, no `assessment/test-curation-*.md`) → suggest `/drvr:assess`
 4. **Report current state:**
 
@@ -65,7 +65,7 @@ If no overview exists, check for `research/` and `plans/` directories to infer t
 When the user signals "let's plan" or "ready to plan":
 - Report research status: "N research docs. M open questions remain in docs X, Y."
 - This is informational — the user decides whether to proceed or resolve questions first
-- Activate `planning-guidance`
+- Activate `drvr:planning-guidance`
 
 ### Planning → Validation
 When a plan is written:
@@ -81,7 +81,7 @@ When the plan is approved and ready for materialization:
   1. **Count check**: If task doc count < plan task count: trigger materialization (partial). Report: "N of M task docs exist — triggering materialization to complete the remaining K."
   2. **Freshness check**: If task doc count equals plan task count, read `materialized_at` from any task doc and compare against the plan's `updated` date. If `materialized_at` predates `updated`: task docs are stale (plan was revised after materialization). Trigger re-materialization: "Task docs are stale (materialized before plan was last updated). Triggering re-materialization." materialize-tasks Step 4 handles this by preserving completed tasks and overwriting incomplete ones.
   3. **Complete and fresh**: If count matches AND task docs are fresh, skip to implementation.
-- Activate `materialize-tasks`
+- Activate `drvr:materialize-tasks`
 
 ### Materialization → Implementation
 When materialization is complete:

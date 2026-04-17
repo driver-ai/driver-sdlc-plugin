@@ -4,6 +4,7 @@ All stdlib Python — no external dependencies.
 """
 
 import os
+import re
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
@@ -24,6 +25,21 @@ def discover_feature_projects(search_path=None):
     if not search.is_dir():
         return []
     return [p.parent for p in search.rglob("FEATURE_LOG.md")]
+
+
+def is_active_feature(project: Path) -> bool:
+    """Check if a feature is still in progress (not completed/handed off)."""
+    fl = project / "FEATURE_LOG.md"
+    if not fl.exists():
+        return True
+    text = fl.read_text(encoding="utf-8")
+    match = re.search(r'\*\*Phase\*\*:\s*(.+)', text)
+    if not match:
+        return True
+    phase = match.group(1).strip()
+    done_phases = ("Handoff", "Assessment", "Done")
+    return phase not in done_phases and "(complete)" not in phase.lower()
+
 
 # ---------------------------------------------------------------------------
 # Frontmatter / Markdown helpers

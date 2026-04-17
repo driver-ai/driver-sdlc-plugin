@@ -180,7 +180,7 @@ Report: "Checkpoint 1: N/5 checks passed." If any check fails, report the specif
 
 "Materialized N tasks to `plans/<plan-name>/tasks/`. Codebase: <name> at <path>. [Checkpoint 1 results]."
 
-**Terminal handoff:** "Task documents ready. To implement, activate `implementation-guidance` for plan `<plan-name>`."
+**Terminal handoff:** "Task documents ready. To implement, activate `drvr:implementation-guidance` for plan `<plan-name>`."
 
 **Update FEATURE_LOG.md:** Append to the log table:
 ```markdown

@@ -140,6 +140,46 @@ Check for required files and fill gaps.
 
 2. **Report what was found and what was created.**
 
+3. **Template version check** — If CLAUDE.md exists, read the first line. Look for `<!-- drvr:template-version:X.Y.Z -->`.
+
+   - **If found and matches current version (1.0.0):** Skip migration. Report: "CLAUDE.md is up to date (template v1.0.0)."
+   - **If found but outdated:** Look up the migration path in the Migration Registry below. Apply each migration in sequence, asking user approval for each.
+   - **If not found:** Treat as pre-versioning (version 0). Apply the full migration path from v0 → current.
+   - **If version is higher than current (1.0.0):** Warn: "CLAUDE.md has template version X.Y.Z which is newer than this plugin's current version (1.0.0). Skipping migration." and skip.
+
+   After all migrations are applied, update the version comment on line 1 to the current version. If no version comment exists, add it as the first line. Before adding, scan the file for any existing `<!-- drvr:template-version:` comments and remove them to prevent duplicates.
+
+### Migration Registry
+
+Each row describes what changed between template versions and how to migrate existing CLAUDE.md files. Each migration step must be idempotent — check if the change has already been applied before making it.
+
+| From | To | Changes | Migration Steps |
+|------|----|---------|----------------|
+| (none) | 1.0.0 | Initial versioned template. Commands qualified with `drvr:` prefix. Skills qualified in tables. | 1. Replace 8 unqualified command names with `drvr:`-prefixed versions (see table below). 2. Replace 5 unqualified skill names with `drvr:`-prefixed versions in Skills and Phase-Skill Mapping tables. 3. Add `<!-- drvr:template-version:1.0.0 -->` as first line. |
+
+**Command name replacements** (v0 → v1.0.0):
+
+| Old | New |
+|-----|-----|
+| `/feature` | `/drvr:feature` |
+| `/setup` | `/drvr:setup` |
+| `/dry-run-plan` | `/drvr:dry-run-plan` |
+| `/assess` | `/drvr:assess` |
+| `/docs-artifacts` | `/drvr:docs-artifacts` |
+| `/orchestrate` | `/drvr:orchestrate` |
+| `/retro` | `/drvr:retro` |
+| `/context` | `/drvr:context` |
+
+**Skill name replacements** (v0 → v1.0.0):
+
+| Old | New |
+|-----|-----|
+| `research-guidance` | `drvr:research-guidance` |
+| `planning-guidance` | `drvr:planning-guidance` |
+| `materialize-tasks` | `drvr:materialize-tasks` |
+| `implementation-guidance` | `drvr:implementation-guidance` |
+| `sdlc-orchestration` | `drvr:sdlc-orchestration` |
+
 ### Step 3C: Clone Team Repo
 
 1. **Ask for clone URL** (if not provided as argument):
@@ -222,6 +262,7 @@ Print a summary of everything that was done:
 Use this template when creating CLAUDE.md for a new projects directory. Replace `{{TEAM_NAME}}` with the project name and `{{DATE}}` with today's date.
 
 ````markdown
+<!-- drvr:template-version:1.0.0 -->
 # {{TEAM_NAME}} — SDLC Project Instructions
 
 This repository organizes development work by feature, with each feature containing its own lifecycle of artifacts. It is managed by the [Driver SDLC Plugin (drvr)](https://github.com/driver-ai/driver-sdlc-plugin) for Claude Code.
@@ -310,13 +351,13 @@ Features follow a phased development lifecycle. Each phase has a dedicated skill
 
 | Phase | Skill / Command | What It Does |
 |-------|----------------|-------------|
-| Research | `research-guidance` | Why-What-How methodology, document organization, completion criteria |
-| Planning | `planning-guidance` | TDD-first task design, test strategy, architecture fit, task breakdown |
+| Research | `drvr:research-guidance` | Why-What-How methodology, document organization, completion criteria |
+| Planning | `drvr:planning-guidance` | TDD-first task design, test strategy, architecture fit, task breakdown |
 | Validation | `/drvr:dry-run-plan` | Walk through plan as-if implementing, severity-classified gaps |
-| Materialization | `materialize-tasks` | Convert plan tasks into standalone task docs for sub-agent execution |
-| Implementation | `implementation-guidance` | Plan-driven task execution, deviation tracking, commit discipline |
-| Review | `sdlc-orchestration` | Present deviations for user approval before bookkeeping |
-| Bookkeeping | `implementation-guidance` | Update plan status, overview, cascade check |
+| Materialization | `drvr:materialize-tasks` | Convert plan tasks into standalone task docs for sub-agent execution |
+| Implementation | `drvr:implementation-guidance` | Plan-driven task execution, deviation tracking, commit discipline |
+| Review | `drvr:sdlc-orchestration` | Present deviations for user approval before bookkeeping |
+| Bookkeeping | `drvr:implementation-guidance` | Update plan status, overview, cascade check |
 | Assessment | `/drvr:assess` | Curate test suite — categorize, prune scaffolding, promote valuable tests |
 | Handoff | `/drvr:docs-artifacts` | Generate feature-overview, architecture, testing-guide, risk-assessment |
 
@@ -345,11 +386,11 @@ Features follow a phased development lifecycle. Each phase has a dedicated skill
 
 | Skill | Purpose |
 |-------|---------|
-| `research-guidance` | Why-What-How methodology, document organization |
-| `planning-guidance` | TDD-first plans, test strategy, task breakdown |
-| `materialize-tasks` | Materialize approved plan tasks into standalone task docs |
-| `implementation-guidance` | Plan-driven execution, deviation tracking, bookkeeping |
-| `sdlc-orchestration` | Lifecycle coordination, phase transitions |
+| `drvr:research-guidance` | Why-What-How methodology, document organization |
+| `drvr:planning-guidance` | TDD-first plans, test strategy, task breakdown |
+| `drvr:materialize-tasks` | Materialize approved plan tasks into standalone task docs |
+| `drvr:implementation-guidance` | Plan-driven execution, deviation tracking, bookkeeping |
+| `drvr:sdlc-orchestration` | Lifecycle coordination, phase transitions |
 
 ## Agents
 
