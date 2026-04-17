@@ -215,7 +215,9 @@ This catches interface design problems during planning (free to fix) rather than
 
 ### Plan Document Template
 
-```markdown
+Note: the template block uses a four-backtick outer fence so nested three-backtick code snippets inside tasks (see Task 2 example below) don't terminate it prematurely.
+
+````markdown
 # Plan: <name>
 
 ## Context
@@ -225,6 +227,31 @@ _Summary from research — problem statement, scope, key decisions_
 _Existing patterns to follow, with specific file paths from Driver context_
 _Directories and files this plan touches_
 _Integration points with existing code_
+
+## Data Structures & Callables
+
+_The concrete design commitments of this plan. Every row below must have a corresponding
+snippet inline in the Task Breakdown section that owns it. Dry-run audits this table._
+
+_Language-agnostic: use the codebase's native idioms. Kind values adapt per language
+(`class`, `struct`, `dataclass`, `typed_dict`, `pydantic_model`, `enum`, `interface`,
+`protocol`, `trait`, `type_alias`, `function`, `method`, etc.). The codebase CLAUDE.md
+defines idioms; when absent, use the language's most natural form._
+
+### Added
+
+| Kind | Name | Target File | Owning Task | Notes |
+|------|------|-------------|-------------|-------|
+
+### Modified
+
+| Kind | Name | Target File | Owning Task | Operation |
+|------|------|-------------|-------------|-----------|
+
+### Removed
+
+| Kind | Name | Target File | Owning Task | Rationale |
+|------|------|-------------|-------------|-----------|
 
 ## Acceptance Criteria
 - [ ] Criterion 1 (specific, testable)
@@ -266,7 +293,23 @@ _High-level approach, key design decisions, rationale_
 **Files**: `path/to/source_file.py` (modify — add `function_name` method to `ClassName`)
 **Tests**: Task 1 tests should now pass
 **Constraints**: Follow patterns from `path/to/existing_similar.py`
+
+#### Snippet: NotificationRetryPolicy (new)
+
+```python
+@dataclass(frozen=True)
+class NotificationRetryPolicy:
+    max_attempts: int
+    base_delay_seconds: float
+    jitter_ratio: float = 0.1
+
+    def delay_for(self, attempt: int) -> float:
+        """Return the delay in seconds for the given attempt (1-indexed)."""
+        ...
 ```
+
+_Language note: in a Go codebase this would be a struct + method receiver; in TypeScript an interface + class; in Rust a struct + impl. The codebase CLAUDE.md defines idioms._
+````
 
 ### TDD Task Ordering
 
