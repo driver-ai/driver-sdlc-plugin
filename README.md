@@ -1,6 +1,18 @@
 # drvr — SDLC Plugin for Claude Code
 
-A Claude Code plugin (drvr) that guides structured feature development through a full software development lifecycle. Features move through Research, Planning, Validation, Implementation, Review, and Handoff phases -- each supported by specialized skills, commands, and agents that keep work organized, traceable, and thorough.
+A Claude Code plugin that guides structured feature development through a full software development lifecycle. Features move through Research, Planning, Validation, Implementation, Review, and Handoff phases -- each supported by specialized skills, commands, and agents that keep work organized, traceable, and thorough.
+
+## What You Can Build
+
+drvr doesn't limit what you build -- it changes how much you can attempt. The structured lifecycle means you can take on work that would normally feel too risky or too large for a single developer:
+
+- **Rewrite a core subsystem** without losing track of why each decision was made. Research docs capture the reasoning; plans break it into validated steps; cascade checks catch when one change ripples into another.
+- **Ship a multi-week feature in a day.** Front-load the thinking into research and planning, then let sub-agents execute materialized tasks mechanically. You stay in the design seat.
+- **Hand off with confidence.** Every feature produces architecture docs, a testing guide, and a risk assessment -- generated from your actual process artifacts, not written after the fact.
+- **Pick up where you left off.** Close your laptop mid-implementation, come back next week, run `/drvr:orchestrate` -- the plugin reads your feature log and tells you exactly where you are.
+- **Coordinate across codebases.** Plan backend, frontend, and infrastructure changes together with dependency ordering. Implement them in sequence with deviations tracked across the whole graph.
+
+The plugin handles the structure so you can focus on the hard part: deciding what to build and why.
 
 ## Prerequisites
 
