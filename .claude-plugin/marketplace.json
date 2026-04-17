@@ -1,11 +1,11 @@
 {
-  "name": "driver-sdlc-plugin",
+  "name": "drvr",
   "owner": {
     "name": "Driver AI"
   },
   "plugins": [
     {
-      "name": "driver-sdlc-plugin",
+      "name": "drvr",
       "source": "./",
       "description": "Structured SDLC workflow for feature development with Driver MCP and Claude Code",
       "homepage": "https://github.com/driver-ai/driver-sdlc-plugin",
