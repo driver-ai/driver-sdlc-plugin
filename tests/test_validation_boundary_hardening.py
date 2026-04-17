@@ -333,5 +333,130 @@ class TestBilateralMaterializationGate(unittest.TestCase):
         self.assertIn("No silent fallbacks", self.gate_doctrine)
 
 
+class TestPlanConcretenessStructural(unittest.TestCase):
+    """Structural tests for Plan 01: Data Structures & Callables concreteness rule."""
+
+    dry_run_plan: str
+    planning_guidance: str
+    impl_guidance: str
+    artifact_schemas: str
+    readme: str
+
+    @classmethod
+    def setUpClass(cls):
+        cls.dry_run_plan = (PLUGIN_ROOT / "commands" / "dry-run-plan.md").read_text()
+        cls.planning_guidance = (PLUGIN_ROOT / "skills" / "planning-guidance" / "SKILL.md").read_text()
+        cls.impl_guidance = (PLUGIN_ROOT / "skills" / "implementation-guidance" / "SKILL.md").read_text()
+        cls.artifact_schemas = (PLUGIN_ROOT / "tests" / "test_artifact_schemas.py").read_text()
+        cls.readme = (PLUGIN_ROOT / "README.md").read_text()
+
+    def _step3_slice(self) -> str:
+        match = re.search(r"### Step 3.*?(?=\n### Step 4|\Z)", self.dry_run_plan, re.DOTALL)
+        self.assertIsNotNone(match, "Step 3 section not found in dry-run-plan.md")
+        return match.group(0)
+
+    def _gap_types_slice(self) -> str:
+        match = re.search(r"## Gap Types to Watch For.*?(?=\n## |\Z)", self.dry_run_plan, re.DOTALL)
+        self.assertIsNotNone(match, "Gap Types section not found in dry-run-plan.md")
+        return match.group(0)
+
+    def _step6_slice(self) -> str:
+        match = re.search(r"## Step 6:.*?(?=\n## Step 7|\Z)", self.planning_guidance, re.DOTALL)
+        self.assertIsNotNone(match, "Step 6 section not found in planning-guidance SKILL.md")
+        return match.group(0)
+
+    def test_dry_run_has_concreteness_check(self):
+        self.assertRegex(
+            self._step3_slice(),
+            r"13\.\s+\*\*Concreteness\*\*:",
+            "dry-run-plan.md Step 3 missing check #13 Concreteness",
+        )
+
+    def test_dry_run_has_concreteness_gap_types(self):
+        gap_types = self._gap_types_slice()
+        for row in [
+            "Missing concreteness rollup",
+            "Rollup/snippet mismatch",
+            "Signature drift on modification",
+            "Collision on addition",
+        ]:
+            with self.subTest(row=row):
+                pattern = rf"^\|\s*\*\*{re.escape(row)}\*\*\s*\|.*\|.*\|$"
+                self.assertRegex(gap_types, pattern,
+                    f"Gap Types table missing table-shaped row for: {row}")
+
+    def test_dry_run_gap_type_severities(self):
+        gap_types = self._gap_types_slice()
+        expectations = {
+            "Missing concreteness rollup": "HIGH (MEDIUM if plan predates rule)",
+            "Rollup/snippet mismatch": "HIGH",
+            "Signature drift on modification": "HIGH",
+            "Collision on addition": "HIGH",
+        }
+        for label, sev in expectations.items():
+            with self.subTest(label=label):
+                pattern = rf"\*\*{re.escape(label)}\*\*\s*\|[^|]+\|\s*{re.escape(sev)}\s*\|"
+                self.assertRegex(gap_types, pattern,
+                    f"Row '{label}' missing expected severity '{sev}'")
+
+    def test_dry_run_concreteness_migration_language(self):
+        self.assertIn("MEDIUM if plan predates rule", self.dry_run_plan)
+
+    def test_planning_template_has_data_structures_section(self):
+        self.assertIn("## Data Structures & Callables", self.planning_guidance)
+        for sub in ("### Added", "### Modified", "### Removed"):
+            with self.subTest(sub=sub):
+                self.assertIn(sub, self.planning_guidance)
+
+    def test_planning_template_has_inline_snippet_example(self):
+        self.assertRegex(
+            self.planning_guidance,
+            r"####\s+Snippet:",
+            "planning-guidance task template missing #### Snippet: example",
+        )
+
+    def test_planning_section_positioned_after_architecture_fit(self):
+        arch_idx = self.planning_guidance.find("## Architecture Fit")
+        ds_idx = self.planning_guidance.find("## Data Structures & Callables")
+        ac_idx = self.planning_guidance.find("## Acceptance Criteria")
+        self.assertGreater(arch_idx, 0)
+        self.assertGreater(ds_idx, arch_idx)
+        self.assertGreater(ac_idx, ds_idx)
+
+    def test_planning_self_review_checks_rollup_snippets(self):
+        step6 = self._step6_slice()
+        self.assertIn("### Data Structures & Callables Self-Review", step6)
+        for token in ("rollup", "inline snippet", "signature drift"):
+            with self.subTest(token=token):
+                self.assertIn(token, step6.lower())
+
+    def test_impl_guidance_preflight_checks_inline_snippets(self):
+        match = re.search(
+            r"4\.5 Interface verification.*?(?=\n####\s+Phase\s+5\b|\n---|\Z)",
+            self.impl_guidance,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(match, "Phase 4.5 section not found")
+        self.assertIn("inline snippet", match.group(0).lower())
+
+    def test_plan_doc_sections_has_new_required(self):
+        match = re.search(
+            r"def test_plan_doc_sections.*?required\s*=\s*\{([^}]+)\}",
+            self.artifact_schemas,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(match, "test_plan_doc_sections required set not found")
+        required_text = match.group(1)
+        for section in ('"Architecture Fit"', '"Data Structures & Callables"'):
+            with self.subTest(section=section):
+                self.assertIn(section, required_text)
+
+    def test_readme_planning_mentions_data_structures(self):
+        match = re.search(r"\|\s*\*\*Planning\*\*\s*\|[^|]+\|", self.readme)
+        self.assertIsNotNone(match, "Planning row not found in README Phase Descriptions table")
+        self.assertIn("Data Structures & Callables", match.group(0),
+            "README Planning row does not mention Data Structures & Callables")
+
+
 if __name__ == "__main__":
     unittest.main()
