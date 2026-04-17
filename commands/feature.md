@@ -4,7 +4,7 @@ argument-hint: <project-name> [--prd <path>]
 allowed-tools: Read, Write, Edit, Bash, Glob
 ---
 
-# /feature Command
+# /drvr:feature Command
 
 Create a new feature project with research, plans, and implementation structure.
 
@@ -21,9 +21,9 @@ Extract project name from arguments. If not provided, ask for it.
 Read `~/.driver/config.json` and use the `projects_path` value to determine where feature projects are created.
 
 If `~/.driver/config.json` doesn't exist or doesn't have a `projects_path`:
-> "No projects directory is configured. Run `/setup` first to set up your projects directory."
+> "No projects directory is configured. Run `/drvr:setup` first to set up your projects directory."
 
-Stop here — do not create config or ask for the path. `/setup` owns that configuration.
+Stop here — do not create config or ask for the path. `/drvr:setup` owns that configuration.
 
 ### Step 3: Create Folder Structure
 
@@ -144,24 +144,24 @@ After creating the structure:
 
 1. Confirm what was created
 2. Tell the user: "Please answer the Setup Questions in `research/00-overview.md`. When you're ready to start research, say 'let's research' or use any research trigger phrase. The `research-guidance` skill will guide the process."
-3. Note that `/orchestrate <feature-path>` can be used to resume this feature in future sessions
+3. Note that `/drvr:orchestrate <feature-path>` can be used to resume this feature in future sessions
 
 ## Notes
 
-- The `/feature` command only handles scaffolding
+- The `/drvr:feature` command only handles scaffolding
 - Research methodology is handled by the `research-guidance` skill
 - Deep codebase context is handled by `driver-task-context` agent
 - `FEATURE_LOG.md` tracks lifecycle state — each skill updates it at transitions
-- Resume with `/orchestrate <feature-path>` in future sessions
+- Resume with `/drvr:orchestrate <feature-path>` in future sessions
 - Config is stored per-user in `~/.driver/config.json`
 - Use `--prd <path>` to include a PRD from product planning as context
 
 ## PRD Handoff from Product Planning
 
-If a PRD exists from prior product planning, it can be passed to `/feature`:
+If a PRD exists from prior product planning, it can be passed to `/drvr:feature`:
 
 ```bash
-/feature analytics --prd path/to/prd-analytics.md
+/drvr:feature analytics --prd path/to/prd-analytics.md
 ```
 
 This creates the feature project with the PRD content summarized in the research overview, providing context from product planning to engineering research.

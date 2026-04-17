@@ -4,7 +4,7 @@ argument-hint: [--write]
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep
 ---
 
-# /retro Command
+# /drvr:retro Command
 
 Reflect on the current session. Evaluate work quality, identify systemic improvements, and think about what's next.
 
@@ -37,10 +37,10 @@ Phase signals:
 
 | Phase | Signals |
 |-------|---------|
-| Research | `/feature`, `research-guidance`, writing to `research/*.md`, web/code exploration |
-| Planning | `planning-guidance`, writing to `plans/*.md`, `/dry-run-plan` |
+| Research | `/drvr:feature`, `research-guidance`, writing to `research/*.md`, web/code exploration |
+| Planning | `planning-guidance`, writing to `plans/*.md`, `/drvr:dry-run-plan` |
 | Implementation | Code edits, test writing, git commits, `implementation-guidance` |
-| Handoff | `/docs-artifacts`, writing to `driver-docs/` |
+| Handoff | `/drvr:docs-artifacts`, writing to `driver-docs/` |
 | Mixed | Multiple unrelated tasks, general Q&A |
 
 ### Step 4: Evaluate work quality
@@ -114,7 +114,7 @@ INDEX.md row format:
 **Implementation Readiness** — could someone implement without asking questions?
 - Overview created for multi-plan features?
 - Interface contracts defined between plans?
-- `/dry-run-plan` run and gaps addressed?
+- `/drvr:dry-run-plan` run and gaps addressed?
 
 ### Implementation Phase
 

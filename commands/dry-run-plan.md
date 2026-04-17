@@ -4,7 +4,7 @@ argument-hint: "[plan-name]"
 allowed-tools: Read, Write, Edit, Glob, Grep, Agent
 ---
 
-# /dry-run-plan Command
+# /drvr:dry-run-plan Command
 
 Walk through a plan as if implementing it to identify gaps, missing context, and potential issues before actual implementation begins.
 

@@ -4,7 +4,7 @@ argument-hint: [feature-path]
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep, Agent
 ---
 
-# /assess Command
+# /drvr:assess Command
 
 Curate the test suite after all plans are implemented. TDD naturally produces scaffolding tests that are valuable during construction but become maintenance burden afterward. This command evaluates every test, prunes what's no longer needed, promotes scaffolding that covers important behavior, and documents the decisions.
 
@@ -14,7 +14,7 @@ Curate the test suite after all plans are implemented. TDD naturally produces sc
 
 ## Step 1: Locate Feature and Check Readiness
 
-1. **Resolve feature path** — from argument, cwd, or parent directories (same as `/orchestrate`)
+1. **Resolve feature path** — from argument, cwd, or parent directories (same as `/drvr:orchestrate`)
 2. **Read `plans/00-overview.md`** — check the progress table for plan statuses
 
 ### Readiness Check
@@ -249,14 +249,14 @@ If `plans/00-overview.md` exists, add an Assessment row to the progress table:
      `| <date> | Assessment complete — pruned <X>, promoted <Y>, kept <Z> | assessment/test-curation-<date>.md |`
 2. Commit bookkeeping: `"chore: Assessment complete — pruned <X>, promoted <Y>, kept <Z>"`
 
-After completion, suggest: "Assessment complete. Run `/docs-artifacts` for handoff documentation."
+After completion, suggest: "Assessment complete. Run `/drvr:docs-artifacts` for handoff documentation."
 
 ---
 
 ## Notes
 
-- This command is mandatory before `/docs-artifacts` — the orchestrator enforces this
-- Users can run `/assess` mid-implementation, but a partial assessment doesn't satisfy the pre-handoff requirement
+- This command is mandatory before `/drvr:docs-artifacts` — the orchestrator enforces this
+- Users can run `/drvr:assess` mid-implementation, but a partial assessment doesn't satisfy the pre-handoff requirement
 - When uncertain about a test, default to KEEP — false positives (keeping unnecessary tests) are cheaper than false negatives (losing important coverage)
 - The assessment report persists as documentation of test curation decisions
-- For phase detection rules, see [/orchestrate](orchestrate.md) and [sdlc-orchestration](../skills/sdlc-orchestration/SKILL.md)
+- For phase detection rules, see [/drvr:orchestrate](orchestrate.md) and [sdlc-orchestration](../skills/sdlc-orchestration/SKILL.md)

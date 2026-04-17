@@ -1,12 +1,12 @@
 ---
-description: Set up a projects directory for the Driver SDLC plugin
+description: Set up a projects directory for the drvr plugin
 argument-hint: "[clone-url]"
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep, AskUserQuestion, mcp__driver-mcp__get_codebase_names
 ---
 
-# /setup Command
+# /drvr:setup Command
 
-Set up a projects directory for the Driver SDLC plugin. This command is idempotent — safe to re-run at any time.
+Set up a projects directory for the drvr plugin. This command is idempotent — safe to re-run at any time.
 
 ## Config Path
 
@@ -24,13 +24,13 @@ Check if `.claude-plugin/plugin.json` exists in the current directory using Glob
 
 **If found:** The user is inside the plugin repo, not a projects directory. Tell them:
 
-> "You're currently in the driver-sdlc-plugin directory. The `/setup` command configures a **projects directory** — a separate repo where your features, research, and plans live."
+> "You're currently in the driver-sdlc-plugin directory. The `/drvr:setup` command configures a **projects directory** — a separate repo where your features, research, and plans live."
 >
 > "Would you like to:"
 > 1. "Create a new projects directory (I'll guide you through it)"
 > 2. "Clone an existing team projects repo"
 
-If the user picks option 1, ask them to `cd` to where they want the projects directory and run `/setup` again. If option 2, ask for the clone URL and proceed to Step 3C.
+If the user picks option 1, ask them to `cd` to where they want the projects directory and run `/drvr:setup` again. If option 2, ask for the clone URL and proceed to Step 3C.
 
 ### Step 2: Route to the Appropriate Path
 
@@ -104,7 +104,7 @@ Create a new projects directory from scratch.
    }
    ```
 
-6. **Create `CLAUDE.md`** in the new directory. Generate it from the template below, replacing `{{TEAM_NAME}}` with the directory name from step 2 and `{{DATE}}` with today's date. Leave the Codebases table as a placeholder — codebases are configured per-feature during `/feature` setup. Write the result to `<parent>/<name>/CLAUDE.md`.
+6. **Create `CLAUDE.md`** in the new directory. Generate it from the template below, replacing `{{TEAM_NAME}}` with the directory name from step 2 and `{{DATE}}` with today's date. Leave the Codebases table as a placeholder — codebases are configured per-feature during `/drvr:feature` setup. Write the result to `<parent>/<name>/CLAUDE.md`.
 
 7. **Git init** in the new directory:
    ```bash
@@ -120,7 +120,7 @@ Create a new projects directory from scratch.
 9. **Tell the user:**
    > "Your projects directory is ready at `<absolute-path>`. To start using it:"
    > 1. "Open Claude Code in that directory: `cd <path> && claude --permission-mode auto`"
-   > 2. "Run `/feature <name>` to start your first feature"
+   > 2. "Run `/drvr:feature <name>` to start your first feature"
 
 ### Step 3B: Existing Repo Audit
 
@@ -157,7 +157,7 @@ Check for required files and fill gaps.
      - "For SSH: verify your SSH key is set up (`ssh -T git@github.com`)"
      - "For HTTPS: check your credentials/token"
      - "If the destination exists, try a different path"
-   - Do NOT retry automatically. Let the user fix the issue and re-run `/setup`.
+   - Do NOT retry automatically. Let the user fix the issue and re-run `/drvr:setup`.
 
 4. **cd into the cloned directory** and run Step 3B (audit and fill gaps).
 
@@ -212,7 +212,7 @@ Print a summary of everything that was done:
 
 **Driver MCP:** <connected (N codebases) | not connected — see above>
 
-**Next step:** Run `/feature <name>` to start your first feature.
+**Next step:** Run `/drvr:feature <name>` to start your first feature.
 ```
 
 ---
@@ -224,7 +224,7 @@ Use this template when creating CLAUDE.md for a new projects directory. Replace 
 ````markdown
 # {{TEAM_NAME}} — SDLC Project Instructions
 
-This repository organizes development work by feature, with each feature containing its own lifecycle of artifacts. It is managed by the [Driver SDLC Plugin](https://github.com/driver-ai/driver-sdlc-plugin) for Claude Code.
+This repository organizes development work by feature, with each feature containing its own lifecycle of artifacts. It is managed by the [Driver SDLC Plugin (drvr)](https://github.com/driver-ai/driver-sdlc-plugin) for Claude Code.
 
 ---
 
@@ -240,7 +240,10 @@ This repository organizes development work by feature, with each feature contain
 │       ├── FEATURE_LOG.md   # Lifecycle state — the source of truth
 │       ├── research/        # Problem exploration and design decisions
 │       ├── plans/           # Implementation plans
-│       │   └── 00-overview.md  # Multi-plan overview (when needed)
+│       │   ├── 00-overview.md  # Multi-plan overview (when needed)
+│       │   └── NN-plan-name/   # Directory named after plan file (sans .md)
+│       │       └── tasks/      # Materialized task documents
+│       │           └── NN-task-name.md
 │       ├── dry-runs/        # Plan validation results
 │       ├── implementation/  # Implementation logs per plan
 │       ├── assessment/      # Test suite curation results
@@ -251,16 +254,16 @@ This repository organizes development work by feature, with each feature contain
 
 | Folder | Purpose | When Created |
 |--------|---------|-------------|
-| `FEATURE_LOG.md` | Source of truth for lifecycle state | `/feature` scaffolding |
-| `research/` | Problem statements, explorations, trade-off analysis | `/feature` scaffolding |
+| `FEATURE_LOG.md` | Source of truth for lifecycle state | `/drvr:feature` scaffolding |
+| `research/` | Problem statements, explorations, trade-off analysis | `/drvr:feature` scaffolding |
 | `plans/` | Implementation plans with concrete steps | Planning phase |
-| `dry-runs/` | Plan validation results with gap analysis | `/dry-run-plan` |
+| `dry-runs/` | Plan validation results with gap analysis | `/drvr:dry-run-plan` |
 | `implementation/` | Implementation logs tracking deviations per plan | Implementation phase |
-| `assessment/` | Test suite curation results | `/assess` |
+| `assessment/` | Test suite curation results | `/drvr:assess` |
 | `tests/` | Markdown test plans executed by LLM agents | When manual testing is needed |
-| `driver-docs/` | Handoff documentation | `/docs-artifacts` |
+| `driver-docs/` | Handoff documentation | `/drvr:docs-artifacts` |
 
-Use `/feature <name>` to scaffold a new feature project. Use `/orchestrate <feature-path>` to resume an existing feature.
+Use `/drvr:feature <name>` to scaffold a new feature project. Use `/drvr:orchestrate <feature-path>` to resume an existing feature.
 
 ---
 
@@ -283,7 +286,7 @@ updated: "YYYY-MM-DD"
 **Statuses:** `not_started`, `in_progress`, `complete`, `approved`, `accepted`, `pending_review`, `resolved`, `open`, `confirmed`, `unverified`
 
 **Type-specific fields:**
-- `task`: `plan` (parent plan name), `depends_on` (list of task paths)
+- `task`: `plan` (parent plan name), `task_number` (sequential position, integer), `depends_on` (list of task paths), `materialized_at` (ISO 8601 timestamp)
 - `decision`: `topic`, `choice`
 - `deviation`: `severity` (low/medium/high), `task` (source task)
 - `plan`: `depends_on`, `blocks` (for dependency graph resolution)
@@ -295,12 +298,12 @@ updated: "YYYY-MM-DD"
 Features follow a phased development lifecycle. Each phase has a dedicated skill that provides guidance.
 
 ```
-/feature -> Research -> Planning -> Validation -> Implementation -> Review -> Bookkeeping -> Next Plan -> ...
-                                                                                                   |
-                                                                                      All plans complete
-                                                                                                   |
-                                                                                                   v
-                                                                          /assess -> /docs-artifacts -> Handoff
+/drvr:feature -> Research -> Planning -> Validation -> Materialization -> Implementation -> Review -> Bookkeeping -> Next Plan -> ...
+                                                                                                                          |
+                                                                                                             All plans complete
+                                                                                                                          |
+                                                                                                                          v
+                                                                                                 /drvr:assess -> /drvr:docs-artifacts -> Handoff
 ```
 
 ### Phase -> Skill Mapping
@@ -309,12 +312,13 @@ Features follow a phased development lifecycle. Each phase has a dedicated skill
 |-------|----------------|-------------|
 | Research | `research-guidance` | Why-What-How methodology, document organization, completion criteria |
 | Planning | `planning-guidance` | TDD-first task design, test strategy, architecture fit, task breakdown |
-| Validation | `/dry-run-plan` | Walk through plan as-if implementing, severity-classified gaps |
+| Validation | `/drvr:dry-run-plan` | Walk through plan as-if implementing, severity-classified gaps |
+| Materialization | `materialize-tasks` | Convert plan tasks into standalone task docs for sub-agent execution |
 | Implementation | `implementation-guidance` | Plan-driven task execution, deviation tracking, commit discipline |
 | Review | `sdlc-orchestration` | Present deviations for user approval before bookkeeping |
 | Bookkeeping | `implementation-guidance` | Update plan status, overview, cascade check |
-| Assessment | `/assess` | Curate test suite — categorize, prune scaffolding, promote valuable tests |
-| Handoff | `/docs-artifacts` | Generate feature-overview, architecture, testing-guide, risk-assessment |
+| Assessment | `/drvr:assess` | Curate test suite — categorize, prune scaffolding, promote valuable tests |
+| Handoff | `/drvr:docs-artifacts` | Generate feature-overview, architecture, testing-guide, risk-assessment |
 
 ### Key Principles
 
@@ -329,13 +333,13 @@ Features follow a phased development lifecycle. Each phase has a dedicated skill
 
 | Command | Purpose |
 |---------|---------|
-| `/setup` | Set up this projects directory (first-time configuration) |
-| `/feature <name>` | Scaffold a new feature project with FEATURE_LOG.md |
-| `/orchestrate <path>` | Resume a feature — read log, report state, suggest next action |
-| `/dry-run-plan <plan>` | Walk through a plan to identify gaps before implementation |
-| `/assess` | Curate test suite after implementation — categorize, prune, promote |
-| `/docs-artifacts` | Generate handoff documentation for code review |
-| `/retro` | Evaluate session quality, patterns, and improvements |
+| `/drvr:setup` | Set up this projects directory (first-time configuration) |
+| `/drvr:feature <name>` | Scaffold a new feature project with FEATURE_LOG.md |
+| `/drvr:orchestrate <path>` | Resume a feature — read log, report state, suggest next action |
+| `/drvr:dry-run-plan <plan>` | Walk through a plan to identify gaps before implementation |
+| `/drvr:assess` | Curate test suite after implementation — categorize, prune, promote |
+| `/drvr:docs-artifacts` | Generate handoff documentation for code review |
+| `/drvr:retro` | Evaluate session quality, patterns, and improvements |
 
 ## Skills
 
@@ -343,6 +347,7 @@ Features follow a phased development lifecycle. Each phase has a dedicated skill
 |-------|---------|
 | `research-guidance` | Why-What-How methodology, document organization |
 | `planning-guidance` | TDD-first plans, test strategy, task breakdown |
+| `materialize-tasks` | Materialize approved plan tasks into standalone task docs |
 | `implementation-guidance` | Plan-driven execution, deviation tracking, bookkeeping |
 | `sdlc-orchestration` | Lifecycle coordination, phase transitions |
 
@@ -405,5 +410,5 @@ _Describe your team's testing approach. Examples:_
 
 ---
 
-_Generated by `/setup` on {{DATE}}_
+_Generated by `/drvr:setup` on {{DATE}}_
 ````

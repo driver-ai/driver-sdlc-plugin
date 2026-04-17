@@ -4,7 +4,7 @@ argument-hint: <task description> [--codebases name1,name2]
 allowed-tools: Agent, Bash, mcp__driver-mcp__get_codebase_names
 ---
 
-# /context Command
+# /drvr:context Command
 
 Spawn the `driver-task-context` agent to gather comprehensive codebase context
 for a specific task. The agent runs in isolated context, keeping your main
@@ -20,9 +20,9 @@ Parse `$ARGUMENTS` for:
 - **Codebase hint** (optional): `--codebases name1,name2` (one or more, comma-separated)
 
 Examples:
-- `/context implement webhook handler` → task only
-- `/context implement webhook handler --codebases python-backend` → task + single codebase
-- `/context design auth flow --codebases webapp-frontend,python-backend` → task + multiple codebases
+- `/drvr:context implement webhook handler` → task only
+- `/drvr:context implement webhook handler --codebases python-backend` → task + single codebase
+- `/drvr:context design auth flow --codebases webapp-frontend,python-backend` → task + multiple codebases
 
 If task description is empty, ask:
 > "What task do you need context for? (e.g., 'implement user authentication',
@@ -64,11 +64,11 @@ The agent returns synthesized context. Display it to the user without modificati
 ## Examples
 
 ```
-/context implement webhook handler for Stripe events
-/context debug why authentication is slow --codebases python-backend
-/context understand how the payment flow works
-/context design auth integration --codebases webapp-frontend,python-backend
-/context refactor the notification system to support SMS
+/drvr:context implement webhook handler for Stripe events
+/drvr:context debug why authentication is slow --codebases python-backend
+/drvr:context understand how the payment flow works
+/drvr:context design auth integration --codebases webapp-frontend,python-backend
+/drvr:context refactor the notification system to support SMS
 ```
 
 ## Notes
