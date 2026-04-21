@@ -206,6 +206,17 @@ _Surfaced during implementation — deviations that affect other plans_
 - [ ] <unresolved decisions>
 ````
 
+#### Fill In Implementation Environment
+
+When creating `plans/00-overview.md`, fill in the Implementation Environment table:
+- **Codebase and Local Path** — from `research/00-overview.md` `## Codebases`
+- **Base Branch** — from research Codebases `Branch` column
+- **Feature Branch** — ask the user; default `feature/<feature-name>` if not specified
+- **Test Command** — ask the user, or check the codebase CLAUDE.md for test invocations
+
+Confirm the table with the user before approving plans. Materialize-tasks reads this table
+downstream to hydrate task docs — getting it right here means sub-agents arrive pre-loaded.
+
 #### Interface Contracts Are Critical
 
 The interface contracts section prevents the most expensive planning failure: discovering during implementation that Plan B's assumptions don't match Plan A's definitions. Define contracts explicitly when writing each plan.
