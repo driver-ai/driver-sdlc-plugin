@@ -49,7 +49,7 @@ For each task in the plan, walk through it as if implementing:
 10. **CLI compatibility**: Do referenced CLI commands and flags exist in the expected versions?
 11. **Platform**: Are there platform-specific assumptions (e.g., bash version, OS utilities)?
 12. **Standards**: If a codebase standards artifact exists (search the feature's `research/` directory for a file containing `## Standards Source`), do the plan's constraints cover the applicable standards for this task's files? Match the artifact's Applicable Sections against the task's file paths. (Check once per unique file-type group — if multiple tasks touch the same language/framework, check once and reference that finding for the others.)
-13. **Concreteness**: Does the plan have a `## Data Structures & Callables` rollup? Does every row in "Added" and "Modified" have a corresponding inline snippet in its Owning Task? For modified items, do the snippet signatures match the current codebase (use `get_file_documentation` for verification)? For plans that predate this rule (no rollup at all), downgrade from HIGH to MEDIUM and label "plan predates concreteness rule — consider migrating."
+13. **Concreteness**: Does the plan have a `## Data Structures & Callables` section? If present, does each rollup row have a corresponding inline snippet in its Owning Task? For modified items, do the snippet signatures match the current codebase (use `get_file_documentation` for verification)? For plans with minimal code surface or that predate this rule (no section at all), downgrade to MEDIUM and note the reason.
 
 Classify each gap found using the severity criteria below.
 
@@ -199,8 +199,8 @@ Default severities are starting points — override based on the specific gap.
 | **File naming convention** | New file doesn't follow project naming pattern | LOW |
 | **CLI flag incompatibility** | Referenced command flag doesn't exist or changed between versions | MEDIUM |
 | **Platform assumption** | Code assumes platform-specific behavior (bash version, OS utilities) | MEDIUM |
-| **Missing concreteness rollup** | Plan has no `## Data Structures & Callables` section | HIGH (MEDIUM if plan predates rule) |
-| **Rollup/snippet mismatch** | Rollup lists an item but no inline snippet in Owning Task (or vice versa) | HIGH |
+| **Missing concreteness rollup** | Plan has no `## Data Structures & Callables` section | HIGH (MEDIUM if plan has minimal code surface or predates rule) |
+| **Rollup/snippet mismatch** | Rollup lists an item but no inline snippet in Owning Task (or vice versa) | MEDIUM |
 | **Signature drift on modification** | Plan modifies an existing callable; snippet signature doesn't match codebase | HIGH |
 | **Collision on addition** | Plan adds a name that already exists in the target file | HIGH |
 

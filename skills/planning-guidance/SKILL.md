@@ -230,8 +230,15 @@ _Integration points with existing code_
 
 ## Data Structures & Callables
 
-_The concrete design commitments of this plan. Every row below must have a corresponding
-snippet inline in the Task Breakdown section that owns it. Dry-run audits this table._
+_Interface-level design decisions: the data structures and callable signatures this plan
+introduces or modifies. Each item listed here has a corresponding inline snippet
+(`#### Snippet:`) in its Owning Task — the snippet is the primary artifact, flowing
+through materialization into the task doc that sub-agents execute against. This section
+serves as the scannable index; the per-task snippets are the source of truth._
+
+_Calibrate per plan: for a plan with significant API surface, this may be every type and
+method. For targeted changes, list only the signatures that represent design decisions.
+For plans with no code-surface changes, leave subsections empty with a brief note._
 
 _Language-agnostic: use the codebase's native idioms. Kind values adapt per language
 (`class`, `struct`, `dataclass`, `typed_dict`, `pydantic_model`, `enum`, `interface`,

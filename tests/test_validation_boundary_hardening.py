@@ -391,8 +391,8 @@ class TestPlanConcretenessStructural(unittest.TestCase):
     def test_dry_run_gap_type_severities(self):
         gap_types = self._gap_types_slice()
         expectations = {
-            "Missing concreteness rollup": "HIGH (MEDIUM if plan predates rule)",
-            "Rollup/snippet mismatch": "HIGH",
+            "Missing concreteness rollup": "HIGH (MEDIUM if plan has minimal code surface or predates rule)",
+            "Rollup/snippet mismatch": "MEDIUM",
             "Signature drift on modification": "HIGH",
             "Collision on addition": "HIGH",
         }
