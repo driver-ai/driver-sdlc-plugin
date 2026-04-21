@@ -230,19 +230,29 @@ _Integration points with existing code_
 
 ## Data Structures & Callables
 
-_Interface-level design decisions: the data structures and callable signatures this plan
-introduces or modifies. Each item listed here has a corresponding inline snippet
-(`#### Snippet:`) in its Owning Task — the snippet is the primary artifact, flowing
-through materialization into the task doc that sub-agents execute against. This section
-serves as the scannable index; the per-task snippets are the source of truth._
+_Interface-level design decisions: the data structures (with their typed fields) and
+callable signatures (with full argument names, types, and return types) this plan
+introduces or modifies. The types ARE the design — they connect data structures to
+callables and let reviewers assess whether the interfaces are right without reading
+implementation logic. Each item here has a corresponding inline snippet (`#### Snippet:`)
+in its Owning Task — the snippet is the primary artifact, flowing through materialization
+into the task doc that sub-agents execute against. This section is the scannable index;
+the per-task snippets are the source of truth._
 
-_Calibrate per plan: for a plan with significant API surface, this may be every type and
-method. For targeted changes, list only the signatures that represent design decisions.
-For plans with no code-surface changes, leave subsections empty with a brief note._
+_Snippets must show the full signature — not just the function name, but every argument
+with its name and type, plus the return type. For data structures, show every field with
+its type. Elide method bodies with `...` when only the interface matters; include the body
+when the logic itself is a design decision worth reviewing (e.g., a retry formula, a
+validation pipeline, a state machine)._
+
+_Calibrate coverage per plan: for a plan with significant API surface, this may be every
+type and method. For targeted changes, list only the signatures that represent design
+decisions. For plans with no code-surface changes, leave subsections empty with a note._
 
 _Language-agnostic: use the codebase's native idioms. Kind values adapt per language
 (`class`, `struct`, `dataclass`, `typed_dict`, `pydantic_model`, `enum`, `interface`,
-`protocol`, `trait`, `type_alias`, `function`, `method`, etc.). The codebase CLAUDE.md
+`protocol`, `trait`, `type_alias`, `function`, `method`, etc.). For untyped languages,
+show argument names and document expected shapes in brief comments. The codebase CLAUDE.md
 defines idioms; when absent, use the language's most natural form._
 
 ### Added
