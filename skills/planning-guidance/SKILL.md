@@ -180,6 +180,15 @@ For features that span multiple plans, create `plans/00-overview.md` as the cent
 | 01 <name> | NOT STARTED | — | <what it delivers> |
 | 02 <name> | NOT STARTED | — | <what it delivers> |
 
+## Implementation Environment
+
+_Codebase paths, branches, and test commands for this feature. Fill in during planning;
+confirm with the user before approving plans. Materialize-tasks reads this table to hydrate
+each task doc's `## Codebase` block and `## Test Command` section._
+
+| Codebase | Local Path | Base Branch | Feature Branch | Test Command |
+|----------|------------|-------------|----------------|--------------|
+
 ## Planning Strategy
 _Why the feature is broken into these plans, what order, what the rationale is_
 
