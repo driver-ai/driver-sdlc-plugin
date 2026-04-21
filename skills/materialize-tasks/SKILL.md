@@ -45,15 +45,25 @@ After approval, verify that outstanding dry-run gaps do not block materializatio
 
 ## Step 2: Resolve Codebase Target
 
-Read `research/00-overview.md` and find the `## Codebases` section and its table. The table header is `| Name | Local Path | Driver Name | Branch |`. Extract the `Local Path` column (second column) from each data row.
+Read the plan overview first: `plans/00-overview.md` `## Implementation Environment`. If it
+exists, extract per-codebase data from the table columns:
+- **Local Path** → codebase root
+- **Base Branch** → base branch for the task doc
+- **Feature Branch** → feature branch (omit from task doc if empty)
+- **Test Command** → populates task doc `## Test Command` section (omit if empty)
 
-**Parsing rules:**
-- Ignore rows where Local Path is `_TBD_`, empty, contains only whitespace, or contains other placeholder text (e.g., `_fill in_`)
+**Fallback**: if `plans/00-overview.md` does not exist OR the `## Implementation Environment`
+section is absent (legacy features), read `research/00-overview.md` and find the
+`## Codebases` section. The table header is `| Name | Local Path | Driver Name | Branch |`.
+Extract Local Path and Branch (treated as Base Branch). Feature Branch and Test Command are
+unknown in this fallback path — omit those fields from task docs.
+
+**Parsing rules** (apply to whichever table is being read):
+- Ignore rows where Local Path is `_TBD_`, empty, or placeholder text
 - Verify each extracted path is an absolute path (starts with `/`) and exists on disk
-- If no valid Local Path entries remain after filtering, BLOCK: "No valid codebase paths in Codebases table. Fill in the Local Path column in `research/00-overview.md`."
-- If `research/00-overview.md` does not exist, BLOCK: "No research overview found. Run research phase first."
+- If no valid paths remain, BLOCK: "No valid codebase paths found. Fill in the Implementation Environment table (or research Codebases as fallback) before materializing."
 
-**Multi-codebase resolution:** If the Codebases table has multiple valid rows:
+**Multi-codebase resolution:** If the resolved source has multiple valid rows:
 1. First, try to infer the target codebase from the plan's `## Task Breakdown` file paths. Collect all file paths from `**Files**:` fields across tasks. For each codebase's Local Path, check if the plan's file paths resolve under it (e.g., `<Local Path>/<relative file path>` exists). If all files resolve under exactly one codebase, auto-resolve to that codebase.
 2. If files resolve under multiple codebases (ambiguous), or no files resolve under any codebase, ask the user: "This plan's file paths match multiple codebases. Which codebase does this plan target? [list options]"
 3. Report the resolution in Step 6: "Codebase auto-resolved from file paths" or "Codebase selected by user."
@@ -100,12 +110,16 @@ materialized_at: "<ISO 8601 local time, e.g., 2026-04-15T14:32:00>"
 # Task N: <name>
 
 ## Codebase
-**Root**: <absolute path from Codebases table>
-**Branch**: <branch from Codebases table>
+**Root**: <absolute path from IE or research Codebases fallback>
+**Base Branch**: <from IE or research Codebases Branch fallback>
+**Feature Branch**: <from IE; omit field if unknown>
 
 All file paths below are relative to the codebase root.
 Execute all commands from the codebase root directory.
 Do NOT navigate to or modify files outside this directory.
+
+## Test Command
+<from IE Test Command column; omit entire section if unknown>
 
 ## Goal
 <copied from plan — verbatim>
@@ -137,7 +151,7 @@ Read the plan for full architectural context if needed.
 3. Read the code quality standards at the source path above
 4. Implement exactly what's specified — no extras
 5. Verify your code follows the standards
-6. Run tests after implementation
+6. Run tests after implementation (use `## Test Command` if present, otherwise follow Pre-flight Phase 4.3 discovery)
 7. Report what you built, files touched, any deviations, and standards compliance
 ```
 
