@@ -369,7 +369,7 @@ class TestStructuralSections(unittest.TestCase):
 
     def test_plan_overview_sections(self):
         """plans/00-overview.md has required H2 sections and a Progress table."""
-        required = {"Planning Strategy", "Dependency Graph", "Interface Contracts Between Plans"}
+        required = {"Implementation Environment", "Planning Strategy", "Dependency Graph", "Interface Contracts Between Plans"}
         tested = 0
         active_projects = [p for p in _FEATURE_PROJECTS if is_active_feature(p)]
         for project in active_projects:

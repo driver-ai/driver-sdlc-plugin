@@ -52,8 +52,14 @@ Feature: <name>
 Progress: N/M plans complete
 Current state: <what's in progress or what's next>
 Last activity: <most recent artifact modified>
+Codebase: <name> at <local-path> (on <base-branch>)
+Test command: `<cmd>`
 Next action: <suggestion based on state — if assessment phase, "Run /drvr:assess to curate the test suite before handoff">
 ```
+
+**Graceful degradation**: if `plans/00-overview.md` has no `## Implementation Environment` section (legacy features, or overview not yet created), omit the `Codebase:` and `Test command:` lines. Do NOT emit placeholder values.
+
+**Multi-codebase**: if Implementation Environment lists multiple codebases, emit one `Codebase:` and `Test command:` line per codebase.
 
 If no overview exists, check for `research/` and `plans/` directories to infer the phase.
 

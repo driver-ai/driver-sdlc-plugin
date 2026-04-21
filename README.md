@@ -98,7 +98,7 @@ The drvr plugin generates most artifacts through guided workflows. Your job is t
 | Phase | What Happens |
 |-------|-------------|
 | **Research** | Explore the problem space using structured Why-What-How questioning. Produce research docs and design decisions. |
-| **Planning** | Write implementation plans with TDD-first task ordering, test strategy, explicit constraints, and concrete code snippets for every added or modified data structure and callable (the `## Data Structures & Callables` rollup). |
+| **Planning** | Write implementation plans with TDD-first task ordering, test strategy, explicit constraints, and concrete code snippets for every added or modified data structure and callable (the `## Data Structures & Callables` rollup). The `plans/00-overview.md` carries the `## Implementation Environment` — codebase paths, branches, and test commands that `materialize-tasks` hydrates into each task doc. |
 | **Validation** | Dry-run each plan to find gaps before writing code. All gaps are reviewed, classified by severity. |
 | **Materialization** | Approved plan tasks are converted into standalone task documents. Each embeds codebase root, file paths, standards, and instructions for sub-agent execution. |
 | **Implementation** | Execute materialized task documents. Track deviations from the plan. Commit after each task. |
