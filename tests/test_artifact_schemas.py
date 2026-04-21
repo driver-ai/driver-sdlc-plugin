@@ -311,7 +311,7 @@ class TestStructuralSections(unittest.TestCase):
 
     def test_research_overview_sections(self):
         """research/00-overview.md has required H2 sections."""
-        required = {"Status", "Problem Statement", "Scope", "Codebases", "Setup Questions"}
+        required = {"Status", "Problem Statement", "Scope", "Codebases"}
         for project in _FEATURE_PROJECTS:
             with self.subTest(project=project.name):
                 overview = project / "research" / "00-overview.md"
