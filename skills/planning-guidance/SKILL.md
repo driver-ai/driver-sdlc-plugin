@@ -215,7 +215,10 @@ This catches interface design problems during planning (free to fix) rather than
 
 ### Plan Document Template
 
-```markdown
+<!-- The template block uses a four-backtick outer fence so nested three-backtick code
+     snippets inside tasks don't terminate it prematurely. -->
+
+````markdown
 # Plan: <name>
 
 ## Context
@@ -225,6 +228,48 @@ _Summary from research — problem statement, scope, key decisions_
 _Existing patterns to follow, with specific file paths from Driver context_
 _Directories and files this plan touches_
 _Integration points with existing code_
+
+## Data Structures & Callables
+
+_Interface-level design decisions: the data structures (with their typed fields) and
+callable signatures (with full argument names, types, and return types) this plan
+introduces or modifies. The types ARE the design — they connect data structures to
+callables and let reviewers assess whether the interfaces are right without reading
+implementation logic. Each item here has a corresponding inline snippet (`#### Snippet:`)
+in its Owning Task — the snippet is the primary artifact, flowing through materialization
+into the task doc that sub-agents execute against. This section is the scannable index;
+the per-task snippets are the source of truth._
+
+_Snippets must show the full signature — not just the function name, but every argument
+with its name and type, plus the return type. For data structures, show every field with
+its type. Elide method bodies with `...` when only the interface matters; include the body
+when the logic itself is a design decision worth reviewing (e.g., a retry formula, a
+validation pipeline, a state machine)._
+
+_Calibrate coverage per plan: for a plan with significant API surface, this may be every
+type and method. For targeted changes, list only the signatures that represent design
+decisions. For plans with no code-surface changes, leave subsections empty with a note._
+
+_Language-agnostic: use the codebase's native idioms. Kind values adapt per language
+(`class`, `struct`, `dataclass`, `typed_dict`, `pydantic_model`, `enum`, `interface`,
+`protocol`, `trait`, `type_alias`, `function`, `method`, etc.). For untyped languages,
+show argument names and document expected shapes in brief comments. The codebase CLAUDE.md
+defines idioms; when absent, use the language's most natural form._
+
+### Added
+
+| Kind | Name | Target File | Owning Task | Notes |
+|------|------|-------------|-------------|-------|
+
+### Modified
+
+| Kind | Name | Target File | Owning Task | Operation |
+|------|------|-------------|-------------|-----------|
+
+### Removed
+
+| Kind | Name | Target File | Owning Task | Rationale |
+|------|------|-------------|-------------|-----------|
 
 ## Acceptance Criteria
 - [ ] Criterion 1 (specific, testable)
@@ -266,7 +311,23 @@ _High-level approach, key design decisions, rationale_
 **Files**: `path/to/source_file.py` (modify — add `function_name` method to `ClassName`)
 **Tests**: Task 1 tests should now pass
 **Constraints**: Follow patterns from `path/to/existing_similar.py`
+
+#### Snippet: NotificationRetryPolicy (new)
+
+```python
+@dataclass(frozen=True)
+class NotificationRetryPolicy:
+    max_attempts: int
+    base_delay_seconds: float
+    jitter_ratio: float = 0.1
+
+    def delay_for(self, attempt: int) -> float:
+        """Return the delay in seconds for the given attempt (1-indexed)."""
+        ...
 ```
+
+_Language note: in a Go codebase this would be a struct + method receiver; in TypeScript an interface + class; in Rust a struct + impl. The codebase CLAUDE.md defines idioms._
+````
 
 ### TDD Task Ordering
 
@@ -411,6 +472,15 @@ Tell the user what you found:
 - Suggestions: adjustments to the plan based on what you discovered
 
 Update the plan to address any discrepancies before the user reviews it.
+
+### Data Structures & Callables Self-Review
+
+After drafting, verify:
+
+1. **Rollup exists** — the plan has a `## Data Structures & Callables` section with Added / Modified / Removed sub-sections (empty sub-sections are fine; absent section is not).
+2. **Rollup↔snippet consistency** — every row in Added and Modified has a corresponding inline snippet (`#### Snippet:`) inside its Owning Task. Every inline snippet has a matching rollup row. No orphans in either direction.
+3. **Signature drift on modified items** — for each Modified row, use `get_file_documentation` on the target file and verify the snippet signature matches the current codebase signature. If drifted, update the plan to match reality, OR mark the signature change as intentional in the Constraints section (breaking change).
+4. **Collision check on added items** — for each Added row, verify the name does not already exist in the target file (`get_file_documentation`).
 
 ---
 

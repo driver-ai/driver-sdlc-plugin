@@ -75,6 +75,10 @@ updated: "YYYY-MM-DD"
 | `plan` | `approved_at` | ISO 8601 UTC timestamp of plan approval |
 | `plan` | `approved_by` | Identity of user who approved the plan |
 
+### Required Plan Sections
+
+Plan documents (`01-*.md`, `02-*.md`, etc.) must include these H2 sections: `Context`, `Architecture Fit`, `Data Structures & Callables`, `Acceptance Criteria`, `Test Strategy`, `Task Breakdown`. Enforced by `test_plan_doc_sections`.
+
 ---
 
 ## SDLC Lifecycle
