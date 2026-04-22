@@ -48,6 +48,15 @@ ALLOWED_STATUSES = {
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 TIMESTAMP_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}")
 
+PLAN_REQUIRED_SECTIONS = {
+    "Context",
+    "Architecture Fit",
+    "Data Structures & Callables",
+    "Acceptance Criteria",
+    "Test Strategy",
+    "Task Breakdown",
+}
+
 # ---------------------------------------------------------------------------
 # Discover feature projects once at module level
 # ---------------------------------------------------------------------------
@@ -340,14 +349,7 @@ class TestStructuralSections(unittest.TestCase):
 
     def test_plan_doc_sections(self):
         """Plan docs (01-*.md, 02-*.md, etc.) have required H2 sections."""
-        required = {
-            "Context",
-            "Architecture Fit",
-            "Data Structures & Callables",
-            "Acceptance Criteria",
-            "Test Strategy",
-            "Task Breakdown",
-        }
+        required = PLAN_REQUIRED_SECTIONS.copy()
         tested = 0
         active_projects = [p for p in _FEATURE_PROJECTS if is_active_feature(p)]
         for project in active_projects:

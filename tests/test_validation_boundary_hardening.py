@@ -390,17 +390,26 @@ class TestPlanConcretenessStructural(unittest.TestCase):
 
     def test_dry_run_gap_type_severities(self):
         gap_types = self._gap_types_slice()
-        expectations = {
-            "Missing concreteness rollup": "HIGH (MEDIUM if plan has minimal code surface or predates rule)",
+        exact_expectations = {
             "Rollup/snippet mismatch": "MEDIUM",
             "Signature drift on modification": "HIGH",
             "Collision on addition": "HIGH",
         }
-        for label, sev in expectations.items():
+        for label, sev in exact_expectations.items():
             with self.subTest(label=label):
                 pattern = rf"\*\*{re.escape(label)}\*\*\s*\|[^|]+\|\s*{re.escape(sev)}\s*\|"
                 self.assertRegex(gap_types, pattern,
                     f"Row '{label}' missing expected severity '{sev}'")
+        with self.subTest(label="Missing concreteness rollup"):
+            row_match = re.search(
+                r"\*\*Missing concreteness rollup\*\*\s*\|[^|]+\|\s*([^|]+)\|",
+                gap_types,
+            )
+            self.assertIsNotNone(row_match, "Missing concreteness rollup row not found")
+            sev_cell = row_match.group(1)
+            self.assertIn("HIGH", sev_cell)
+            self.assertIn("MEDIUM", sev_cell)
+            self.assertIn("predate", sev_cell.lower())
 
     def test_dry_run_concreteness_migration_language(self):
         # Check #13's migration clause: plans predating the concreteness rule should
@@ -425,9 +434,14 @@ class TestPlanConcretenessStructural(unittest.TestCase):
         )
 
     def test_planning_section_positioned_after_architecture_fit(self):
-        arch_idx = self.planning_guidance.find("## Architecture Fit")
-        ds_idx = self.planning_guidance.find("## Data Structures & Callables")
-        ac_idx = self.planning_guidance.find("## Acceptance Criteria")
+        template_match = re.search(
+            r"````markdown\n# Plan:.*?````", self.planning_guidance, re.DOTALL
+        )
+        self.assertIsNotNone(template_match, "Plan document template block not found")
+        template = template_match.group(0)
+        arch_idx = template.find("## Architecture Fit")
+        ds_idx = template.find("## Data Structures & Callables")
+        ac_idx = template.find("## Acceptance Criteria")
         self.assertGreater(arch_idx, 0)
         self.assertGreater(ds_idx, arch_idx)
         self.assertGreater(ac_idx, ds_idx)
@@ -449,16 +463,15 @@ class TestPlanConcretenessStructural(unittest.TestCase):
         self.assertIn("inline snippet", match.group(0).lower())
 
     def test_plan_doc_sections_has_new_required(self):
-        match = re.search(
-            r"def test_plan_doc_sections.*?required\s*=\s*\{([^}]+)\}",
-            self.artifact_schemas,
-            re.DOTALL,
-        )
-        self.assertIsNotNone(match, "test_plan_doc_sections required set not found")
-        required_text = match.group(1)
-        for section in ('"Architecture Fit"', '"Data Structures & Callables"'):
-            with self.subTest(section=section):
-                self.assertIn(section, required_text)
+        import sys, importlib
+        sys.path.insert(0, str(PLUGIN_ROOT / "tests"))
+        try:
+            mod = importlib.import_module("test_artifact_schemas")
+            for section in ("Architecture Fit", "Data Structures & Callables"):
+                with self.subTest(section=section):
+                    self.assertIn(section, mod.PLAN_REQUIRED_SECTIONS)
+        finally:
+            sys.path.pop(0)
 
     def test_readme_planning_mentions_data_structures(self):
         match = re.search(r"\|\s*\*\*Planning\*\*\s*\|[^|]+\|", self.readme)

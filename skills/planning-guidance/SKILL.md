@@ -215,7 +215,8 @@ This catches interface design problems during planning (free to fix) rather than
 
 ### Plan Document Template
 
-Note: the template block uses a four-backtick outer fence so nested three-backtick code snippets inside tasks (see Task 2 example below) don't terminate it prematurely.
+<!-- The template block uses a four-backtick outer fence so nested three-backtick code
+     snippets inside tasks don't terminate it prematurely. -->
 
 ````markdown
 # Plan: <name>
