@@ -342,6 +342,7 @@ When the user indicates research is complete:
 ## Anti-Patterns
 
 **Do NOT:**
+- **Edit files in target codebases during research, even when the user asks.** Research produces artifacts in `research/` only. Target-codebase changes must be captured as plan tasks (or research amendments that name a future task) for the implementation phase. See "Handling Direct Edit Requests During Research" below.
 - Use native Explore agents or subagents as a substitute for `gather_task_context`
 - Abandon `gather_task_context` if it takes 1-3 minutes — this is expected behavior
 - Fall back to `get_architecture_overview` or other tools because `gather_task_context` "seems slow"
@@ -352,6 +353,25 @@ When the user indicates research is complete:
 - Assume you know where the codebase is or what standards apply — if uncertain, ask the user
 - Skip standards resolution when the user has identified codebases — always search for CLAUDE.md
 - Trust Driver context without local validation — Driver shows committed state, not local uncommitted changes
+
+### Handling Direct Edit Requests During Research
+
+Users often react to a research finding by giving an imperative instruction — "fix this in globals.css", "remove that code path", "update the Button variant." The instruction is clear and the change may seem trivial. **Do not execute it.**
+
+Research's output is the task spec, not the code change. Reactive edits during research bypass planning, dry-run validation, and task materialization — reintroducing the failure modes the SDLC is designed to prevent. This is also true when the user invokes Auto mode: Auto mode does not authorize phase-skipping.
+
+**Correct response** when the user asks for a target-codebase edit during research:
+1. Pause. Do not execute the edit.
+2. Respond: "I can capture this as an amendment to the research (as a named task for Phase N), or hold it for planning. Which do you want?"
+3. If they confirm the amendment, update the research docs to specify the change, its blast radius, and which phase should implement it. Do not touch target code.
+4. If they want the edit executed anyway as an out-of-band implementation step, ask them to explicitly confirm phase-skipping. Only then proceed, and log the deviation in the feature log.
+
+**Exception — research artifacts and plugin/project config files are editable during research.** You may edit:
+- Files inside `features/<name>/` (research docs, FEATURE_LOG.md)
+- The SDLC projects directory's own CLAUDE.md (policy updates)
+- The drvr-sdlc-plugin's own files (skill prompts, hooks, templates)
+
+These are not "target codebases" — they are the SDLC authoring substrate. The restriction applies to the codebases under research, named in `research/00-overview.md`'s Codebases table.
 
 **DO:**
 - Call `gather_task_context` with detailed, specific task descriptions
