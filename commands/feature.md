@@ -62,6 +62,11 @@ updated: "<today's date>"
 **Phase**: Intent
 **Last Updated**: <today's date>
 
+## Starting Materials
+
+- Brief: <path from --brief, or "none">
+- PRD: <path from --prd, or "none">
+
 ## Why Now
 
 _What triggered this feature? What happens if we don't solve it? — fill in during intent mining_
