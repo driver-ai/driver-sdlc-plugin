@@ -21,9 +21,10 @@ an exhaustive interview. Get in, capture intent, get out.
 ## CRITICAL: Intent Is Not Research
 
 Research (Why-What-How) explores *the codebase*. Intent explores *the author's head*. Do not
-call `gather_task_context` or any codebase-exploration tool during intent mining — those
-activate during research. Intent is a conversational phase; its output is the author's
-framing of the problem.
+call `gather_task_context` or any other tools that investigate external data — no codebase
+exploration, no file reading, no MCP calls. The focus is entirely on the author's intent.
+Research and discovery come later. Intent is a conversational phase; its output is the
+author's framing of the problem.
 
 ## CRITICAL: Smooth Transition to Research
 
@@ -33,26 +34,25 @@ probing questions when the author wants to move on.
 
 ## How This Skill Works
 
-1. Read starting materials (brief, PRD, existing draft)
-2. Get the author talking — capture their intent
+1. Check for existing content, then get the author talking
+2. Capture their intent — conversationally
 3. Write `research/00-intent.md`
 4. Confirm and transition to research
 
-## Step 1: Read Starting Materials
+## Step 1: Get the Author Talking
 
-Check for existing content before asking anything:
+**The best intent comes from the author just expressing it.** Start with "What are we
+building, and why?" and let them talk. Dictation, stream of consciousness, rough
+notes — all work. The richer the initial dump, the fewer follow-ups needed.
+
+Check for existing content first:
 
 - **`research/00-intent.md` already exists** — read it. If `status: confirmed`, intent is
   already done; tell the author and suggest moving to research. If `status: in_progress`,
   use existing content as the starting point.
-- **`## Starting Materials` section** in the intent doc — if it lists `--brief` or `--prd`
-  paths from `/drvr:feature`, read those files for context.
+- **`--brief` or `--prd` was supplied** — read the file for context. Extract intent from
+  it, present what you captured, and ask if there's anything to add.
 - **Nothing exists** — start fresh: "What are we building, and why?"
-
-When substantive external content exists (brief, PRD, detailed ticket), extract the intent
-from it, present what you captured, and ask: "Is there anything you'd like to add before
-we move to research?" If the author says no, that's sufficient — write the doc, confirm,
-and proceed.
 
 ## Step 2: Capture the Author's Intent
 
@@ -84,7 +84,6 @@ Use `type: research` frontmatter. `status: in_progress` until Step 4.
 H2 sections (include what's relevant, leave others brief):
 
 - `## Status` — Phase, Last Updated
-- `## Starting Materials` — paths to brief/PRD if supplied (for session resume)
 - `## Why Now` — trigger, pressure, cost of inaction
 - `## The Problem` — specific, scoped
 - `## Desired End State` — what "done" looks like
@@ -115,7 +114,7 @@ H2 sections (include what's relevant, leave others brief):
 ## Anti-Patterns
 
 **Do NOT:**
-- Call `gather_task_context` or any codebase-exploration tool during Intent
+- Investigate external data — no codebase exploration, no MCP calls, no file reading outside the feature dir
 - Run the author through a long questionnaire — get them talking, capture what they say
 - Block the flow when the author wants to move to research
 - Auto-advance without the author confirming intent is captured
