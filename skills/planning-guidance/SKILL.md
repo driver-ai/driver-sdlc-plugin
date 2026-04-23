@@ -182,12 +182,9 @@ For features that span multiple plans, create `plans/00-overview.md` as the cent
 
 ## Implementation Environment
 
-_Codebase paths, branches, and test commands for this feature. Fill in during planning;
-confirm with the user before approving plans. Materialize-tasks reads this table to hydrate
-each task doc's `## Codebase` block and `## Test Command` section._
-
-| Codebase | Local Path | Base Branch | Feature Branch | Test Command |
-|----------|------------|-------------|----------------|--------------|
+_Capture the environment information that implementation needs: codebase paths, branches,
+test commands, and any other environment details relevant to this feature. Materialize-tasks
+reads this section to hydrate task docs so sub-agents arrive pre-loaded._
 
 ## Planning Strategy
 _Why the feature is broken into these plans, what order, what the rationale is_
@@ -208,14 +205,10 @@ _Surfaced during implementation — deviations that affect other plans_
 
 #### Fill In Implementation Environment
 
-When creating `plans/00-overview.md`, fill in the Implementation Environment table:
-- **Codebase and Local Path** — from `research/00-overview.md` `## Codebases`
-- **Base Branch** — from research Codebases `Branch` column
-- **Feature Branch** — ask the user; default `feature/<feature-name>` if not specified
-- **Test Command** — ask the user, or check the codebase CLAUDE.md for test invocations
-
-Confirm the table with the user before approving plans. Materialize-tasks reads this table
-downstream to hydrate task docs — getting it right here means sub-agents arrive pre-loaded.
+When creating `plans/00-overview.md`, populate the Implementation Environment section with
+the environment details sub-agents will need: codebase paths, branches (base and feature),
+test commands, and anything else relevant. Pull from research Codebases and codebase
+CLAUDE.md as starting points, then confirm with the user.
 
 #### Interface Contracts Are Critical
 

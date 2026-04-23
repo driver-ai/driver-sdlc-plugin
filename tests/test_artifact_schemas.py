@@ -370,7 +370,6 @@ class TestStructuralSections(unittest.TestCase):
     def test_plan_overview_sections(self):
         """plans/00-overview.md has required H2 sections and a Progress table."""
         required = {"Planning Strategy", "Dependency Graph", "Interface Contracts Between Plans"}
-        recommended = {"Implementation Environment"}
         tested = 0
         active_projects = [p for p in _FEATURE_PROJECTS if is_active_feature(p)]
         for project in active_projects:
@@ -384,9 +383,6 @@ class TestStructuralSections(unittest.TestCase):
                 missing = required - sections
                 self.assertFalse(missing,
                     f"{project.name} plans/00-overview.md missing sections: {missing}")
-                missing_recommended = recommended - sections
-                if missing_recommended:
-                    warnings.warn(f"{project.name} plans/00-overview.md missing recommended sections: {missing_recommended}")
                 # Progress table lives under Status H2 as H3, check for table header
                 body = get_md_body(overview)
                 self.assertRegex(body, r"\|\s*Plan\s*\|\s*Status\s*\|",

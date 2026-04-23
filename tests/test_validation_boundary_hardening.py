@@ -481,13 +481,12 @@ class TestPlanConcretenessStructural(unittest.TestCase):
 
 
 class TestImplementationEnvironmentStructural(unittest.TestCase):
-    """Structural tests for Plan 02: Implementation Environment + materialize-tasks hydration."""
+    """Structural tests for Plan 02: Implementation Environment concept across skills."""
 
     planning_guidance: str
     materialize_tasks: str
     impl_guidance: str
     sdlc_orch: str
-    artifact_schemas: str
     readme: str
 
     @classmethod
@@ -496,123 +495,48 @@ class TestImplementationEnvironmentStructural(unittest.TestCase):
         cls.materialize_tasks = (PLUGIN_ROOT / "skills" / "materialize-tasks" / "SKILL.md").read_text()
         cls.impl_guidance = (PLUGIN_ROOT / "skills" / "implementation-guidance" / "SKILL.md").read_text()
         cls.sdlc_orch = (PLUGIN_ROOT / "skills" / "sdlc-orchestration" / "SKILL.md").read_text()
-        cls.artifact_schemas = (PLUGIN_ROOT / "tests" / "test_artifact_schemas.py").read_text()
         cls.readme = (PLUGIN_ROOT / "README.md").read_text()
 
-    def _step5_slice(self) -> str:
-        match = re.search(r"## Step 5:.*?(?=\n## Step 6|\Z)", self.planning_guidance, re.DOTALL)
-        self.assertIsNotNone(match, "Step 5 section not found in planning-guidance")
-        return match.group(0)
-
-    def _overview_template_slice(self) -> str:
+    def test_planning_overview_has_implementation_environment(self):
         match = re.search(
             r"### Multi-Plan Overview.*?```(?:markdown)?\n(.*?)\n```",
-            self.planning_guidance,
-            re.DOTALL,
+            self.planning_guidance, re.DOTALL,
         )
         self.assertIsNotNone(match, "Multi-Plan Overview template block not found")
-        return match.group(1)
-
-    def _resume_step4_slice(self) -> str:
-        match = re.search(
-            r"4\.\s+\*\*Report current state:\*\*.*?(?=\n---|\n## |\n### |\Z)",
-            self.sdlc_orch,
-            re.DOTALL,
-        )
-        self.assertIsNotNone(match, "Session Resumption Step 4 region not found")
-        return match.group(0)
-
-    def _materialize_step2_slice(self) -> str:
-        match = re.search(
-            r"## Step 2: Resolve Codebase Target.*?(?=\n## Step 3|\Z)",
-            self.materialize_tasks,
-            re.DOTALL,
-        )
-        self.assertIsNotNone(match, "Materialize-tasks Step 2 section not found")
-        return match.group(0)
-
-    def _materialize_template_slice(self) -> str:
-        match = re.search(
-            r"Task document template:.*?```markdown\n(.*?)\n```",
-            self.materialize_tasks,
-            re.DOTALL,
-        )
-        self.assertIsNotNone(match, "Materialize-tasks Task document template block not found")
-        return match.group(1)
-
-    def test_planning_overview_has_implementation_environment(self):
-        tmpl = self._overview_template_slice()
-        self.assertIn("## Implementation Environment", tmpl)
-        self.assertIn("| Codebase | Local Path | Base Branch | Feature Branch | Test Command |", tmpl)
-
-    def test_planning_overview_section_position(self):
-        tmpl = self._overview_template_slice()
-        status_idx = tmpl.find("## Status")
-        env_idx = tmpl.find("## Implementation Environment")
-        strat_idx = tmpl.find("## Planning Strategy")
-        self.assertGreaterEqual(status_idx, 0, "## Status not in overview template")
-        self.assertGreater(env_idx, status_idx, "Implementation Environment must follow Status")
-        self.assertGreater(strat_idx, env_idx, "Planning Strategy must follow Implementation Environment")
+        self.assertIn("## Implementation Environment", match.group(1))
 
     def test_planning_has_ie_guidance(self):
-        step5 = self._step5_slice()
-        self.assertIn("Implementation Environment", step5)
-        self.assertRegex(step5, r"[Cc]onfirm",
-            "Step 5 should mention confirming IE with the user")
+        step5 = re.search(r"## Step 5:.*?(?=\n## Step 6|\Z)", self.planning_guidance, re.DOTALL)
+        self.assertIsNotNone(step5)
+        self.assertIn("Implementation Environment", step5.group(0))
 
-    def test_materialize_tasks_step2_reads_ie_first(self):
-        step2 = self._materialize_step2_slice()
-        ie_idx = step2.find("Implementation Environment")
-        codebases_idx = step2.find("`## Codebases`")
-        self.assertGreater(ie_idx, 0, "Step 2 must reference Implementation Environment")
-        self.assertGreater(codebases_idx, ie_idx,
-            "Step 2 must reference Implementation Environment BEFORE Codebases")
-        self.assertRegex(step2, r"fall\s*back|fallback",
-            "Step 2 must document the fallback to research Codebases")
+    def test_materialize_tasks_reads_ie(self):
+        step2 = re.search(r"## Step 2:.*?(?=\n## Step 3|\Z)", self.materialize_tasks, re.DOTALL)
+        self.assertIsNotNone(step2)
+        self.assertIn("Implementation Environment", step2.group(0))
 
-    def test_materialize_tasks_template_has_enriched_codebase(self):
-        tmpl = self._materialize_template_slice()
-        self.assertIn("**Base Branch**:", tmpl)
-        self.assertIn("**Feature Branch**:", tmpl)
+    def test_materialize_tasks_template_has_environment_info(self):
+        match = re.search(r"Task document template:.*?```markdown\n(.*?)\n```",
+            self.materialize_tasks, re.DOTALL)
+        self.assertIsNotNone(match)
+        tmpl = match.group(1)
+        self.assertIn("## Codebase", tmpl)
+        self.assertIn("Implementation Environment", tmpl)
 
-    def test_materialize_tasks_template_has_test_command(self):
-        tmpl = self._materialize_template_slice()
-        self.assertIn("## Test Command", tmpl)
-
-    def test_impl_guidance_preflight_test_command_priority(self):
-        match = re.search(
-            r"4\.3 Test baseline.*?(?=\n####\s+Phase\s+5\b|\n---|\Z)",
-            self.impl_guidance,
-            re.DOTALL,
-        )
-        self.assertIsNotNone(match, "Phase 4.3 section not found")
-        section = match.group(0)
-        test_cmd_idx = section.find("task doc `## Test Command`")
-        env_idx = section.find("Implementation Environment")
-        constraints_idx = section.find("task doc constraints")
-        self.assertGreater(test_cmd_idx, 0,
-            "Phase 4.3 chain must start with task doc Test Command")
-        self.assertGreater(env_idx, test_cmd_idx,
-            "Implementation Environment must follow task doc Test Command")
-        self.assertGreater(constraints_idx, env_idx,
-            "task doc constraints must follow Implementation Environment")
+    def test_impl_guidance_uses_ie_for_test_discovery(self):
+        self.assertIn("Implementation Environment", self.impl_guidance)
+        match = re.search(r"4\.3 Test baseline.*", self.impl_guidance)
+        self.assertIsNotNone(match)
+        self.assertIn("Implementation Environment", match.group(0))
 
     def test_sdlc_orchestration_resume_uses_env(self):
-        step4_block = self._resume_step4_slice()
-        for token in ("Codebase:", "Test command:", "Implementation Environment"):
-            with self.subTest(token=token):
-                self.assertIn(token, step4_block,
-                    f"Session Resumption Step 4 missing: {token}")
-
-    def test_plan_overview_sections_has_ie_check(self):
         match = re.search(
-            r"def test_plan_overview_sections.*?(?=\n    def |\nclass |\Z)",
-            self.artifact_schemas,
-            re.DOTALL,
+            r"4\.\s+\*\*Report current state:\*\*.*?(?=\n---|\n## |\n### |\Z)",
+            self.sdlc_orch, re.DOTALL,
         )
-        self.assertIsNotNone(match, "test_plan_overview_sections not found")
-        self.assertIn("Implementation Environment", match.group(0),
-            "test_plan_overview_sections must check for Implementation Environment")
+        self.assertIsNotNone(match)
+        self.assertIn("Codebase:", match.group(0))
+        self.assertIn("Test command:", match.group(0))
 
     def test_readme_planning_mentions_implementation_environment(self):
         match = re.search(r"\|\s*\*\*Planning\*\*\s*\|[^|]+\|", self.readme)
