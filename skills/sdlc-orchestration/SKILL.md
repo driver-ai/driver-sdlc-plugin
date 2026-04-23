@@ -41,7 +41,8 @@ When a user returns to a feature ("returning to feature/X", "resume feature X", 
 2. **Read `plans/00-overview.md`** — progress table, dependency graph, gaps
 3. **Check for in-progress work:**
    - `research/00-intent.md` missing → phase is **Intent**. Suggest: "Intent has not been captured. Activate `intent-guidance` to start."
-   - `research/00-intent.md` exists but no `research/NN-*.md` (except 00-* files) → phase is **Research (Why-What-How)**. Intent is complete, research proper hasn't started.
+   - `research/00-intent.md` exists but `status: in_progress` (not confirmed) → phase is **Intent**. Suggest: "Intent is in progress. Resume `intent-guidance` to complete."
+   - `research/00-intent.md` confirmed (or intent explicitly skipped per FEATURE_LOG) but no `research/NN-*.md` (except 00-* files) → phase is **Research (Why-What-How)**. Intent is complete, research proper hasn't started.
    - Implementation logs without a matching plan status header → implementation was in progress
    - Plan files without dry-run results → plan needs validation
    - Research docs with open questions → research may be incomplete

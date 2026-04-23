@@ -31,9 +31,9 @@ You are guiding technical research against one or more codebases using Driver MC
 
 Intent mining is now upstream — `research/00-intent.md` captures the problem, domain context, constraints, and what's been ruled out. Read it for context before asking questions.
 
-**If `research/00-intent.md` exists**: read it, then focus on *codebase-grounded* research question refinement. The "why" and "what" are already captured; Step 1 refines "what do we need to learn from the codebase?"
+**If `research/00-intent.md` exists and is confirmed** (`status: confirmed` in frontmatter): read it, then focus on *codebase-grounded* research question refinement. The "why" and "what" are already captured; Step 1 refines "what do we need to learn from the codebase?"
 
-**If `research/00-intent.md` does not exist** (legacy features or intent was skipped): fall through to the probing questions below.
+**If `research/00-intent.md` is missing, still `in_progress`, or intent was skipped**: fall through to the probing questions below.
 
 **Ask probing questions:**
 - What are you trying to understand? What decision does this research inform?
