@@ -604,14 +604,15 @@ class TestImplementationEnvironmentStructural(unittest.TestCase):
                 self.assertIn(token, step4_block,
                     f"Session Resumption Step 4 missing: {token}")
 
-    def test_plan_overview_sections_has_new_required(self):
+    def test_plan_overview_sections_has_ie_check(self):
         match = re.search(
-            r"def test_plan_overview_sections.*?required\s*=\s*\{([^}]+)\}",
+            r"def test_plan_overview_sections.*?(?=\n    def |\nclass |\Z)",
             self.artifact_schemas,
             re.DOTALL,
         )
-        self.assertIsNotNone(match, "test_plan_overview_sections required set not found")
-        self.assertRegex(match.group(1), r'["\']Implementation Environment["\']')
+        self.assertIsNotNone(match, "test_plan_overview_sections not found")
+        self.assertIn("Implementation Environment", match.group(0),
+            "test_plan_overview_sections must check for Implementation Environment")
 
     def test_readme_planning_mentions_implementation_environment(self):
         match = re.search(r"\|\s*\*\*Planning\*\*\s*\|[^|]+\|", self.readme)

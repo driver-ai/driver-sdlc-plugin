@@ -131,12 +131,12 @@ Validate the codebase target from task docs' `## Codebase` section.
 
 - **2.1 Codebase root exists** — Read the codebase root path from any task doc. Verify the path exists on disk and is a directory. If not: BLOCK.
 - **2.2 Git repository check** — Verify the codebase root is a git repo: `git -C <root> rev-parse --is-inside-work-tree`. If not: WARN.
-- **2.3 Branch check** — Compare `git -C <root> branch --show-current` against the branch in task docs. Mismatch: WARN. Detached HEAD: WARN.
+- **2.3 Branch check** — Compare `git -C <root> branch --show-current` against the task doc's **Feature Branch** (preferred) or **Base Branch** (fallback for legacy task docs without a feature branch field). Mismatch: WARN. Detached HEAD: WARN.
 - **2.4 Uncommitted changes** — Run `git -C <root> status --short`. Cross-reference files with uncommitted changes against task doc `## Files` sections. Overlapping files: WARN per file. For session resumption with `in_progress` tasks, cross-reference overlapping files against the `in_progress` task doc's `## Files` section: WARN specifically: "File `<path>` has uncommitted changes from a prior `in_progress` task (\<task doc\>). These may be partial implementation artifacts. Review or discard before restarting this task."
-- **2.5 Codebase table consistency** — Read `research/00-overview.md` Codebases table. Parsing rules: ignore rows where Local Path is `_TBD_`, empty, whitespace-only, or contains placeholder text (e.g., `_fill in_`). Two comparisons:
-  1. **Task doc vs table**: Compare the task doc's codebase root path against Local Path entries. If a matching codebase name exists but paths differ: BLOCK. "Task docs point to `<task-doc-root>` but Codebases table says `<table-path>`. Task docs may have been materialized from a different clone. Re-materialize from the correct clone."
-  2. **Working directory vs table**: Run `pwd` in the shell to determine the current working directory. Compare against Local Path entries. If paths differ: BLOCK. "Running from `<cwd>` but Codebases table says `<table-path>`. You may be running from a different clone. Switch to the correct clone or update the Codebases table."
-  If Codebases table is missing, empty, or has no matching entry for either comparison: INFO (not blocking — table may not reference this codebase).
+- **2.5 Codebase table consistency** — Read `plans/00-overview.md` `## Implementation Environment` first. If present, use its Local Path column. If absent, fall back to `research/00-overview.md` Codebases table. Parsing rules: ignore rows where Local Path is `_TBD_`, empty, whitespace-only, or contains placeholder text (e.g., `_fill in_`). Two comparisons:
+  1. **Task doc vs table**: Compare the task doc's codebase root path against Local Path entries. If a matching codebase name exists but paths differ: BLOCK. "Task docs point to `<task-doc-root>` but the environment table says `<table-path>`. Task docs may have been materialized from a different clone. Re-materialize from the correct clone."
+  2. **Working directory vs table**: Run `pwd` in the shell to determine the current working directory. Compare against Local Path entries. If paths differ: BLOCK. "Running from `<cwd>` but the environment table says `<table-path>`. You may be running from a different clone. Switch to the correct clone or update the table."
+  If neither source has a matching entry for either comparison: INFO (not blocking — table may not reference this codebase).
 
 #### Phase 3: Staleness Detection
 
