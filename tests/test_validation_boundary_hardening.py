@@ -10,6 +10,7 @@ Verifies:
 - cascade-check.md documents the design boundary (caller verifies commits)
 """
 
+import os
 import re
 import unittest
 from pathlib import Path
@@ -531,7 +532,7 @@ class TestImplementationEnvironmentStructural(unittest.TestCase):
 
     def test_sdlc_orchestration_resume_uses_env(self):
         match = re.search(
-            r"4\.\s+\*\*Report current state:\*\*.*?(?=\n---|\n## |\n### |\Z)",
+            r"5\.\s+\*\*Report current state:\*\*.*?(?=\n---|\n## |\n### |\Z)",
             self.sdlc_orch, re.DOTALL,
         )
         self.assertIsNotNone(match)
@@ -696,6 +697,56 @@ class TestInteractiveFeatureSetup(unittest.TestCase):
         """research-guidance must handle both Intent-phase and legacy features."""
         self.assertIn("00-intent.md", self.research_guidance_content)
         self.assertIn("Setup Questions", self.research_guidance_content)
+
+
+class TestStateCommitGuidance(unittest.TestCase):
+    """Verify skills and commands include commit guidance for SDLC artifacts."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.research_content = (PLUGIN_ROOT / "skills" / "research-guidance" / "SKILL.md").read_text()
+        cls.planning_content = (PLUGIN_ROOT / "skills" / "planning-guidance" / "SKILL.md").read_text()
+        cls.impl_content = (PLUGIN_ROOT / "skills" / "implementation-guidance" / "SKILL.md").read_text()
+        cls.feature_cmd_content = (PLUGIN_ROOT / "commands" / "feature.md").read_text()
+        cls.hook_path = PLUGIN_ROOT / "hooks" / "commit-artifacts.sh"
+
+    def test_research_guidance_has_commit_step(self) -> None:
+        """research-guidance must contain commit instructions."""
+        self.assertIn("git add research/", self.research_content)
+        self.assertIn("git commit", self.research_content)
+
+    def test_planning_guidance_has_commit_step(self) -> None:
+        """planning-guidance must contain commit instructions."""
+        self.assertIn("git add plans/", self.planning_content)
+        self.assertIn("git commit", self.planning_content)
+
+    def test_implementation_guidance_extended_bookkeeping(self) -> None:
+        """Step 5.4 git add must include FEATURE_LOG.md and implementation/."""
+        after_5_4 = self.impl_content.split("5.4")[1] if "5.4" in self.impl_content else ""
+        self.assertIn("FEATURE_LOG.md", after_5_4)
+        self.assertIn("implementation/", after_5_4)
+
+    def test_feature_command_has_initial_commit(self) -> None:
+        """feature.md must have a commit step after scaffolding."""
+        self.assertIn("chore: Initialize feature project", self.feature_cmd_content)
+
+    def test_orchestrate_has_uncommitted_detection(self) -> None:
+        """sdlc-orchestration must check for uncommitted artifacts."""
+        orch_content = (PLUGIN_ROOT / "skills" / "sdlc-orchestration" / "SKILL.md").read_text()
+        self.assertIn("uncommitted", orch_content.lower())
+
+    def test_commit_artifacts_hook_exists(self) -> None:
+        """hooks/commit-artifacts.sh must exist and be executable."""
+        self.assertTrue(self.hook_path.is_file())
+        self.assertTrue(os.access(self.hook_path, os.X_OK))
+
+    def test_skills_have_commit_checklist_item(self) -> None:
+        """research, planning, implementation skills must have commit checklist item."""
+        for name, content in [("research", self.research_content),
+                              ("planning", self.planning_content),
+                              ("implementation", self.impl_content)]:
+            self.assertIn("Artifacts committed?", content,
+                f"{name}-guidance missing 'Artifacts committed?' checklist item")
 
 
 if __name__ == "__main__":

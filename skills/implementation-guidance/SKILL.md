@@ -340,8 +340,14 @@ Also stage task doc status changes:
 git add plans/<plan>/tasks/*.md
 ```
 
+Stage implementation log and feature log:
+
 ```
-git commit -m "chore: Update plan status and overview for plan <name>"
+git add implementation/log-<plan>.md FEATURE_LOG.md 2>/dev/null
+```
+
+```
+git commit -m "chore: Bookkeeping complete — plan <name>"
 ```
 
 #### 5.5: Transition Suggestion
@@ -570,3 +576,4 @@ Task docs are the persistent source of truth for task state. The implementation 
 - [ ] **Bookkeeping done?** — If all tasks complete, did I run Step 5?
 - [ ] **Feature log?** — Did I update `FEATURE_LOG.md` at implementation start and completion?
 - [ ] **Standards in subagent prompt?** — If a codebase standards artifact exists, did I include the Code Quality Standards section in the subagent prompt?
+- [ ] **Artifacts committed?** — Does the bookkeeping commit include FEATURE_LOG.md and implementation log?

@@ -312,7 +312,11 @@ Blocks Write and Edit operations that contain lazy code patterns: TODO/FIXME com
 
 Tracks which skills are loaded during a session by appending skill names to a session-scoped temp file. Used for phase tracking and observability during retrospectives.
 
-Both hooks resolve their configuration via the `CLAUDE_PLUGIN_ROOT` environment variable (set by Claude Code) with a fallback to relative path resolution for backward compatibility. They follow a fail-open pattern — errors never block user operations.
+### commit-artifacts (SessionEnd)
+
+Auto-commits uncommitted SDLC artifacts (research docs, plans, implementation logs, feature logs) when a Claude Code session ends. Acts as a safety net to prevent artifact loss from session crashes or forgotten commits. Scans all feature directories for uncommitted `.md` files in artifact directories and commits them with a descriptive message. Follows the fail-open pattern — never blocks session termination.
+
+All hooks resolve their configuration via the `CLAUDE_PLUGIN_ROOT` environment variable (set by Claude Code) with a fallback to relative path resolution for backward compatibility. They follow a fail-open pattern — errors never block user operations.
 
 ## Friction Tracking
 

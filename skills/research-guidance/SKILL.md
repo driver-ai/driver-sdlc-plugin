@@ -343,6 +343,12 @@ When the user indicates research is complete:
    - Remaining open questions
 3. **Confirm with the user** — "Research artifacts are finalized. The overview at `00-overview.md` indexes everything."
 
+**Commit the research artifact** to the projects repo after creating or finalizing the document:
+
+```
+git add research/ FEATURE_LOG.md && git commit -m "chore: Research artifact — <doc name>"
+```
+
 ---
 
 ## Anti-Patterns
@@ -384,3 +390,4 @@ Before sending any response during research, verify:
 - [ ] **Feature log?** — Did I update `FEATURE_LOG.md` when creating new research docs?
 - [ ] **Standards resolved?** — Have I searched for CLAUDE.md at each codebase path? If not found, did I ask the user?
 - [ ] **Local state validated?** — After gather_task_context, did I check branch, key file existence, and uncommitted changes locally?
+- [ ] **Artifacts committed?** — Did I commit new artifacts to the projects repo?

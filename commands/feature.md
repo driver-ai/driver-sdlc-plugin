@@ -236,6 +236,12 @@ After creating the structure:
    produces `research/00-intent.md` and gates entry into research."
 3. Note that `/drvr:orchestrate <feature-path>` can be used to resume this feature in future sessions
 
+Commit the scaffolded feature project to the projects repo:
+
+```
+git add FEATURE_LOG.md research/ && git commit -m "chore: Initialize feature project — <name>"
+```
+
 ## Notes
 
 - The `/drvr:feature` command only handles scaffolding

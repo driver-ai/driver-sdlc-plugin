@@ -39,7 +39,19 @@ When a user returns to a feature ("returning to feature/X", "resume feature X", 
 
 1. **Locate the feature directory** — resolve the path to the feature project
 2. **Read `plans/00-overview.md`** — progress table, dependency graph, gaps
-3. **Check for in-progress work:**
+3. **Check for uncommitted artifacts:**
+
+   ### Check for Uncommitted Artifacts
+
+   Before reporting state, check for uncommitted SDLC artifacts from a previous session:
+
+   1. Run `git status --porcelain` in the feature directory, filtering for `.md` files in artifact directories (`research/`, `plans/`, `implementation/`, `assessment/`, `driver-docs/`, `dry-runs/`)
+   2. Also check `FEATURE_LOG.md` and `DECISIONS.md`
+   3. If uncommitted artifacts found: report what was found and commit them
+   4. Commit message: `chore: Commit SDLC artifacts from previous session`
+   5. Then proceed with normal state reporting
+
+4. **Check for in-progress work:**
    - `research/00-intent.md` missing → phase is **Intent**. Suggest: "Intent has not been captured. Activate `intent-guidance` to start."
    - `research/00-intent.md` exists but `status: in_progress` (not confirmed) → phase is **Intent**. Suggest: "Intent is in progress. Resume `intent-guidance` to complete."
    - `research/00-intent.md` confirmed (or intent explicitly skipped per FEATURE_LOG) but no `research/NN-*.md` (except 00-* files) → phase is **Research (Why-What-How)**. Intent is complete, research proper hasn't started.
@@ -48,7 +60,7 @@ When a user returns to a feature ("returning to feature/X", "resume feature X", 
    - Research docs with open questions → research may be incomplete
    - Plan with `status: approved` in frontmatter but task doc count < plan task count (or no `plans/<plan>/tasks/` directory) → phase is **Materialization**. Suggest: "Plan X is approved but not fully materialized. Activate `drvr:materialize-tasks`."
    - Phase detection resolves to **Assessment** (all plans COMPLETE, no `assessment/test-curation-*.md`) → suggest `/drvr:assess`
-4. **Report current state:**
+5. **Report current state:**
 
 ```
 Feature: <name>

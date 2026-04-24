@@ -442,6 +442,14 @@ Each test case must have enough detail for a subagent to write it:
 
 **Good:** "Test: `login_with_valid_credentials_returns_token` — POST `/auth/login` with valid credentials returns 200 with JWT containing `user_id` claim"
 
+### Commit After Writing
+
+Commit the plan to the projects repo:
+
+```
+git add plans/ FEATURE_LOG.md && git commit -m "chore: Plan created — <plan name>"
+```
+
 ---
 
 ## Step 6: Self-Review
@@ -516,6 +524,13 @@ Present the plan to the user for review.
    - `status: approved`
    - `approved_at: <ISO 8601 UTC timestamp>` (e.g., `2026-04-16T14:30:00Z`)
    - `approved_by: <user identity>` — use the `userEmail` setting if available in conversation context, otherwise `"user"`
+
+   Commit the approved plan:
+
+   ```
+   git add plans/ FEATURE_LOG.md && git commit -m "chore: Plan approved — <plan name>"
+   ```
+
 6. End with: "Plan approved. Activate `drvr:materialize-tasks` to materialize task documents for plan `<plan-name>`."
 
 **If the user declines:** List what needs to change. Do not proceed. The user controls when to re-present for approval.
@@ -560,3 +575,4 @@ Present the plan to the user for review.
 - [ ] **Feature log?** — Did I update `FEATURE_LOG.md` when creating plans or the overview?
 - [ ] **Standards encoded?** — If a codebase standards artifact exists, are applicable standards included as plan constraints with source citations?
 - [ ] **Local state validated?** — Did the self-review include local file checks alongside Driver tool checks?
+- [ ] **Artifacts committed?** — Did I commit new artifacts to the projects repo?
