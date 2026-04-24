@@ -535,6 +535,41 @@ Present the plan to the user for review.
 
 **If the user declines:** List what needs to change. Do not proceed. The user controls when to re-present for approval.
 
+### Decision Logging
+
+When planning surfaces significant decisions, append an entry to `DECISIONS.md` at the feature root. Log decisions for:
+- Plan breakdown rationale: why the feature is split into these plans
+- Architecture choices: when the plan picks one approach over alternatives
+- Test strategy decisions: what to test, how, and why
+- Scope boundaries: why something was included or deferred
+- Interface contract decisions: why signatures were designed this way
+
+Not every micro-decision needs an entry — trivial choices (variable naming, file ordering) should not be logged.
+
+#### Entry template
+
+```markdown
+---
+
+### DEC-NNN: <Title>
+
+**Date**: YYYY-MM-DD
+**Phase**: Planning
+**Trigger**: <what prompted this decision>
+
+**Decision**: <what was decided>
+
+**Alternatives Considered**:
+- <Alt 1>: <why rejected>
+- <Alt 2>: <why rejected>
+
+**Rationale**: <why this choice was made>
+
+**Context**: <links to research docs, plan sections, or external sources>
+```
+
+When appending the first decision entry (replacing the `_No decisions recorded yet._` placeholder), also append a row to `FEATURE_LOG.md`: `| <today> | First decision logged | \`DECISIONS.md\` |`
+
 ---
 
 ## Anti-Patterns
@@ -575,4 +610,5 @@ Present the plan to the user for review.
 - [ ] **Feature log?** — Did I update `FEATURE_LOG.md` when creating plans or the overview?
 - [ ] **Standards encoded?** — If a codebase standards artifact exists, are applicable standards included as plan constraints with source citations?
 - [ ] **Local state validated?** — Did the self-review include local file checks alongside Driver tool checks?
+- [ ] **Decision log?** — Did I append to DECISIONS.md for significant decisions, rejected alternatives, or scope boundary calls?
 - [ ] **Artifacts committed?** — Did I commit new artifacts to the projects repo?

@@ -749,5 +749,41 @@ class TestStateCommitGuidance(unittest.TestCase):
                 f"{name}-guidance missing 'Artifacts committed?' checklist item")
 
 
+class TestDecisionLog(unittest.TestCase):
+    """Verify DECISIONS.md artifact is scaffolded and referenced by skills."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.feature_cmd_content = (PLUGIN_ROOT / "commands" / "feature.md").read_text()
+        cls.research_content = (PLUGIN_ROOT / "skills" / "research-guidance" / "SKILL.md").read_text()
+        cls.planning_content = (PLUGIN_ROOT / "skills" / "planning-guidance" / "SKILL.md").read_text()
+        cls.impl_content = (PLUGIN_ROOT / "skills" / "implementation-guidance" / "SKILL.md").read_text()
+        cls.agent_content = (PLUGIN_ROOT / "agents" / "decisions-log.md").read_text()
+
+    def test_feature_scaffolds_decisions_md(self) -> None:
+        """feature.md must include DECISIONS.md in folder structure and creation."""
+        self.assertIn("DECISIONS.md", self.feature_cmd_content)
+        self.assertIn("Decision Log:", self.feature_cmd_content)
+
+    def test_research_guidance_has_decision_log_guidance(self) -> None:
+        """research-guidance must mention DECISIONS.md and have checklist item."""
+        self.assertIn("DECISIONS.md", self.research_content)
+        self.assertIn("Decision log?", self.research_content)
+
+    def test_planning_guidance_has_decision_log_guidance(self) -> None:
+        """planning-guidance must mention DECISIONS.md and have checklist item."""
+        self.assertIn("DECISIONS.md", self.planning_content)
+        self.assertIn("Decision log?", self.planning_content)
+
+    def test_implementation_guidance_has_decision_log_guidance(self) -> None:
+        """implementation-guidance must mention DECISIONS.md and have checklist item."""
+        self.assertIn("DECISIONS.md", self.impl_content)
+        self.assertIn("Decision log?", self.impl_content)
+
+    def test_decisions_log_agent_references_decisions_md(self) -> None:
+        """decisions-log agent must reference DECISIONS.md as a source."""
+        self.assertIn("DECISIONS.md", self.agent_content)
+
+
 if __name__ == "__main__":
     unittest.main()

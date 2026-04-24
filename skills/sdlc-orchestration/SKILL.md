@@ -215,6 +215,8 @@ Each skill appends to the log at transition moments:
 | `/drvr:assess` | Assessment complete (with prune/keep/promote counts) |
 | `sdlc-orchestration` | Bookkeeping complete, phase transitions |
 
+Additionally, all skills that make significant decisions should append to `DECISIONS.md` at the feature root — see individual skill checklists for decision-logging triggers.
+
 ### Log Entry Format
 
 Append a row to the log table:
@@ -232,6 +234,13 @@ Update the "Current State" header to reflect the new phase and active work.
 - **No `plans/00-overview.md`** → phase detection only. Skip transition suggestions and cascade checks.
 - **No `research/` directory** → skip research completeness checks
 - **Feature doesn't follow standard structure** → describe what you see, ask user to clarify
+
+---
+
+## Before Responding Checklist
+
+- [ ] **Feature log?** — Did I update FEATURE_LOG.md for phase transitions?
+- [ ] **Decision log?** — For phase transition decisions (proceeding despite open questions, skipping phases), did I append to DECISIONS.md?
 
 ---
 

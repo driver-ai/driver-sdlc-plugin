@@ -62,6 +62,32 @@ After completing each task:
 | **Scope change** | More/less work than expected | Note impact on remaining tasks |
 | **Blocker** | Can't proceed as planned | Stop, explain, ask the user |
 
+For **Approach change** or **Scope change** deviations, also append a decision entry to `DECISIONS.md` capturing the reasoning — what was planned, what changed, what alternatives existed, and why this deviation was the right call.
+
+#### Entry template
+
+```markdown
+---
+
+### DEC-NNN: <Title>
+
+**Date**: YYYY-MM-DD
+**Phase**: Implementation
+**Trigger**: <what prompted this decision>
+
+**Decision**: <what was decided>
+
+**Alternatives Considered**:
+- <Alt 1>: <why rejected>
+- <Alt 2>: <why rejected>
+
+**Rationale**: <why this choice was made>
+
+**Context**: <links to research docs, plan sections, or external sources>
+```
+
+When appending the first decision entry (replacing the `_No decisions recorded yet._` placeholder), also append a row to `FEATURE_LOG.md`: `| <today> | First decision logged | \`DECISIONS.md\` |`
+
 ---
 
 ## Commit Discipline
@@ -576,4 +602,5 @@ Task docs are the persistent source of truth for task state. The implementation 
 - [ ] **Bookkeeping done?** — If all tasks complete, did I run Step 5?
 - [ ] **Feature log?** — Did I update `FEATURE_LOG.md` at implementation start and completion?
 - [ ] **Standards in subagent prompt?** — If a codebase standards artifact exists, did I include the Code Quality Standards section in the subagent prompt?
+- [ ] **Decision log?** — For approach-change or scope-change deviations, did I append to DECISIONS.md?
 - [ ] **Artifacts committed?** — Does the bookkeeping commit include FEATURE_LOG.md and implementation log?

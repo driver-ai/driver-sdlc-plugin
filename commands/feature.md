@@ -52,6 +52,7 @@ Create the following structure at `{projects_path}/features/<project-name>/`:
 
 ```
 <project-name>/
+├── DECISIONS.md
 ├── FEATURE_LOG.md
 ├── research/
 │   ├── 00-intent.md
@@ -141,9 +142,9 @@ _Verbatim capture of the author's thinking — filled in during intent mining_
 
 Note: `wireframes/` is created on-demand during research when UI exploration is needed — not scaffolded upfront.
 
-### Step 5: Create FEATURE_LOG.md
+### Step 5: Create FEATURE_LOG.md and DECISIONS.md
 
-Create the feature log that tracks lifecycle state and artifact history:
+Create the feature log that tracks lifecycle state and artifact history, and the decision log:
 
 ```markdown
 # Feature Log: <Project Name>
@@ -159,6 +160,18 @@ Create the feature log that tracks lifecycle state and artifact history:
 |------|-------|----------|
 | <today> | Feature created | `FEATURE_LOG.md` |
 | <today> | Intent started | `research/00-intent.md` |
+| <today> | Decision log created | `DECISIONS.md` |
+```
+
+**Decision Log:** Create `DECISIONS.md` at the feature root:
+
+```markdown
+# Decision Log: <Project Name>
+
+Append-only record of significant decisions made during feature development.
+Each entry captures what was decided, what alternatives were considered, and why.
+
+_No decisions recorded yet._
 ```
 
 ### Step 6: Create research/00-overview.md

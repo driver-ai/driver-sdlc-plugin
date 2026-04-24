@@ -343,6 +343,40 @@ When the user indicates research is complete:
    - Remaining open questions
 3. **Confirm with the user** — "Research artifacts are finalized. The overview at `00-overview.md` indexes everything."
 
+### Decision Logging
+
+When research surfaces significant decisions, append an entry to `DECISIONS.md` at the feature root. Log decisions for:
+- Scope decisions: what's in/out of research scope
+- Technology or approach choices: when multiple options exist and one is chosen
+- Significant rejected alternatives: approaches explored and discarded, with reasoning
+- Context shifts: when new information changes the direction
+
+Not every micro-decision needs an entry — trivial choices (variable naming, file ordering) should not be logged.
+
+#### Entry template
+
+```markdown
+---
+
+### DEC-NNN: <Title>
+
+**Date**: YYYY-MM-DD
+**Phase**: Research
+**Trigger**: <what prompted this decision>
+
+**Decision**: <what was decided>
+
+**Alternatives Considered**:
+- <Alt 1>: <why rejected>
+- <Alt 2>: <why rejected>
+
+**Rationale**: <why this choice was made>
+
+**Context**: <links to research docs, plan sections, or external sources>
+```
+
+When appending the first decision entry (replacing the `_No decisions recorded yet._` placeholder), also append a row to `FEATURE_LOG.md`: `| <today> | First decision logged | \`DECISIONS.md\` |`
+
 **Commit the research artifact** to the projects repo after creating or finalizing the document:
 
 ```
@@ -390,4 +424,5 @@ Before sending any response during research, verify:
 - [ ] **Feature log?** — Did I update `FEATURE_LOG.md` when creating new research docs?
 - [ ] **Standards resolved?** — Have I searched for CLAUDE.md at each codebase path? If not found, did I ask the user?
 - [ ] **Local state validated?** — After gather_task_context, did I check branch, key file existence, and uncommitted changes locally?
+- [ ] **Decision log?** — Did I append to DECISIONS.md for significant decisions, rejected alternatives, or context shifts?
 - [ ] **Artifacts committed?** — Did I commit new artifacts to the projects repo?
