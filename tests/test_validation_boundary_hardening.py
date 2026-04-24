@@ -480,5 +480,193 @@ class TestPlanConcretenessStructural(unittest.TestCase):
             "README Planning row does not mention Data Structures & Callables")
 
 
+class TestImplementationEnvironmentStructural(unittest.TestCase):
+    """Structural tests for Plan 02: Implementation Environment concept across skills."""
+
+    planning_guidance: str
+    materialize_tasks: str
+    impl_guidance: str
+    sdlc_orch: str
+    readme: str
+
+    @classmethod
+    def setUpClass(cls):
+        cls.planning_guidance = (PLUGIN_ROOT / "skills" / "planning-guidance" / "SKILL.md").read_text()
+        cls.materialize_tasks = (PLUGIN_ROOT / "skills" / "materialize-tasks" / "SKILL.md").read_text()
+        cls.impl_guidance = (PLUGIN_ROOT / "skills" / "implementation-guidance" / "SKILL.md").read_text()
+        cls.sdlc_orch = (PLUGIN_ROOT / "skills" / "sdlc-orchestration" / "SKILL.md").read_text()
+        cls.readme = (PLUGIN_ROOT / "README.md").read_text()
+
+    def test_planning_overview_has_implementation_environment(self):
+        match = re.search(
+            r"### Multi-Plan Overview.*?```(?:markdown)?\n(.*?)\n```",
+            self.planning_guidance, re.DOTALL,
+        )
+        self.assertIsNotNone(match, "Multi-Plan Overview template block not found")
+        self.assertIn("## Implementation Environment", match.group(1))
+
+    def test_planning_has_ie_guidance(self):
+        step5 = re.search(r"## Step 5:.*?(?=\n## Step 6|\Z)", self.planning_guidance, re.DOTALL)
+        self.assertIsNotNone(step5)
+        self.assertIn("Implementation Environment", step5.group(0))
+
+    def test_materialize_tasks_reads_ie(self):
+        step2 = re.search(r"## Step 2:.*?(?=\n## Step 3|\Z)", self.materialize_tasks, re.DOTALL)
+        self.assertIsNotNone(step2)
+        self.assertIn("Implementation Environment", step2.group(0))
+
+    def test_materialize_tasks_template_has_environment_info(self):
+        match = re.search(r"Task document template:.*?```markdown\n(.*?)\n```",
+            self.materialize_tasks, re.DOTALL)
+        self.assertIsNotNone(match)
+        tmpl = match.group(1)
+        self.assertIn("## Codebase", tmpl)
+        self.assertIn("Implementation Environment", tmpl)
+
+    def test_impl_guidance_uses_ie_for_test_discovery(self):
+        self.assertIn("Implementation Environment", self.impl_guidance)
+        match = re.search(r"4\.3 Test baseline.*", self.impl_guidance)
+        self.assertIsNotNone(match)
+        self.assertIn("Implementation Environment", match.group(0))
+
+    def test_sdlc_orchestration_resume_uses_env(self):
+        match = re.search(
+            r"4\.\s+\*\*Report current state:\*\*.*?(?=\n---|\n## |\n### |\Z)",
+            self.sdlc_orch, re.DOTALL,
+        )
+        self.assertIsNotNone(match)
+        self.assertIn("Codebase:", match.group(0))
+        self.assertIn("Test command:", match.group(0))
+
+    def test_readme_planning_mentions_implementation_environment(self):
+        match = re.search(r"\|\s*\*\*Planning\*\*\s*\|[^|]+\|", self.readme)
+        self.assertIsNotNone(match, "Planning row not found in README")
+        self.assertIn("Implementation Environment", match.group(0))
+
+
+class TestIntentPhaseStructural(unittest.TestCase):
+    """Structural tests for Plan 03: Intent as first-class SDLC phase."""
+
+    plugin_json: dict
+    claude_md: str
+    template_md: str
+    hook_sh: str
+    sdlc_orch: str
+    intent_skill: str
+    feature_cmd: str
+    research_guidance: str
+    artifact_schemas: str
+
+    @classmethod
+    def setUpClass(cls):
+        import json
+        cls.plugin_json = json.loads(
+            (PLUGIN_ROOT / ".claude-plugin" / "plugin.json").read_text()
+        )
+        cls.claude_md = (PLUGIN_ROOT / "CLAUDE.md").read_text()
+        cls.template_md = (PLUGIN_ROOT / "templates" / "CLAUDE.md.template").read_text()
+        cls.hook_sh = (PLUGIN_ROOT / "hooks" / "track-skill-load.sh").read_text()
+        cls.sdlc_orch = (PLUGIN_ROOT / "skills" / "sdlc-orchestration" / "SKILL.md").read_text()
+        intent_path = PLUGIN_ROOT / "skills" / "intent-guidance" / "SKILL.md"
+        cls.intent_skill = intent_path.read_text() if intent_path.is_file() else ""
+        cls.feature_cmd = (PLUGIN_ROOT / "commands" / "feature.md").read_text()
+        cls.research_guidance = (PLUGIN_ROOT / "skills" / "research-guidance" / "SKILL.md").read_text()
+        cls.artifact_schemas = (PLUGIN_ROOT / "tests" / "test_artifact_schemas.py").read_text()
+
+    def _intent_research_slice(self) -> str:
+        match = re.search(r"### Intent → Research.*?(?=\n### |\Z)", self.sdlc_orch, re.DOTALL)
+        self.assertIsNotNone(match, "Intent → Research transition boundary not found")
+        return match.group(0)
+
+    def _feature_cmd_overview_template_slice(self) -> str:
+        match = re.search(
+            r"### Step 5:.*?# <Project Name>.*?(?=\n### Step |\Z)",
+            self.feature_cmd,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(match, "feature.md Step 5 research/00-overview.md template not found")
+        return match.group(0)
+
+    def test_intent_skill_registered(self):
+        self.assertIn("./skills/intent-guidance", self.plugin_json.get("skills", []))
+
+    def test_intent_skill_exists_and_valid(self):
+        path = PLUGIN_ROOT / "skills" / "intent-guidance" / "SKILL.md"
+        self.assertTrue(path.is_file(), f"{path} does not exist")
+        self.assertIn("name: intent-guidance", self.intent_skill)
+
+    def test_intent_phase_in_claude_md(self):
+        self.assertIn("| Intent |", self.claude_md)
+        self.assertIn("intent-guidance", self.claude_md)
+
+    def test_intent_phase_in_template(self):
+        self.assertIn("| Intent |", self.template_md)
+        self.assertIn("intent-guidance", self.template_md)
+
+    def test_intent_lifecycle_diagram(self):
+        self.assertIn("Intent --> Research", self.claude_md)
+        self.assertIn("Intent --> Research", self.template_md)
+
+    def test_hook_tracks_intent_phase(self):
+        self.assertRegex(self.hook_sh, r'intent-guidance\)\s*PHASE="Intent"')
+
+    def test_sdlc_orch_has_intent_transition(self):
+        self.assertIn("### Intent → Research", self.sdlc_orch)
+        self.assertIn("### Scaffold → Intent", self.sdlc_orch)
+
+    def test_sdlc_orch_intent_gate_blocks_without_artifact(self):
+        section = self._intent_research_slice()
+        for phrase in ("BLOCK", "research/00-intent.md", "skip intent", "Activate `intent-guidance`"):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, section,
+                    f"Intent → Research section missing required phrase: {phrase}")
+
+    def test_sdlc_orch_loop_has_research_to_intent(self):
+        self.assertRegex(self.sdlc_orch, r"\|\s*Research\s*→\s*Intent\s*\|")
+
+    def test_sdlc_orch_feature_log_events_has_intent(self):
+        self.assertRegex(self.sdlc_orch, r"\|\s*`intent-guidance`\s*\|[^|]*Intent")
+
+    def test_sdlc_orch_resumption_detects_intent(self):
+        resume_match = re.search(
+            r"## Session Resumption.*?(?=\n## |\Z)",
+            self.sdlc_orch,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(resume_match)
+        self.assertIn("research/00-intent.md", resume_match.group(0),
+            "Session Resumption should reference research/00-intent.md detection")
+
+    def test_feature_cmd_scaffolds_intent(self):
+        self.assertIn("research/00-intent.md", self.feature_cmd)
+        self.assertRegex(self.feature_cmd, r"\*\*Phase\*\*:\s*Intent")
+        self.assertIn("Intent started", self.feature_cmd,
+            "feature.md FEATURE_LOG template should include 'Intent started' initial log row")
+
+    def test_feature_cmd_scaffold_no_setup_questions(self):
+        template_slice = self._feature_cmd_overview_template_slice()
+        self.assertNotIn("## Setup Questions", template_slice,
+            "feature.md research/00-overview.md scaffold template should not include ## Setup Questions anymore")
+
+    def test_feature_cmd_has_brief_flag(self):
+        self.assertIn("--brief", self.feature_cmd)
+        self.assertIn("brief", self.feature_cmd.lower())
+
+    def test_research_overview_sections_sans_setup_questions(self):
+        match = re.search(
+            r"def test_research_overview_sections.*?required\s*=\s*\{([^}]+)\}",
+            self.artifact_schemas,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(match)
+        required_text = match.group(1)
+        self.assertNotRegex(required_text, r'["\']Setup Questions["\']',
+            "test_research_overview_sections required set should no longer contain Setup Questions")
+        for section in ("Status", "Problem Statement", "Scope", "Codebases"):
+            with self.subTest(section=section):
+                self.assertRegex(required_text, rf'["\']{re.escape(section)}["\']',
+                    f"required set missing: {section}")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -131,12 +131,9 @@ Validate the codebase target from task docs' `## Codebase` section.
 
 - **2.1 Codebase root exists** — Read the codebase root path from any task doc. Verify the path exists on disk and is a directory. If not: BLOCK.
 - **2.2 Git repository check** — Verify the codebase root is a git repo: `git -C <root> rev-parse --is-inside-work-tree`. If not: WARN.
-- **2.3 Branch check** — Compare `git -C <root> branch --show-current` against the branch in task docs. Mismatch: WARN. Detached HEAD: WARN.
+- **2.3 Branch check** — Compare `git -C <root> branch --show-current` against the branch info in the task doc's `## Codebase` section. Mismatch: WARN. Detached HEAD: WARN.
 - **2.4 Uncommitted changes** — Run `git -C <root> status --short`. Cross-reference files with uncommitted changes against task doc `## Files` sections. Overlapping files: WARN per file. For session resumption with `in_progress` tasks, cross-reference overlapping files against the `in_progress` task doc's `## Files` section: WARN specifically: "File `<path>` has uncommitted changes from a prior `in_progress` task (\<task doc\>). These may be partial implementation artifacts. Review or discard before restarting this task."
-- **2.5 Codebase table consistency** — Read `research/00-overview.md` Codebases table. Parsing rules: ignore rows where Local Path is `_TBD_`, empty, whitespace-only, or contains placeholder text (e.g., `_fill in_`). Two comparisons:
-  1. **Task doc vs table**: Compare the task doc's codebase root path against Local Path entries. If a matching codebase name exists but paths differ: BLOCK. "Task docs point to `<task-doc-root>` but Codebases table says `<table-path>`. Task docs may have been materialized from a different clone. Re-materialize from the correct clone."
-  2. **Working directory vs table**: Run `pwd` in the shell to determine the current working directory. Compare against Local Path entries. If paths differ: BLOCK. "Running from `<cwd>` but Codebases table says `<table-path>`. You may be running from a different clone. Switch to the correct clone or update the Codebases table."
-  If Codebases table is missing, empty, or has no matching entry for either comparison: INFO (not blocking — table may not reference this codebase).
+- **2.5 Codebase table consistency** — Read codebase path info from `plans/00-overview.md` `## Implementation Environment` (or `research/00-overview.md` `## Codebases` if no IE section exists). Compare the task doc's codebase root path against the recorded paths. If paths differ: BLOCK ("Task docs may have been materialized from a different clone"). Also compare the current working directory. If no matching entry found: INFO.
 
 #### Phase 3: Staleness Detection
 
@@ -153,7 +150,7 @@ Existing checks, adapted to read from task docs.
 
 - **4.1 Required tools** — Scan task docs for tool references (test runners, build tools, linters). Check accessibility. Missing: BLOCK.
 - **4.2 Environment variables** — Scan task docs and plan constraints for env var references. Missing: WARN.
-- **4.3 Test baseline** — Run the test suite from the codebase root. Test command comes from: task doc constraints → plan constraints → codebase CLAUDE.md → common defaults. Tests fail: BLOCK. No test command found: WARN.
+- **4.3 Test baseline** — Run the test suite from the codebase root. Test command comes from: task doc `## Codebase` section (if it includes a test command) → plan overview Implementation Environment → task doc constraints → plan constraints → codebase CLAUDE.md → common defaults. Tests fail: BLOCK. No test command found: WARN.
 - **4.4 Referenced file paths** — For each task doc, verify every file in `## Files` exists (resolved as `<codebase_root>/<relative_path>`). File missing + task says modify: BLOCK. File missing + task says create: OK. File exists + task says create: WARN.
 - **4.5 Interface verification** — For task docs that reference modifying specific functions/classes, read the local file and verify the current signature. Runs unconditionally (not just when stale). Mismatch: WARN. Additionally, if the task doc contains an inline snippet (`#### Snippet:`) for a modified callable, diff the snippet's signature against the local file directly — this catches signature drift that the plan-level check may have missed. Mismatch: WARN.
 

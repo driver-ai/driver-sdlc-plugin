@@ -86,12 +86,12 @@ Plan documents (`01-*.md`, `02-*.md`, etc.) must include these H2 sections: `Con
 Features follow a phased development lifecycle. Each phase has a dedicated skill or command that provides guidance.
 
 ```
-/drvr:feature --> Research --> Planning --> Validation --> Materialization --> Implementation --> Review --> Bookkeeping --> Next Plan --> ...
-                                                                                                                                |
-                                                                                                                   All plans complete
-                                                                                                                                |
-                                                                                                                                v
-                                                                                                        /drvr:assess --> /drvr:docs-artifacts --> Ship
+/drvr:feature --> Intent --> Research --> Planning --> Validation --> Materialization --> Implementation --> Review --> Bookkeeping --> Next Plan --> ...
+                                                                                                                                                 |
+                                                                                                                                    All plans complete
+                                                                                                                                                 |
+                                                                                                                                                 v
+                                                                                                                       /drvr:assess --> /drvr:docs-artifacts --> Ship
 ```
 
 ### Phase-Skill Mapping
@@ -100,7 +100,8 @@ Features follow a phased development lifecycle. Each phase has a dedicated skill
 
 | Phase | Skill / Command | What It Does | Entry Signal |
 |-------|----------------|--------------|-------------|
-| Research | `drvr:research-guidance` | Why-What-How methodology, document organization, completion criteria | `/drvr:feature`, "let's research", "explore" |
+| Intent | `drvr:intent-guidance` | Mine the author's tacit knowledge and produce `research/00-intent.md` before codebase research | `/drvr:feature`, "capture intent" |
+| Research | `drvr:research-guidance` | Why-What-How methodology, document organization, completion criteria | "let's research", "explore" |
 | Planning | `drvr:planning-guidance` | TDD-first task design, test strategy, architecture fit, task breakdown | "let's plan", "ready to plan" |
 | Validation | `/drvr:dry-run-plan` | Walk through plan to find gaps before implementation | "dry-run plan X" |
 | Materialization | `drvr:materialize-tasks` | Convert plan tasks into standalone task docs for sub-agent execution | plan approved (`status: approved`), no task docs |
@@ -155,6 +156,7 @@ Every feature has a `FEATURE_LOG.md` at its root -- the source of truth for life
 
 | Skill | Description |
 |-------|-------------|
+| `drvr:intent-guidance` | Mine author's tacit knowledge at feature start — produces `research/00-intent.md` and gates entry into research. |
 | `drvr:research-guidance` | Guide research with structured questioning (why, what, how), document organization, and completion criteria. |
 | `drvr:planning-guidance` | Guide planning with TDD-first task design, test strategy, architecture fit, and task breakdown. |
 | `drvr:materialize-tasks` | Materialize approved plan tasks into standalone task documents for sub-agent execution. |

@@ -180,6 +180,12 @@ For features that span multiple plans, create `plans/00-overview.md` as the cent
 | 01 <name> | NOT STARTED | — | <what it delivers> |
 | 02 <name> | NOT STARTED | — | <what it delivers> |
 
+## Implementation Environment
+
+_Capture the environment information that implementation needs: codebase paths, branches,
+test commands, and any other environment details relevant to this feature. Materialize-tasks
+reads this section to hydrate task docs so sub-agents arrive pre-loaded._
+
 ## Planning Strategy
 _Why the feature is broken into these plans, what order, what the rationale is_
 
@@ -196,6 +202,13 @@ _Surfaced during implementation — deviations that affect other plans_
 ## Open Questions
 - [ ] <unresolved decisions>
 ````
+
+#### Fill In Implementation Environment
+
+When creating `plans/00-overview.md`, populate the Implementation Environment section with
+the environment details sub-agents will need: codebase paths, branches (base and feature),
+test commands, and anything else relevant. Pull from research Codebases and codebase
+CLAUDE.md as starting points, then confirm with the user.
 
 #### Interface Contracts Are Critical
 

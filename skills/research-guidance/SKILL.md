@@ -5,6 +5,8 @@ description: |
   and completion criteria. Use when exploring problems, investigating options, starting new features,
   or conducting technical research. Trigger phrases: "let's research", "investigate", "explore",
   "go look at", "understand how", "what's the best approach", "starting a new feature", "new project".
+  Do NOT activate for: "capture intent", "intent mining", "start intent" —
+  those activate intent-guidance.
 ---
 
 # Research
@@ -27,7 +29,11 @@ You are guiding technical research against one or more codebases using Driver MC
 
 ## Step 1: Understand the Research Question
 
-Before touching any tools, understand what the user wants to learn.
+Intent mining is now upstream — `research/00-intent.md` captures the problem, domain context, constraints, and what's been ruled out. Read it for context before asking questions.
+
+**If `research/00-intent.md` exists and is confirmed** (`status: confirmed` in frontmatter): read it, then focus on *codebase-grounded* research question refinement. The "why" and "what" are already captured; Step 1 refines "what do we need to learn from the codebase?"
+
+**If `research/00-intent.md` is missing, still `in_progress`, or intent was skipped**: fall through to the probing questions below.
 
 **Ask probing questions:**
 - What are you trying to understand? What decision does this research inform?
@@ -115,7 +121,7 @@ Now explore implementation approaches.
 
 **Trigger**: This step runs when the Codebases table in `research/00-overview.md` has at least one entry with a Local Path filled in. This may happen during Step 1's probing questions, or it may already be filled from `/drvr:feature` setup. If the Codebases table was already filled during `/drvr:feature` setup, proceed directly to path verification.
 
-**Check setup question answer first**: Read the Setup Questions section in `research/00-overview.md`. If the user already answered the standards question with a specific path, verify it exists and use it as the primary source (still check for subdirectory-level overrides). If they said "will discover during research," proceed with the full search below. If they said "none" or equivalent, do a quick check (CLAUDE.md at repo root only) to confirm, then accept their answer — don't ask again.
+**Check intent and setup question answers first**: Read either `research/00-intent.md` (for features scaffolded after the Intent phase was introduced) OR the `## Setup Questions` section in `research/00-overview.md` (for legacy features scaffolded before Intent). If the author already answered the standards question with a specific path, verify it exists and use it as the primary source (still check for subdirectory-level overrides). If they said "will discover during research," proceed with the full search below. If they said "none" or equivalent, do a quick check (CLAUDE.md at repo root only) to confirm, then accept their answer — don't ask again.
 
 ### Path Verification
 
