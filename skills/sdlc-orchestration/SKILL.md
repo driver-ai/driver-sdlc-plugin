@@ -40,6 +40,9 @@ When a user returns to a feature ("returning to feature/X", "resume feature X", 
 1. **Locate the feature directory** — resolve the path to the feature project
 2. **Read `plans/00-overview.md`** — progress table, dependency graph, gaps
 3. **Check for in-progress work:**
+   - `research/00-intent.md` missing → phase is **Intent**. Suggest: "Intent has not been captured. Activate `intent-guidance` to start."
+   - `research/00-intent.md` exists but `status: in_progress` (not confirmed) → phase is **Intent**. Suggest: "Intent is in progress. Resume `intent-guidance` to complete."
+   - `research/00-intent.md` confirmed (or intent explicitly skipped per FEATURE_LOG) but no `research/NN-*.md` (except 00-* files) → phase is **Research (Why-What-How)**. Intent is complete, research proper hasn't started.
    - Implementation logs without a matching plan status header → implementation was in progress
    - Plan files without dry-run results → plan needs validation
    - Research docs with open questions → research may be incomplete
@@ -66,6 +69,27 @@ If no overview exists, check for `research/` and `plans/` directories to infer t
 ---
 
 ## Transition Boundaries
+
+### Scaffold → Intent
+
+When `/drvr:feature` completes and FEATURE_LOG shows `Phase: Intent`:
+- Activate `intent-guidance` if the user signals "capture intent" or any intent trigger
+- If the user attempts to skip to research ("let's research") without capturing intent:
+  WARN and prompt "Intent has not been captured. Activate `intent-guidance` first, or say
+  'skip intent' (appropriate when intent is clear from external context — PRD, detailed ticket, prior discussion) to proceed anyway."
+
+### Intent → Research
+
+When the user signals "let's research" or any research trigger:
+- **Check 1: Intent artifact exists** — Verify `research/00-intent.md` exists. If not:
+  BLOCK. "Intent has not been captured. Activate `intent-guidance` first, or explicitly
+  skip intent with 'skip intent' (appropriate when intent is clear from external context — PRD, detailed ticket, prior discussion)."
+- **Check 2: Intent exit criteria met** — Read `research/00-intent.md`'s `## Exit Criteria`
+  checklist. If any item is unchecked: WARN. "Intent exit criteria are not fully satisfied.
+  Review `research/00-intent.md` before proceeding. Proceed anyway?"
+- If the user said "skip intent" explicitly: note "Intent skipped at user direction" in
+  FEATURE_LOG and proceed. No file is created.
+- Activate `research-guidance`
 
 ### Research → Planning
 When the user signals "let's plan" or "ready to plan":
@@ -153,6 +177,7 @@ The lifecycle is not linear. These backward transitions are normal:
 | Planning → Research | Planning surfaces unanswered question | Research the question first |
 | Materialization → Planning | materialize-tasks blocks on gaps or missing codebase | Fix plan, re-approve |
 | Implementation → Materialization | Pre-flight finds stale task docs | Re-materialize affected tasks |
+| Research → Intent | Gap surfaced that requires re-mining intent | Resume `intent-guidance`, update `00-intent.md` |
 
 When a loop occurs, note: "Going back to [phase] because [reason]."
 
@@ -169,6 +194,7 @@ Each skill appends to the log at transition moments:
 | Skill | Events to Log |
 |-------|--------------|
 | `/drvr:feature` | Feature created, research started |
+| `intent-guidance` | Intent started, Intent captured, Intent skipped (if applicable) |
 | `research-guidance` | Research doc created, wireframe created |
 | `planning-guidance` | Planning started, overview created, plan created |
 | `/drvr:dry-run-plan` | Dry-run completed (with gap count and verdict) |
