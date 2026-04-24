@@ -27,7 +27,26 @@ If `~/.driver/config.json` doesn't exist or doesn't have a `projects_path`:
 
 Stop here — do not create config or ask for the path. `/drvr:setup` owns that configuration.
 
-### Step 3: Create Folder Structure
+### Step 3: Gather Project Context
+
+Before creating any files, gather project logistics through conversation.
+
+Ask these questions **one at a time**, waiting for the user's answer before proceeding:
+
+1. **"Which codebases are involved?"**
+   - For each codebase, ask: name, local path, and which branch to work on
+   - Ask for the Driver MCP codebase name if they know it (they can check by running `get_codebase_names` separately)
+   - Validate that local paths exist on disk (`ls <path>`)
+   - If the user doesn't know yet: accept "TBD" and move on
+   - Store as a list for the Codebases table in `00-overview.md`
+
+2. **"Are there known coding standards or conventions?"**
+   - For each codebase: CLAUDE.md path, test framework/commands, key conventions
+   - If unknown: note "will discover during research"
+
+After gathering answers, proceed to Step 4 with the collected context.
+
+### Step 4: Create Folder Structure
 
 Create the following structure at `{projects_path}/features/<project-name>/`:
 
@@ -122,7 +141,7 @@ _Verbatim capture of the author's thinking — filled in during intent mining_
 
 Note: `wireframes/` is created on-demand during research when UI exploration is needed — not scaffolded upfront.
 
-### Step 4: Create FEATURE_LOG.md
+### Step 5: Create FEATURE_LOG.md
 
 Create the feature log that tracks lifecycle state and artifact history:
 
@@ -142,7 +161,7 @@ Create the feature log that tracks lifecycle state and artifact history:
 | <today> | Intent started | `research/00-intent.md` |
 ```
 
-### Step 5: Create research/00-overview.md
+### Step 6: Create research/00-overview.md
 
 Create the research overview. If `--prd <path>` was provided, include a PRD Reference section.
 
@@ -175,10 +194,10 @@ _See `research/00-intent.md` for full problem framing and author's domain contex
 ## Scope
 
 **In Scope:**
-- _TBD_
+- _Populated during Intent/Research_
 
 **Out of Scope:**
-- _TBD_
+- _Populated during Intent/Research_
 
 ---
 
@@ -186,7 +205,7 @@ _See `research/00-intent.md` for full problem framing and author's domain contex
 
 | Name | Local Path | Driver Name | Branch |
 |------|------------|-------------|--------|
-| _TBD_ | _TBD_ | _TBD_ | _TBD_ |
+| <name from Step 3> | <validated path> | <Driver MCP name> | <branch> |
 
 ---
 
@@ -205,7 +224,7 @@ _See `research/00-intent.md` for full problem framing and author's domain contex
 | _None yet_ | | |
 ```
 
-### Step 6: Confirm and Guide
+### Step 7: Confirm and Guide
 
 After creating the structure:
 

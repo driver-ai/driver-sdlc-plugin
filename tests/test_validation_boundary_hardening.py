@@ -580,11 +580,11 @@ class TestIntentPhaseStructural(unittest.TestCase):
 
     def _feature_cmd_overview_template_slice(self) -> str:
         match = re.search(
-            r"### Step 5:.*?# <Project Name>.*?(?=\n### Step |\Z)",
+            r"### Step 6:.*?# <Project Name>.*?(?=\n### Step |\Z)",
             self.feature_cmd,
             re.DOTALL,
         )
-        self.assertIsNotNone(match, "feature.md Step 5 research/00-overview.md template not found")
+        self.assertIsNotNone(match, "feature.md Step 6 research/00-overview.md template not found")
         return match.group(0)
 
     def test_intent_skill_registered(self):
@@ -666,6 +666,36 @@ class TestIntentPhaseStructural(unittest.TestCase):
             with self.subTest(section=section):
                 self.assertRegex(required_text, rf'["\']{re.escape(section)}["\']',
                     f"required set missing: {section}")
+
+
+class TestInteractiveFeatureSetup(unittest.TestCase):
+    """Verify /drvr:feature has interactive Q&A before scaffolding."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.feature_cmd_content = (PLUGIN_ROOT / "commands" / "feature.md").read_text()
+        cls.research_guidance_content = (
+            PLUGIN_ROOT / "skills" / "research-guidance" / "SKILL.md"
+        ).read_text()
+
+    def test_feature_command_has_gather_context_step(self) -> None:
+        """feature.md must contain a 'Gather Project Context' step with 2 questions."""
+        self.assertIn("### Step 3: Gather Project Context", self.feature_cmd_content)
+        self.assertIn("Which codebases are involved", self.feature_cmd_content)
+        self.assertIn("coding standards", self.feature_cmd_content.lower())
+
+    def test_feature_overview_template_codebases_populated(self) -> None:
+        """00-overview template must instruct pre-population (no _TBD_ in Codebases rows)."""
+        self.assertNotIn("| _TBD_ | _TBD_ | _TBD_ | _TBD_ |", self.feature_cmd_content)
+
+    def test_feature_overview_template_scope_populated(self) -> None:
+        """Scope section must use populated placeholders, not bare _TBD_."""
+        self.assertNotIn("- _TBD_", self.feature_cmd_content)
+
+    def test_research_guidance_setup_question_backward_compat(self) -> None:
+        """research-guidance must handle both Intent-phase and legacy features."""
+        self.assertIn("00-intent.md", self.research_guidance_content)
+        self.assertIn("Setup Questions", self.research_guidance_content)
 
 
 if __name__ == "__main__":
