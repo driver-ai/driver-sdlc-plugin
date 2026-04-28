@@ -86,7 +86,20 @@ Generate the Driver MCP Integration section. This is the core content that gets 
 
 ### BEGIN DRIVER GUIDANCE TEMPLATE
 
-## Driver MCP Integration
+## IMPORTANT: Use Driver MCP for Codebase Understanding
+
+**ALWAYS use Driver MCP tools — not native file exploration — when you need to understand this codebase.** Driver provides pre-computed architecture docs, symbol-level file documentation, and development history that native tools cannot replicate.
+
+**Rules:**
+1. **ALWAYS call `gather_task_context` BEFORE exploring the codebase with native tools.** It takes 1-3 minutes and returns synthesized, task-specific context. This is your default starting point for ANY task requiring codebase understanding.
+2. **Do NOT use native Explore agents, subagents, or manual grep/find as a SUBSTITUTE for Driver tools.** Native tools see raw source only. Use them for targeted follow-up AFTER Driver provides the broad picture.
+3. **Do NOT abandon `gather_task_context` because it takes time.** 1-3 minutes of server-side synthesis is faster than 5+ minutes of manual file-by-file exploration.
+4. **After `gather_task_context` returns, use Driver's navigation tools for specifics:** `get_code_map` to find files, `get_file_documentation` for interfaces, `get_source_file` for exact implementation.
+5. **Verify connectivity first.** Call `get_codebase_names` before your first Driver call in a session. If it fails, check `.mcp.json` configuration.
+
+---
+
+## Driver MCP Tools Reference
 
 Driver provides pre-computed, exhaustive documentation for your codebase — architecture overviews, symbol-level file docs, directory maps, and development history. These are exposed as MCP tools that your coding agent can call during any task.
 
@@ -196,15 +209,16 @@ Build the output `CLAUDE.driver.md` by layering the original content with Driver
 Assemble the output in this order:
 
 1. **Project header** — preserved from original, or generate a simple `# <directory name>` header
-2. **Preserved sections** — all non-conflicting content from the original CLAUDE.md, in their original order:
+2. **Driver behavioral rules** — the "IMPORTANT: Use Driver MCP for Codebase Understanding" section from the template. **This MUST appear near the top of the file**, before architecture or conventions sections, so the agent processes it before forming its approach.
+3. **Preserved sections** — all non-conflicting content from the original CLAUDE.md, in their original order:
    - Build & test commands
    - Code style & conventions
    - Architecture notes
    - Framework-specific guidance
    - Error handling patterns
    - Any other sections that don't conflict with Driver
-3. **Driver MCP Integration** — the full template from Phase 3 (inserted as a new major section)
-4. **Conflicting Instructions Removed** — the educational section (only if conflicts were found in Phase 2)
+4. **Driver MCP Tools Reference** — the detailed tool inventory, trigger table, usage patterns, and gotchas from the template
+5. **Conflicting Instructions Removed** — the educational section (only if conflicts were found in Phase 2)
 
 ### Merge Rules
 
@@ -225,6 +239,7 @@ Before writing the output, run two validation passes:
 
 Verify the output contains ALL required Driver sections:
 
+- [ ] **Behavioral rules near the top** — "IMPORTANT: Use Driver MCP for Codebase Understanding" section with ALWAYS/NEVER rules, positioned before architecture or conventions sections
 - [ ] Driver MCP tool inventory (at minimum: `gather_task_context`, `get_code_map`, `get_file_documentation`, `get_source_file`, `get_codebase_names`)
 - [ ] Prescriptive trigger table ("When to Use Driver" with concrete when → do mappings)
 - [ ] Anti-patterns ("What NOT to Do" section)
@@ -266,6 +281,7 @@ Scan the merged output (excluding the "Conflicting Instructions Removed" section
 - <list what was kept: build commands, style rules, architecture notes, etc.>
 
 ### Driver guidance added:
+- Behavioral rules at the top — ALWAYS use Driver for codebase understanding, NEVER substitute native exploration
 - Tool inventory with 14 Driver MCP tools
 - Prescriptive trigger table — when to use each tool
 - Anti-patterns — what NOT to do
@@ -294,6 +310,8 @@ Skip Phase 2 (Analyze) and Phase 4 (Merge). Instead:
 ```markdown
 # <directory name>
 
+<"IMPORTANT: Use Driver MCP for Codebase Understanding" behavioral rules section from Phase 3 template — this goes FIRST>
+
 ## Project Overview
 <!-- Describe your project here -->
 
@@ -315,7 +333,7 @@ Skip Phase 2 (Analyze) and Phase 4 (Merge). Instead:
 <!-- - Major components and how they interact -->
 <!-- - Important patterns used in the codebase -->
 
-<full Driver MCP Integration section from Phase 3>
+<full Driver MCP Tools Reference section from Phase 3 template — detailed tool inventory, trigger table, usage patterns, gotchas>
 ```
 
 3. Run Phase 5 validation (fixed schema only — no preservation check needed)
