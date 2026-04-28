@@ -91,9 +91,9 @@ Generate the Driver MCP Integration section. This is the core content that gets 
 **ALWAYS use Driver MCP tools — not native file exploration — when you need to understand this codebase.** Driver provides pre-computed architecture docs, symbol-level file documentation, and development history that native tools cannot replicate.
 
 **Rules:**
-1. **ALWAYS call `gather_task_context` BEFORE exploring the codebase with native tools.** It takes 1-3 minutes and returns synthesized, task-specific context. This is your default starting point for ANY task requiring codebase understanding.
-2. **Do NOT use native Explore agents, subagents, or manual grep/find as a SUBSTITUTE for Driver tools.** Native tools see raw source only. Use them for targeted follow-up AFTER Driver provides the broad picture.
-3. **Do NOT abandon `gather_task_context` because it takes time.** 1-3 minutes of server-side synthesis is faster than 5+ minutes of manual file-by-file exploration.
+1. **ALWAYS call `gather_task_context` BEFORE using any other method to understand the codebase.** This includes before spawning ANY native agent (Explore, claude-code-guide, general-purpose, or any other agent type), before manual grep/find, and before reading files for orientation. `gather_task_context` takes 1-3 minutes and returns synthesized, task-specific context. This is your FIRST action for ANY task requiring codebase understanding.
+2. **Do NOT use ANY native agent type as a SUBSTITUTE for Driver tools when understanding the codebase.** This includes Explore agents, claude-code-guide agents, general-purpose agents, Plan agents, and any other agent type. These agents see raw source only. Driver provides pre-computed architecture docs, symbol-level documentation, and development history that no native agent can replicate. Use native agents only for targeted follow-up AFTER Driver provides the broad picture.
+3. **Do NOT abandon `gather_task_context` because it takes time.** 1-3 minutes of server-side synthesis is faster than 5+ minutes of manual exploration through any method.
 4. **After `gather_task_context` returns, use Driver's navigation tools for specifics:** `get_code_map` to find files, `get_file_documentation` for interfaces, `get_source_file` for exact implementation.
 5. **Verify connectivity first.** Call `get_codebase_names` before your first Driver call in a session. If it fails, check `.mcp.json` configuration.
 
