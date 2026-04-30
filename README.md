@@ -144,6 +144,20 @@ Reflect on what happened in the current session and capture improvements.
 > (retro saved to retrospectives/ with actionable improvements)
 ```
 
+### Easy: Driverize a Repo
+
+Install the Driver enforcement stack to ensure Claude Code uses Driver MCP for codebase intelligence instead of native exploration tools. The stack includes 4 tiers: permissions & hooks, shadow agents, context injection, and CLAUDE.md routing.
+
+```
+/drvr:driverize
+> (scans repo, backs up existing files, installs 9 artifacts + CLAUDE.md block)
+> (version-stamped for re-run detection and clean reversal)
+/drvr:un-driverize
+> (detects artifacts via provenance markers, confirms removal plan, restores backups)
+```
+
+Both commands work standalone — copy the `.md` file and paste as a prompt, no plugin required.
+
 ### Medium: Single-Plan Feature End-to-End
 
 Build a complete feature through all phases, from research through approval, materialization, and handoff.
@@ -271,6 +285,8 @@ For high-stakes features, run every plan through validation before writing any c
 | `/drvr:docs-artifacts <path>` | Generate handoff docs (overview, architecture, testing guide, risk assessment) for code review | `/drvr:docs-artifacts features/user-notifications` |
 | `/drvr:context <task>` | Gather codebase context for a specific task via Driver | `/drvr:context How does the billing module work? --codebases backend` |
 | `/drvr:retro` | Analyze the current session -- evaluate work quality, identify improvements, think about what is next | `/drvr:retro --write` |
+| `/drvr:driverize` | Install Driver enforcement stack -- hooks, shadow agents, context injection, and CLAUDE.md routing | `/drvr:driverize` |
+| `/drvr:un-driverize` | Remove Driver enforcement stack -- restore backups and remove driverize artifacts | `/drvr:un-driverize` |
 
 ## Skills
 

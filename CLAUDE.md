@@ -151,6 +151,8 @@ Every feature has a `FEATURE_LOG.md` at its root -- the source of truth for life
 | `/drvr:docs-artifacts <path>` | Generate handoff docs (overview, architecture, testing guide, risks) for code review |
 | `/drvr:context <task>` | Gather codebase context for a specific task via Driver MCP |
 | `/drvr:retro` | Analyze current session -- evaluate work quality, identify improvements |
+| `/drvr:driverize` | Install Driver enforcement stack -- hooks, shadow agents, context injection, and CLAUDE.md routing |
+| `/drvr:un-driverize` | Remove Driver enforcement stack -- restore backups and remove driverize artifacts |
 
 ### Skills
 
