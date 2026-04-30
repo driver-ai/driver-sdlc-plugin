@@ -785,6 +785,137 @@ class TestDecisionLog(unittest.TestCase):
         self.assertIn("DECISIONS.md", self.agent_content)
 
 
+class TestBranchAwareness(unittest.TestCase):
+    """Structural tests for branch awareness (Base Branch / Feature Branch) across the pipeline."""
+
+    feature_cmd: str
+    claude_template: str
+    research_guidance: str
+    materialize_tasks: str
+    impl_guidance: str
+    sdlc_orch: str
+    driver_task_context: str
+    handoff_analyzer: str
+
+    @classmethod
+    def setUpClass(cls):
+        cls.feature_cmd = (PLUGIN_ROOT / "commands" / "feature.md").read_text()
+        cls.claude_template = (PLUGIN_ROOT / "templates" / "CLAUDE.md.template").read_text()
+        cls.research_guidance = (PLUGIN_ROOT / "skills" / "research-guidance" / "SKILL.md").read_text()
+        cls.materialize_tasks = (PLUGIN_ROOT / "skills" / "materialize-tasks" / "SKILL.md").read_text()
+        cls.impl_guidance = (PLUGIN_ROOT / "skills" / "implementation-guidance" / "SKILL.md").read_text()
+        cls.sdlc_orch = (PLUGIN_ROOT / "skills" / "sdlc-orchestration" / "SKILL.md").read_text()
+        cls.driver_task_context = (PLUGIN_ROOT / "agents" / "driver-task-context.md").read_text()
+        cls.handoff_analyzer = (PLUGIN_ROOT / "agents" / "handoff-analyzer.md").read_text()
+
+    def test_feature_cmd_asks_for_base_and_feature_branch(self):
+        """feature.md Step 3 contains 'base branch' and 'feature branch' language."""
+        lower = self.feature_cmd.lower()
+        self.assertIn("base branch", lower)
+        self.assertIn("feature branch", lower)
+
+    def test_feature_cmd_codebases_table_has_two_branch_columns(self):
+        """feature.md Step 6 template has Base Branch and Feature Branch in table header."""
+        self.assertIn("Base Branch", self.feature_cmd)
+        self.assertIn("Feature Branch", self.feature_cmd)
+        self.assertRegex(self.feature_cmd, r"\|[^|]*Base Branch[^|]*\|[^|]*Feature Branch[^|]*\|")
+
+    def test_claude_template_codebases_table_has_two_branch_columns(self):
+        """CLAUDE.md template Codebases table has Base Branch and Feature Branch in table header."""
+        self.assertIn("Base Branch", self.claude_template)
+        self.assertIn("Feature Branch", self.claude_template)
+        self.assertRegex(self.claude_template, r"\|[^|]*Base Branch[^|]*\|[^|]*Feature Branch[^|]*\|")
+
+    def test_research_guidance_validates_feature_branch(self):
+        """research-guidance Step 4 references 'Feature Branch'."""
+        match = re.search(
+            r"## Step 4: Validate Remote Context.*?(?=\n## |\Z)",
+            self.research_guidance, re.DOTALL,
+        )
+        self.assertIsNotNone(match, "Step 4 section not found in research-guidance")
+        self.assertIn("Feature Branch", match.group(0))
+
+    def test_research_guidance_step3_has_branch_passthrough(self):
+        """research-guidance Step 3 contains branch_name near gather_task_context guidance."""
+        match = re.search(
+            r"## Step 3: Gather Codebase Context.*?(?=\n## |\Z)",
+            self.research_guidance, re.DOTALL,
+        )
+        self.assertIsNotNone(match, "Step 3 section not found in research-guidance")
+        section = match.group(0)
+        self.assertTrue(
+            "branch_name" in section or "Base Branch" in section,
+            "Step 3 missing branch_name or Base Branch passthrough guidance",
+        )
+
+    def test_materialize_tasks_template_has_both_branches(self):
+        """materialize-tasks task doc template has **Base Branch** and **Feature Branch**."""
+        self.assertIn("**Base Branch**", self.materialize_tasks)
+        self.assertIn("**Feature Branch**", self.materialize_tasks)
+
+    def test_impl_guidance_preflight_validates_feature_branch(self):
+        """implementation-guidance pre-flight Phase 2 references 'Feature Branch'."""
+        match = re.search(
+            r"#### Phase 2: Codebase Targeting.*?(?=\n#### Phase 3|\Z)",
+            self.impl_guidance, re.DOTALL,
+        )
+        self.assertIsNotNone(match, "Phase 2 section not found in implementation-guidance")
+        self.assertIn("Feature Branch", match.group(0))
+
+    def test_impl_guidance_subagent_prompt_has_feature_branch(self):
+        """Subagent prompt template has 'Feature Branch'."""
+        match = re.search(
+            r"## Subagent Task Prompts.*?(?=\n## Implementation Log Format|\Z)",
+            self.impl_guidance, re.DOTALL,
+        )
+        self.assertIsNotNone(match, "Subagent Task Prompts section not found")
+        self.assertIn("Feature Branch", match.group(0))
+
+    def test_sdlc_orch_resume_reports_both_branches(self):
+        """Session resume format includes both branch fields."""
+        match = re.search(
+            r"5\.\s+\*\*Report current state:\*\*.*?(?=\n---|\n## |\n### |\Z)",
+            self.sdlc_orch, re.DOTALL,
+        )
+        self.assertIsNotNone(match, "Report current state section not found")
+        section = match.group(0)
+        self.assertTrue(
+            "base:" in section.lower() or "base branch" in section.lower(),
+            "Session resume missing base branch reporting",
+        )
+        self.assertTrue(
+            "feature:" in section.lower() or "feature branch" in section.lower(),
+            "Session resume missing feature branch reporting",
+        )
+
+    def test_driver_task_context_has_branch_passthrough(self):
+        """driver-task-context agent instructions mention branch_name."""
+        self.assertIn("branch_name", self.driver_task_context)
+
+    def test_handoff_analyzer_reads_base_branch_from_table(self):
+        """handoff-analyzer references Codebases table for base branch with fallback chain."""
+        self.assertIn("Base Branch", self.handoff_analyzer)
+        self.assertTrue(
+            "legacy" in self.handoff_analyzer.lower()
+            or "Branch` column" in self.handoff_analyzer
+            or "fallback" in self.handoff_analyzer.lower(),
+            "handoff-analyzer missing legacy/fallback branch handling",
+        )
+
+    def test_consumers_handle_legacy_branch_column(self):
+        """All branch consumers contain 'legacy format' for backward compat."""
+        consumers = {
+            "research-guidance": self.research_guidance,
+            "materialize-tasks": self.materialize_tasks,
+            "implementation-guidance": self.impl_guidance,
+            "sdlc-orchestration": self.sdlc_orch,
+        }
+        for name, content in consumers.items():
+            with self.subTest(consumer=name):
+                self.assertIn("legacy format", content.lower(),
+                    f"{name} missing 'legacy format' backward compat language")
+
+
 class TestTransitionAdvisoryChecks(unittest.TestCase):
     """Structural tests for transition advisory checks (open question scanning)."""
 

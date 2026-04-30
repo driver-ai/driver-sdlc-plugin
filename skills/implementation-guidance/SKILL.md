@@ -157,7 +157,7 @@ Validate the codebase target from task docs' `## Codebase` section.
 
 - **2.1 Codebase root exists** — Read the codebase root path from any task doc. Verify the path exists on disk and is a directory. If not: BLOCK.
 - **2.2 Git repository check** — Verify the codebase root is a git repo: `git -C <root> rev-parse --is-inside-work-tree`. If not: WARN.
-- **2.3 Branch check** — Compare `git -C <root> branch --show-current` against the branch info in the task doc's `## Codebase` section. Mismatch: WARN. Detached HEAD: WARN.
+- **2.3 Branch check** — Compare `git -C <root> branch --show-current` against the Feature Branch in the task doc's `## Codebase` section. If the task doc uses a single `**Branch**:` field (legacy format), compare against that. Mismatch: WARN. Detached HEAD: WARN.
 - **2.4 Uncommitted changes** — Run `git -C <root> status --short`. Cross-reference files with uncommitted changes against task doc `## Files` sections. Overlapping files: WARN per file. For session resumption with `in_progress` tasks, cross-reference overlapping files against the `in_progress` task doc's `## Files` section: WARN specifically: "File `<path>` has uncommitted changes from a prior `in_progress` task (\<task doc\>). These may be partial implementation artifacts. Review or discard before restarting this task."
 - **2.5 Codebase table consistency** — Read codebase path info from `plans/00-overview.md` `## Implementation Environment` (or `research/00-overview.md` `## Codebases` if no IE section exists). Compare the task doc's codebase root path against the recorded paths. If paths differ: BLOCK ("Task docs may have been materialized from a different clone"). Also compare the current working directory. If no matching entry found: INFO.
 
@@ -199,7 +199,7 @@ Existing checks, adapted to read from task docs.
 **Plan:** <plan-name>
 **Task docs:** N found (M complete, K pending)
 **Codebase:** <name> at <root>
-**Branch:** <branch> (matches task docs / WARN: mismatch)
+**Feature Branch:** <feature-branch> (matches task docs / WARN: mismatch)
 **Materialized:** <timestamp> (<age> — fresh / stale)
 
 ### Checks
@@ -211,7 +211,7 @@ Existing checks, adapted to read from task docs.
 | Integrity | Dependency graph | PASS | No circular deps |
 | Integrity | Completed tasks | INFO | Tasks 1-3 complete |
 | Targeting | Codebase root | PASS | Path exists, is git repo |
-| Targeting | Branch | PASS | On <branch> |
+| Targeting | Feature Branch | PASS | On <feature-branch> |
 | Targeting | Uncommitted changes | WARN | 1 file overlaps |
 | Targeting | Codebase table | PASS | Task doc root and working directory match Codebases entry |
 | Staleness | Age | PASS | < 24 hours |
@@ -320,7 +320,7 @@ Write a status header at the TOP of the plan file (before `## Context`):
 ```markdown
 ## Implementation Status: COMPLETE
 
-**Branch:** `<from log>`
+**Feature Branch:** `<from log>`
 **Implementation log:** `implementation/log-<plan>.md`
 **Tests:** <test count> passing
 **Commits:** <count> on branch
@@ -397,7 +397,8 @@ Implement the following task.
 
 ## Codebase
 **Root**: <from task doc ## Codebase section>
-**Branch**: <from task doc ## Codebase section>
+**Base Branch**: <value> (merge target / Driver MCP context branch — for reference only, implementation targets Feature Branch)
+**Feature Branch**: <from task doc ## Codebase section>
 
 All file paths are relative to the codebase root.
 Change directory to the codebase root before starting work.
@@ -480,7 +481,7 @@ Write to `implementation/log-<plan>.md` (e.g., `implementation/log-01a.md`).
 # Implementation Log: <Plan Name>
 
 **Plan:** `plans/<plan>.md`
-**Branch:** `<branch-name>`
+**Feature Branch:** `<branch-name>`
 **Started:** <date>
 
 ---

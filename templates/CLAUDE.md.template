@@ -142,9 +142,9 @@ Features follow a phased development lifecycle. Each phase has a dedicated skill
 
 ## Codebases
 
-| Codebase | Repo | Local Path | Default Branch | Description |
-|----------|------|------------|----------------|-------------|
-| _Add your codebases here_ | | | | |
+| Codebase | Repo | Local Path | Base Branch | Feature Branch | Description |
+|----------|------|------------|-------------|----------------|-------------|
+| _Add your codebases here_ | | | | | |
 
 ---
 

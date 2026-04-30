@@ -81,6 +81,8 @@ Identify the Driver codebase name:
 - Verify against `get_codebase_names` from Driver MCP
 - If ambiguous, check current directory name
 
+If the parent prompt specifies a base branch, use it as `branch_name` for all Driver MCP tool calls. Every Driver MCP tool in your allowed list accepts `branch_name` as an optional parameter — always pass it when a base branch is specified. This includes `gather_task_context` (in the codebases array), `get_architecture_overview`, `get_llm_onboarding_guide`, `get_changelog`, `get_code_map`, `get_file_documentation`, `get_detailed_changelog`, and `get_source_file`. If no branch is specified, omit `branch_name` (Driver uses the default branch).
+
 **Non-local scenarios** (e.g., Claude Desktop, standalone agents without a local repo):
 - Use `get_codebase_names` to list available codebases
 - Ask user to specify which codebase(s) are relevant to the task

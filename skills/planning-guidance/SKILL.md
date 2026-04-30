@@ -182,7 +182,7 @@ For features that span multiple plans, create `plans/00-overview.md` as the cent
 
 ## Implementation Environment
 
-_Capture the environment information that implementation needs: codebase paths, branches,
+_Capture the environment information that implementation needs: codebase paths, base/feature branches,
 test commands, and any other environment details relevant to this feature. Materialize-tasks
 reads this section to hydrate task docs so sub-agents arrive pre-loaded._
 
@@ -206,8 +206,7 @@ _Surfaced during implementation — deviations that affect other plans_
 #### Fill In Implementation Environment
 
 When creating `plans/00-overview.md`, populate the Implementation Environment section with
-the environment details sub-agents will need: codebase paths, branches (base and feature),
-test commands, and anything else relevant. Pull from research Codebases and codebase
+the environment details sub-agents will need: codebase paths, base branch (for Driver MCP context and merge target), feature branch (for local implementation), test commands, and anything else relevant. Pull from research Codebases and codebase
 CLAUDE.md as starting points, then confirm with the user.
 
 #### Interface Contracts Are Critical

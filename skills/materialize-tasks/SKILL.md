@@ -46,10 +46,12 @@ After approval, verify that outstanding dry-run gaps do not block materializatio
 ## Step 2: Resolve Codebase Target
 
 Read `plans/00-overview.md` `## Implementation Environment`. Extract codebase paths,
-branches, test commands, and any other environment details captured there. Include all
-available environment information in each task doc's `## Codebase` section. If the plan
-overview doesn't have an Implementation Environment section, read `research/00-overview.md`
-`## Codebases` for codebase paths.
+Base Branch, Feature Branch, test commands, and any other environment details captured there.
+Include all available environment information in each task doc's `## Codebase` section. If
+the plan overview doesn't have an Implementation Environment section, read
+`research/00-overview.md` `## Codebases` for codebase paths and branches. If falling back
+to research Codebases and it has a single `Branch` column (legacy format), use that value
+as both `**Base Branch**` and `**Feature Branch**` in the task doc.
 
 Verify each codebase path exists on disk. If no valid paths are found, BLOCK.
 
@@ -101,8 +103,10 @@ materialized_at: "<ISO 8601 local time, e.g., 2026-04-15T14:32:00>"
 
 ## Codebase
 **Root**: <absolute path from Implementation Environment or research Codebases>
-<include all environment details from the Implementation Environment section:
-branches, test commands, and any other relevant info. Omit fields not available.>
+**Base Branch**: <from IE or Codebases>
+**Feature Branch**: <from IE or Codebases>
+<include all remaining environment details from the Implementation Environment section:
+test commands, and any other relevant info. Omit fields not available.>
 
 All file paths below are relative to the codebase root.
 Execute all commands from the codebase root directory.

@@ -67,12 +67,12 @@ Feature: <name>
 Progress: N/M plans complete
 Current state: <what's in progress or what's next>
 Last activity: <most recent artifact modified>
-Codebase: <name> at <local-path> (on <base-branch>)
+Codebase: <name> at <local-path> (base: <base-branch>, feature: <feature-branch>)
 Test command: `<cmd>`
 Next action: <suggestion based on state — if assessment phase, "Run /drvr:assess to curate the test suite before handoff">
 ```
 
-**Graceful degradation**: if `plans/00-overview.md` has no `## Implementation Environment` section (legacy features, or overview not yet created), omit the `Codebase:` and `Test command:` lines. Do NOT emit placeholder values.
+**Graceful degradation**: if `plans/00-overview.md` has no `## Implementation Environment` section (legacy features, or overview not yet created), omit the `Codebase:` and `Test command:` lines. Do NOT emit placeholder values. If the source (IE or Codebases) uses a single `Branch` column (legacy format), display as `(branch: <branch>)` instead of `(base: ..., feature: ...)`. Read branch values from whatever format the Implementation Environment uses — key-value pairs, table columns, or subsections. Do not prescribe a specific parsing format; the IE is free-form and varies across features.
 
 **Multi-codebase**: if Implementation Environment lists multiple codebases, emit one `Codebase:` and `Test command:` line per codebase.
 
