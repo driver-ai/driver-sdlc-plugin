@@ -1078,5 +1078,53 @@ class TestWorktreeParallelExecution(unittest.TestCase):
         )
 
 
+class TestPlanningQualityImprovements(unittest.TestCase):
+    """Structural tests for PE-3529 (Step 4.5 checkpoint) and PE-3531 (Environment section)."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.planning_guidance = (PLUGIN_ROOT / "skills" / "planning-guidance" / "SKILL.md").read_text()
+        cls.materialize_tasks = (PLUGIN_ROOT / "skills" / "materialize-tasks" / "SKILL.md").read_text()
+        cls.claude_md = (PLUGIN_ROOT / "CLAUDE.md").read_text()
+
+    def test_planning_has_step_4_5_checkpoint(self):
+        self.assertIn("## Step 4.5:", self.planning_guidance)
+        step45 = re.search(r"## Step 4\.5:.*?(?=\n## Step 5|\Z)", self.planning_guidance, re.DOTALL)
+        self.assertIsNotNone(step45, "Step 4.5 section not found")
+        content = step45.group(0).lower()
+        self.assertIn("architecture", content)
+        self.assertIn("test strategy", content)
+        self.assertIn("scope", content)
+        self.assertIn("decisions.md", content)
+
+    def test_planning_template_has_environment_section(self):
+        match = re.search(
+            r"### Plan Document Template.*?````markdown\n(.*?)\n````",
+            self.planning_guidance, re.DOTALL,
+        )
+        self.assertIsNotNone(match, "Plan document template block not found")
+        template = match.group(1)
+        self.assertIn("## Environment", template)
+        env_idx = template.find("## Environment")
+        ctx_idx = template.find("## Context")
+        self.assertGreater(ctx_idx, env_idx,
+            "## Environment must appear before ## Context in the plan template")
+
+    def test_materialize_tasks_reads_plan_environment(self):
+        step2 = re.search(r"## Step 2:.*?(?=\n## Step 3|\Z)", self.materialize_tasks, re.DOTALL)
+        self.assertIsNotNone(step2)
+        step2_text = step2.group(0)
+        self.assertIn("## Environment", step2_text,
+            "materialize-tasks Step 2 must reference per-plan ## Environment section")
+        self.assertIn("Implementation Environment", step2_text,
+            "materialize-tasks Step 2 must still reference overview Implementation Environment as fallback")
+
+    def test_claude_md_required_sections_includes_environment(self):
+        self.assertIn("Environment", self.claude_md)
+        match = re.search(r"### Required Plan Sections\n\n(.+?)(?:\n\n|\n---|\Z)", self.claude_md, re.DOTALL)
+        self.assertIsNotNone(match)
+        self.assertIn("Environment", match.group(1))
+
+
 if __name__ == "__main__":
     unittest.main()
