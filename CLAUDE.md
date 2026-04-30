@@ -91,7 +91,7 @@ Features follow a phased development lifecycle. Each phase has a dedicated skill
                                                                                                                                     All plans complete
                                                                                                                                                  |
                                                                                                                                                  v
-                                                                                                                       /drvr:assess --> /drvr:docs-artifacts --> Ship
+                                                                                                                       /drvr:assess --> /drvr:docs-artifacts --> /drvr:open-pr --> PR Review <--> Revision --> Merge --> Verification --> Shipped
 ```
 
 ### Phase-Skill Mapping
@@ -111,6 +111,12 @@ Features follow a phased development lifecycle. Each phase has a dedicated skill
 | Transition | `drvr:sdlc-orchestration` | Identify next unblocked plan from dependency graph | bookkeeping complete |
 | Assessment | `/drvr:assess` | Curate test suite — categorize, prune scaffolding, promote | all plans complete, "assess tests" |
 | Handoff | `/drvr:docs-artifacts` | Generate feature overview, architecture, testing guide, risks | assessment complete |
+| Open PR | `/drvr:open-pr` | Create PR from handoff docs via gh CLI | handoff docs generated |
+| PR Review | `drvr:sdlc-orchestration` | Track review status, suggest next steps | PR created |
+| Revision | `drvr:sdlc-orchestration` | Guide revision cycle | review feedback received |
+| Merge | `drvr:sdlc-orchestration` | Track merge, verify CI | PR approved |
+| Verification | `drvr:sdlc-orchestration` | Advisory post-merge checks | PR merged |
+| Shipped | `drvr:sdlc-orchestration` | Terminal — suggest retro | verification confirmed |
 | Retro | `/drvr:retro` | Evaluate session quality, identify improvements | "retro", end of session |
 
 ---

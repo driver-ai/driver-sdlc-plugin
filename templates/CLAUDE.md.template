@@ -80,7 +80,7 @@ Features follow a phased development lifecycle. Each phase has a dedicated skill
                                                                                                                                     All plans complete
                                                                                                                                                  |
                                                                                                                                                  v
-                                                                                                                       /drvr:assess --> /drvr:docs-artifacts --> Handoff
+                                                                                                                       /drvr:assess --> /drvr:docs-artifacts --> /drvr:open-pr --> PR Review <--> Revision --> Merge --> Verification --> Shipped
 ```
 
 ### Phase -> Skill Mapping
@@ -97,6 +97,12 @@ Features follow a phased development lifecycle. Each phase has a dedicated skill
 | Bookkeeping | `drvr:implementation-guidance` | Update plan status, overview, cascade check |
 | Assessment | `/drvr:assess` | Curate test suite — categorize, prune scaffolding, promote valuable tests |
 | Handoff | `/drvr:docs-artifacts` | Generate feature-overview, architecture, testing-guide, risk-assessment |
+| Open PR | `/drvr:open-pr` | Create PR from handoff docs via gh CLI |
+| PR Review | `drvr:sdlc-orchestration` | Track review status, suggest next steps |
+| Revision | `drvr:sdlc-orchestration` | Guide revision cycle |
+| Merge | `drvr:sdlc-orchestration` | Track merge, verify CI |
+| Verification | `drvr:sdlc-orchestration` | Advisory post-merge checks |
+| Shipped | `drvr:sdlc-orchestration` | Terminal — suggest retro |
 
 ### Key Principles
 
