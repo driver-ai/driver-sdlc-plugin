@@ -29,6 +29,7 @@
     "./commands/context.md",
     "./commands/retro.md",
     "./commands/orchestrate.md",
-    "./commands/assess.md"
+    "./commands/assess.md",
+    "./commands/driverize.md"
   ]
 }

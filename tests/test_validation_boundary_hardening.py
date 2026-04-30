@@ -11,6 +11,7 @@ Verifies:
 """
 
 import os
+import json
 import re
 import unittest
 from pathlib import Path
@@ -1124,6 +1125,79 @@ class TestPlanningQualityImprovements(unittest.TestCase):
         match = re.search(r"### Required Plan Sections\n\n(.+?)(?:\n\n|\n---|\Z)", self.claude_md, re.DOTALL)
         self.assertIsNotNone(match)
         self.assertIn("Environment", match.group(1))
+
+
+class TestDriverizeTemplateStructural(unittest.TestCase):
+    """Structural tests for PE-3573 (driverize improvements) and PE-3572 (un-driverize)."""
+
+    @classmethod
+    def setUpClass(cls):
+        driverize_path = PLUGIN_ROOT / "commands" / "driverize.md"
+        undriverize_path = PLUGIN_ROOT / "commands" / "un-driverize.md"
+        plugin_json_path = PLUGIN_ROOT / ".claude-plugin" / "plugin.json"
+        cls.driverize = driverize_path.read_text() if driverize_path.exists() else ""
+        cls.undriverize = undriverize_path.read_text() if undriverize_path.exists() else ""
+        cls.plugin_json = json.loads(plugin_json_path.read_text()) if plugin_json_path.exists() else {}
+
+    def _require_driverize(self):
+        self.assertTrue(self.driverize, "commands/driverize.md not found or empty")
+
+    def _require_undriverize(self):
+        self.assertTrue(self.undriverize, "commands/un-driverize.md not found or empty")
+
+    def test_driverize_has_version_string(self):
+        self._require_driverize()
+        self.assertIn("DRIVERIZE_VERSION", self.driverize)
+
+    def test_driverize_artifacts_have_version_stamps(self):
+        self._require_driverize()
+        self.assertIn("driverize:v", self.driverize)
+        self.assertIn("# Driverize v", self.driverize)
+
+    def test_driverize_has_rerun_detection(self):
+        self._require_driverize()
+        self.assertRegex(self.driverize, r"### 2\.5.*Detect|Existing Installation",
+            "Phase 2.5 re-run detection section not found")
+        self.assertIn("_driverize", self.driverize,
+            "Re-run detection must reference _driverize metadata key")
+
+    def test_driverize_has_backup_safety(self):
+        self._require_driverize()
+        self.assertIn(".pre-driver", self.driverize)
+        self.assertIn("already preserved", self.driverize.lower(),
+            "Backup section must include backup-only-once guard ('already preserved')")
+
+    def test_driverize_has_changelog(self):
+        self._require_driverize()
+        self.assertIn("## Changelog", self.driverize)
+
+    def test_driverize_claude_md_block_has_markers(self):
+        self._require_driverize()
+        self.assertIn("<!-- driverize:v", self.driverize)
+        self.assertIn("<!-- /driverize -->", self.driverize)
+
+    def test_undriverize_has_provenance_detection(self):
+        self._require_undriverize()
+        self.assertIn("driverize:v", self.undriverize,
+            "Un-driverize must reference provenance markers for artifact identification")
+
+    def test_undriverize_has_backup_restoration(self):
+        self._require_undriverize()
+        self.assertIn(".pre-driver", self.undriverize,
+            "Un-driverize must reference .pre-driver backups for restoration")
+
+    def test_undriverize_has_user_confirmation(self):
+        self._require_undriverize()
+        lower = self.undriverize.lower()
+        self.assertTrue(
+            "confirm" in lower or "proceed" in lower or "approve" in lower,
+            "Un-driverize must include a user confirmation step before removal",
+        )
+
+    def test_plugin_json_has_driverize_commands(self):
+        commands = self.plugin_json.get("commands", [])
+        self.assertIn("./commands/driverize.md", commands)
+        self.assertIn("./commands/un-driverize.md", commands)
 
 
 if __name__ == "__main__":
