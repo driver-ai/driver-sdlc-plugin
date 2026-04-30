@@ -105,8 +105,22 @@ When the user signals "let's research" or any research trigger:
 
 ### Research → Planning
 When the user signals "let's plan" or "ready to plan":
-- Report research status: "N research docs. M open questions remain in docs X, Y."
-- This is informational — the user decides whether to proceed or resolve questions first
+
+**Open question scan** — Before transitioning, scan research docs for unresolved open questions:
+
+1. Use Bash to list files matching `research/[0-9][0-9]-*.md` (e.g., `ls research/[0-9][0-9]-*.md`). After listing, exclude files named `00-overview.md` and `00-intent.md` from the list before scanning.
+2. Count the matching files → N (total research docs scanned).
+3. For each file, scan for ALL occurrences of BOTH question formats — a single file may have multiple question sections under different headings:
+   - **Inline bold headers:** Lines starting with `**Open Questions` (handles suffix variants like `**Open Questions (for future research):**`). Also match lines starting with `**Questions:**`. The section extends to the next line that starts with `**` (bold header) or `##` (markdown header), or end of file. Under each, count lines starting with `- ` that do NOT contain `~~` (strikethrough = resolved).
+   - **H2 headers:** Lines starting with `## Open Questions` (prefix match — handles suffix variants like `## Open Questions (for Planning)`). The section extends to the next `## ` header or end of file. Under each, count lines starting with `- ` that do NOT contain `~~` AND do NOT match `- [x]` or `- [X]` (checkbox = resolved).
+4. If `research/00-overview.md` exists, scan it for `## Open Questions` section using prefix match (`## Open Questions` at line start). If the file does not exist, skip (count 0). If found, the section extends to the next `## ` header or end of file. Count lines starting with `- ` that do NOT contain `~~` AND do NOT match `- [x]` or `- [X]`.
+5. Aggregate: M = total unresolved questions, X/Y = filenames containing them.
+6. Report: "N research docs. M open questions remain in docs X, Y."
+7. Edge cases: If N = 0 and M = 0: "No research docs found." If N > 0 and M = 0: "N research docs. No open questions." If N = 0 and M > 0: "No research docs found, but M open questions remain in X."
+8. Known limitations: (a) only `- ` bullet-format questions are detected — research-guidance enforces this format, but older features using numbered lists or unbulleted prose require manual review. (b) The scanner has no fenced-code-block awareness — `## Open Questions` inside triple-backtick blocks would be matched. No real research files have this pattern at column 0, so the risk is theoretical.
+
+This is informational — the user decides whether to proceed or resolve questions first.
+
 - Activate `drvr:planning-guidance`
 
 ### Planning → Validation
@@ -123,6 +137,7 @@ When the plan is approved and ready for materialization:
   1. **Count check**: If task doc count < plan task count: trigger materialization (partial). Report: "N of M task docs exist — triggering materialization to complete the remaining K."
   2. **Freshness check**: If task doc count equals plan task count, read `materialized_at` from any task doc and compare against the plan's `updated` date. If `materialized_at` predates `updated`: task docs are stale (plan was revised after materialization). Trigger re-materialization: "Task docs are stale (materialized before plan was last updated). Triggering re-materialization." materialize-tasks Step 4 handles this by preserving completed tasks and overwriting incomplete ones.
   3. **Complete and fresh**: If count matches AND task docs are fresh, skip to implementation.
+- **Planning open questions check** — If `plans/00-overview.md` exists, read it and find the `## Open Questions` section (prefix match at line start — handles suffix variants). The section extends to the next `## ` header or end of file. Count unchecked items (`- [ ]`) — both `[x]` and `[X]` count as checked. If any unchecked items exist: WARN. "N open questions remain in the planning overview. Proceed anyway?" If `plans/00-overview.md` does not exist or has no `## Open Questions` section, skip this check silently.
 - Activate `drvr:materialize-tasks`
 
 ### Materialization → Implementation

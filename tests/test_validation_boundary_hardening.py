@@ -785,5 +785,59 @@ class TestDecisionLog(unittest.TestCase):
         self.assertIn("DECISIONS.md", self.agent_content)
 
 
+class TestTransitionAdvisoryChecks(unittest.TestCase):
+    """Structural tests for transition advisory checks (open question scanning)."""
+
+    sdlc_orch: str
+
+    @classmethod
+    def setUpClass(cls):
+        cls.sdlc_orch = (
+            PLUGIN_ROOT / "skills" / "sdlc-orchestration" / "SKILL.md"
+        ).read_text()
+
+    def _research_planning_slice(self) -> str:
+        match = re.search(
+            r"### Research → Planning.*?(?=\n### |\Z)",
+            self.sdlc_orch,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(match, "Research → Planning section not found")
+        return match.group(0)
+
+    def _validation_materialization_slice(self) -> str:
+        match = re.search(
+            r"### Validation → Materialization.*?(?=\n### |\Z)",
+            self.sdlc_orch,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(match, "Validation → Materialization section not found")
+        return match.group(0)
+
+    def test_research_planning_has_open_question_scan(self):
+        """Research→Planning section contains scanning instructions and is advisory (not BLOCK)."""
+        section = self._research_planning_slice()
+        self.assertIn("Open Questions", section)
+        self.assertIn("~~", section)
+        self.assertNotIn("BLOCK", section)
+
+    def test_research_planning_scan_covers_all_research_docs(self):
+        """Research→Planning section references scanning research docs by path."""
+        section = self._research_planning_slice()
+        self.assertIn("research/", section)
+        self.assertIn("[0-9]", section)
+
+    def test_validation_materialization_has_open_question_check(self):
+        """Validation→Materialization section has open questions check."""
+        section = self._validation_materialization_slice()
+        self.assertIn("open questions remain", section.lower())
+
+    def test_validation_materialization_open_question_check_references_overview(self):
+        """Open questions check references planning overview and Open Questions section."""
+        section = self._validation_materialization_slice()
+        self.assertIn("plans/00-overview.md", section)
+        self.assertIn("## Open Questions", section)
+
+
 if __name__ == "__main__":
     unittest.main()
