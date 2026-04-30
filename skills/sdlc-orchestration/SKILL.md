@@ -60,6 +60,8 @@ When a user returns to a feature ("returning to feature/X", "resume feature X", 
    - Research docs with open questions → research may be incomplete
    - Plan with `status: approved` in frontmatter but task doc count < plan task count (or no `plans/<plan>/tasks/` directory) → phase is **Materialization**. Suggest: "Plan X is approved but not fully materialized. Activate `drvr:materialize-tasks`."
    - Phase detection resolves to **Assessment** (all plans COMPLETE, no `assessment/test-curation-*.md`) → suggest `/drvr:assess`
+   - Phase detection resolves to post-PR phase (PR Review, Revision, Merge, Verification, Shipped, Closed) via FEATURE_LOG event scanning → see Phase Detection: Post-PR
+     - If phase is "PR Review" or "Revision", check PR status via `gh pr view <URL>` (extract URL from FEATURE_LOG `pr_created` event). If `gh pr view` fails (network, auth, or missing PR), report the failure and fall back to the FEATURE_LOG phase header — do not change the detected phase based on a failed check. Report current PR state (open, approved, changes requested, merged, closed).
 5. **Report current state:**
 
 ```
@@ -182,11 +184,79 @@ When all plans are complete, the next step is test suite assessment — not hand
 
 **Mid-implementation assessment**: Users may invoke `/drvr:assess` before all plans are complete. This is allowed — `/drvr:assess` handles scoping and warnings internally. A partial assessment does not satisfy the mandatory pre-handoff requirement; the final assessment must cover all plans.
 
+### Handoff → Open PR
+
+After `/drvr:docs-artifacts` completes and handoff documentation is generated.
+
+**Advisory:** "Handoff docs generated. Create PR with `/drvr:open-pr`."
+
+### Open PR → PR Review
+
+The `/drvr:open-pr` command handles this transition directly — it sets phase to "PR Review" upon successful PR creation. "Open PR" is a transient command phase (like Validation), not a persistent state.
+
+### PR Review → Revision
+
+When review comments require code changes.
+
+**Advisory:** "Make changes, push, optionally re-run `/drvr:docs-artifacts` to update handoff docs."
+
+After re-running `/drvr:docs-artifacts`, suggest updating the PR body with `gh pr edit <number> --body <new-body>` to reflect the revised documentation. This is a lightweight loop — no full implementation-guidance workflow.
+
+### PR Review → Merge
+
+When PR is approved and ready to merge. User reports approval or `gh pr view` shows approved status.
+
+**Advisory:** "PR approved. Merge when ready."
+
+Record `pr_approved` event in FEATURE_LOG. After merge: record `pr_merged` event, set phase to "Verification".
+
+### Merge → Verification
+
+After PR is merged.
+
+**Advisory:** "PR merged. Verify deployment/integration. When verified, say 'verified' or 'ship it'."
+
+Verification is advisory/checklist-based — the plugin can't know what "verified" means for every team.
+
+### Verification → Shipped
+
+After verification confirmed. Set phase to "Shipped". Suggest `/drvr:retro`. Terminal state.
+
+### Any Post-PR → Closed
+
+Alternate terminal state. User can say "close feature" or "abandon" at any post-PR phase (PR Review, Revision, Merge, Verification). Set phase to "Closed", record `feature_closed` event. Terminal.
+
+This applies only to post-PR phases — pre-PR abandonment is informal (features are simply left inactive).
+
 ### Phase Detection: Assessment
 
 - All plans COMPLETE in overview but no `assessment/test-curation-*.md` → phase is **Assessment**
 - Assessment artifact exists that covers all plans (check Scope line) → phase is **Handoff**
 - Partial assessment exists but plans remain → phase is still **Implementation**
+
+### Phase Detection: Post-PR
+
+Post-PR phases use **event-driven detection** (scanning FEATURE_LOG for markers), distinct from the artifact-driven pattern used for pre-PR phases. Event-driven detection takes precedence over artifact-based detection when post-PR events exist in FEATURE_LOG. Pre-PR phases continue to use artifact-based detection exclusively.
+
+**Detection rules:**
+
+- `driver-docs/` exists, assessment covers all plans, no `pr_created` in FEATURE_LOG → phase is **Handoff** (ready for `/drvr:open-pr`)
+- `pr_created` in FEATURE_LOG, PR still open (no `pr_merged`) → phase is **PR Review**
+- `pr_merged` in FEATURE_LOG, no `verification_complete` → phase is **Verification**
+- `verification_complete` or `feature_shipped` in FEATURE_LOG → phase is **Shipped**
+- `feature_closed` in FEATURE_LOG → phase is **Closed**
+- When multiple status events exist (e.g., multiple revision cycles with `pr_approved` events), the most recent takes precedence.
+
+**Canonical event names for FEATURE_LOG entries:**
+
+| Event | Meaning | Source |
+|-------|---------|--------|
+| `pr_created` | PR opened | `/drvr:open-pr` Step 6 |
+| `pr_approved` | PR approved by reviewer | sdlc-orchestration |
+| `pr_merged` | PR merged to base branch | sdlc-orchestration |
+| `verification_complete` | Post-merge verification passed | sdlc-orchestration |
+| `feature_shipped` | Feature considered shipped | sdlc-orchestration |
+| `feature_closed` | Feature abandoned/closed | sdlc-orchestration |
 
 ---
 
@@ -205,6 +275,10 @@ The lifecycle is not linear. These backward transitions are normal:
 | Materialization → Planning | materialize-tasks blocks on gaps or missing codebase | Fix plan, re-approve |
 | Implementation → Materialization | Pre-flight finds stale task docs | Re-materialize affected tasks |
 | Research → Intent | Gap surfaced that requires re-mining intent | Resume `intent-guidance`, update `00-intent.md` |
+| PR Review → Revision | Review comments require code changes | Make changes, push, optionally update docs |
+| Revision → PR Review | Changes pushed, awaiting re-review | Check PR status on next resumption |
+| PR Review → Implementation | Review surfaces significant issue | Return to implementation (or planning). PR remains open — it serves as a discussion thread. On return to PR Review after rework, update the PR body via gh pr edit. |
+| Verification → Implementation | Verification fails | Debug issue, fix in place or create follow-up PR |
 
 When a loop occurs, note: "Going back to [phase] because [reason]."
 
@@ -228,7 +302,8 @@ Each skill appends to the log at transition moments:
 | `materialize-tasks` | Tasks materialized (with task count and codebase target) |
 | `implementation-guidance` | Implementation started, implementation complete (with test count) |
 | `/drvr:assess` | Assessment complete (with prune/keep/promote counts) |
-| `sdlc-orchestration` | Bookkeeping complete, phase transitions |
+| `/drvr:open-pr` | PR opened (with URL) |
+| `sdlc-orchestration` | Bookkeeping complete, phase transitions, PR status changes, feature shipped, feature closed |
 
 Additionally, all skills that make significant decisions should append to `DECISIONS.md` at the feature root — see individual skill checklists for decision-logging triggers.
 
