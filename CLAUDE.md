@@ -229,5 +229,5 @@ These rules govern how the plugin operates during all phases.
 - **Research existing codebase patterns before implementing** -- use Driver MCP to understand conventions
 - **Run tests and verification before declaring any task complete** -- never mark done without confirmation
 - **When a dry-run identifies gaps, fix ALL of them** -- do not skip any, regardless of severity
-- **Use parallel agents for research, sequential for implementation** -- research can fan out, implementation must be ordered
+- **Use parallel agents for research; for implementation, independent tasks run in parallel with worktree isolation, dependent tasks run sequentially**
 - **Follow existing codebase patterns** -- ask the user before deviating from established conventions

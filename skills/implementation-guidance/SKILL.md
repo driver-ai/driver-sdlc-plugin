@@ -160,6 +160,7 @@ Validate the codebase target from task docs' `## Codebase` section.
 - **2.3 Branch check** — Compare `git -C <root> branch --show-current` against the Feature Branch in the task doc's `## Codebase` section. If the task doc uses a single `**Branch**:` field (legacy format), compare against that. Mismatch: WARN. Detached HEAD: WARN.
 - **2.4 Uncommitted changes** — Run `git -C <root> status --short`. Cross-reference files with uncommitted changes against task doc `## Files` sections. Overlapping files: WARN per file. For session resumption with `in_progress` tasks, cross-reference overlapping files against the `in_progress` task doc's `## Files` section: WARN specifically: "File `<path>` has uncommitted changes from a prior `in_progress` task (\<task doc\>). These may be partial implementation artifacts. Review or discard before restarting this task."
 - **2.5 Codebase table consistency** — Read codebase path info from `plans/00-overview.md` `## Implementation Environment` (or `research/00-overview.md` `## Codebases` if no IE section exists). Compare the task doc's codebase root path against the recorded paths. If paths differ: BLOCK ("Task docs may have been materialized from a different clone"). Also compare the current working directory. If no matching entry found: INFO.
+- **2.6 Worktree readiness** — If the dependency graph has parallelizable tasks (from parallel execution group derivation): (1) **Branch mismatch escalation:** If pre-flight 2.3 detected a branch mismatch (current branch ≠ Feature Branch), escalate from WARN to BLOCK: "Worktree isolation requires the correct Feature Branch. Current branch `<actual>` does not match Feature Branch `<expected>`. Switch to the Feature Branch before running parallel tasks." (2) **Clean working directory:** Verify `git -C <root> status --short --untracked-files=no` shows no uncommitted changes to tracked files. Uncommitted changes: WARN. "Uncommitted changes detected. Worktree isolation requires a clean working directory. Commit or stash changes before parallel execution." (3) **Existing worktrees:** Check `git -C <root> worktree list`. If worktrees other than the main one exist: WARN. "Existing worktrees found. These may conflict with parallel execution."
 
 #### Phase 3: Staleness Detection
 
@@ -188,7 +189,7 @@ Existing checks, adapted to read from task docs.
 #### Check Summary
 
 - **Blocking checks** (9 total): 1.1, 1.2 (plan mismatch), 1.3 (circular deps), 2.1, 2.5, 3.4, 4.1, 4.3, 4.4 (modify files)
-- **Warning checks** (10 total): 2.2, 2.3, 2.4, 3.1, 3.2, 3.3, 4.2, 4.5, 5.1, 5.2
+- **Warning checks** (11 total): 2.2, 2.3, 2.4, 2.6, 3.1, 3.2, 3.3, 4.2, 4.5, 5.1, 5.2
 - **Info checks** (1 total): 1.4
 
 #### Pre-Flight Report Format
@@ -287,6 +288,66 @@ Adjacent tasks that are tightly coupled should be batched into a single subagent
 **For batched tasks**: Construct the sub-agent prompt with multiple `## Task` sections, one per task doc. Header: "Implement the following N tasks." Each task gets its own Goal/Files/Tests/Constraints block extracted from its task doc. Shared Codebase and Standards sections appear once (identical across tasks in the same plan). Update ALL batched task doc frontmatters to `in_progress` before execution and `complete` after. Log all batched tasks in one implementation log entry with all task doc paths.
 
 Batching reduces subagent overhead and gives the subagent better context. Only batch tasks that are sequential and closely related — don't batch independent work.
+
+#### Parallel Execution Groups
+
+Before executing tasks, analyze the `depends_on` DAG to identify parallelizable work:
+
+1. Build the dependency graph from all task doc frontmatter `depends_on` fields
+2. Identify tasks with no unresolved dependencies (all dependencies either complete or absent)
+3. Among those, identify tasks that are mutually independent (no task depends on another in the group) AND whose `## Files` sections have no overlapping file paths. Tasks with overlapping files must be ordered sequentially even if the DAG allows parallelism — parallel worktree modifications to the same file will always conflict on merge. When multiple tasks overlap, keep the lowest-numbered overlapping task in the parallel group and defer higher-numbered overlapping tasks to subsequent groups (they'll be re-evaluated after the current group completes).
+4. These form a **parallel execution group** (max 4 concurrent worktree agents — split larger groups into sub-groups of up to 4, executed sequentially between sub-groups. The user can override this default.)
+5. Report to user: "Tasks N, M, P have no mutual dependencies — running in parallel with worktree isolation."
+6. After the group completes and merges, re-evaluate: the next set of unblocked tasks forms the next group
+7. Continue until all tasks are complete
+
+**Mandatory worktree isolation:** For tasks in a parallel group, ALWAYS spawn a subagent with `isolation: "worktree"` regardless of task complexity. The existing "do it directly for simple edits" guidance does NOT apply to parallel tasks — main-repo modifications would break isolation for concurrent worktree agents.
+
+**Skip worktrees when:**
+- The plan has only 1 task remaining
+- All remaining tasks form a linear dependency chain (no parallelism possible)
+- The user explicitly requests sequential execution
+- Tasks are candidates for batching (sequential and closely related per the Task Batching subsection) — batching takes precedence over parallelization even if `depends_on` fields allow parallelism
+
+**Dependency-respecting execution order example:**
+```
+Tasks: 1(none), 2(none), 3(deps:1), 4(deps:1,2), 5(deps:3)
+Group 1: [1, 2] — parallel (worktree isolation)
+Group 2: [3, 4] — parallel (both unblocked after Group 1 completes)
+Group 3: [5] — sequential (depends on 3)
+```
+
+**For each task in a parallel group:**
+1. Spawn the subagent with `isolation: "worktree"` — Claude Code creates a temporary git worktree automatically
+2. The subagent's prompt is the same as the standard template, but the worktree may have a different root path. The subagent should use its working directory (the worktree) as the codebase root.
+3. The subagent commits its changes within the worktree before returning
+
+**Items 1-9 mapping for parallel groups:** The standard per-task items are reorganized:
+- **Before spawning:** Set all tasks in the group to `status: in_progress` (item 1) — this happens before agents run, so it doesn't violate the modification guard.
+- **During execution (within each worktree subagent):** Items 2 (read task doc), 3 (execute), 5 (run tests), and 7 (commit) happen inside the subagent.
+- **After merge-back:** Item 4 (review result), 6 (track deviations), and 8 (update log) are processed for all group tasks together. Item 9 (set `status: complete`) is done per-task after each successful merge.
+
+**Merge-Back Procedure:** After all parallel subagents complete, merge worktree branches one at a time:
+
+1. `git merge <worktreeBranch>` — merge into current (Feature) branch
+2. If merge succeeds: clean up with `git worktree remove <worktreePath>` and `git branch -d <worktreeBranch>`. Log task as complete.
+3. If merge conflict: **BLOCK**. Do NOT merge remaining worktrees until resolved. Report: "Merge conflict from parallel task N. Conflicting files: X, Y. Remaining unmerged worktrees: worktree-task-M, worktree-task-P. Resolve conflicts manually, then continue with remaining merges." Store merge state in the implementation log. On re-invocation or after conflict resolution, detect remaining worktrees via `git worktree list` and continue the merge sequence.
+4. If a parallel subagent fails (tests fail, subagent errors, or timeout): skip merge-back for that task — do NOT merge its worktree. Clean up with `git worktree remove --force <worktreePath>` and `git branch -D <worktreeBranch>`. Mark task as failed in the implementation log. Continue merging other successful tasks. WARN: "Task N failed in worktree — skipping merge. Review output and re-run sequentially." If the subagent result does not include worktree fields (crash/timeout), check `git worktree list` for orphaned worktrees and clean up any found.
+5. If worktree creation itself fails: fall back to sequential execution for that task. WARN: "Worktree creation failed for Task N — falling back to sequential execution."
+6. After all merges complete, run the test suite to verify the combined changes work together. If post-merge tests fail: report failing tests and let the user decide how to proceed.
+
+**Worktree subagent prompt overrides:**
+1. **Root path:** Replace `**Root**: <absolute path>` with `**Root**: (worktree — use your current working directory)`
+2. **cd/branch instruction:** Replace instruction 1 with: "Your current working directory IS the codebase root (worktree isolation). Do NOT change to any other directory and do NOT change branches."
+3. **Test command:** Strip any `cd <path> &&` prefix from test commands — the worktree is already at the codebase root.
+4. **Branch annotation:** `**Feature Branch**: <value> (informational — do not run git checkout)`. `**Base Branch**: <value> (informational — merge target and Driver MCP context branch)`.
+5. **Commit instruction:** Add: "Commit your changes within the worktree before reporting."
+6. **Emergent files:** Add: "If you create files not listed in `## Files`, prefer unique names or paths to minimize merge conflicts with other parallel tasks."
+7. Goal, Files, Tests, Constraints, Context, Standards sections are copied unchanged from the task doc.
+
+**Main-repo modification guard:** Do NOT modify any files in the main working directory while worktree agents are running. Defer all bookkeeping, log updates, and task doc status changes until after all merges and post-merge tests complete.
+
+**For sequential tasks (with dependencies):** Continue using the existing subagent spawning without `isolation: "worktree"`. The main working directory is used directly.
 
 ### Step 4: Summarize
 
@@ -490,6 +551,7 @@ Write to `implementation/log-<plan>.md` (e.g., `implementation/log-01a.md`).
 
 **Task doc:** `plans/<plan>/tasks/NN-name.md`
 **Status:** Complete
+**Execution:** parallel group N, worktree isolation | sequential (main working directory)
 **Commit:** `<hash>` — <message>
 
 **Planned:**
@@ -508,9 +570,9 @@ Write to `implementation/log-<plan>.md` (e.g., `implementation/log-01a.md`).
 **Tasks completed:** N/N
 **Total commits:** N
 
-| Commit | Tasks | Description |
-|--------|-------|-------------|
-| `<hash>` | <range> | <message> |
+| Commit | Tasks | Description | Execution |
+|--------|-------|-------------|-----------|
+| `<hash>` | <range> | <message> | parallel group N, worktree | sequential |
 
 **Total deviations:** N
 **Follow-up work identified:** ...

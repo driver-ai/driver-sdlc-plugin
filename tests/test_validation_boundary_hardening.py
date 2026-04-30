@@ -970,5 +970,113 @@ class TestTransitionAdvisoryChecks(unittest.TestCase):
         self.assertIn("## Open Questions", section)
 
 
+class TestWorktreeParallelExecution(unittest.TestCase):
+    """Structural tests for worktree parallel execution support in implementation-guidance."""
+
+    impl_guidance: str
+    claude_md: str
+
+    @classmethod
+    def setUpClass(cls):
+        cls.impl_guidance = (
+            PLUGIN_ROOT / "skills" / "implementation-guidance" / "SKILL.md"
+        ).read_text()
+        cls.claude_md = (PLUGIN_ROOT / "CLAUDE.md").read_text()
+
+    def _step3_section(self) -> str:
+        match = re.search(
+            r"### Step 3: Execute Each Task.*?(?=\n### Step 4|\Z)",
+            self.impl_guidance, re.DOTALL,
+        )
+        self.assertIsNotNone(match, "Step 3 section not found")
+        return match.group(0)
+
+    def _phase2_section(self) -> str:
+        match = re.search(
+            r"#### Phase 2: Codebase Targeting.*?(?=\n#### Phase 3|\Z)",
+            self.impl_guidance, re.DOTALL,
+        )
+        self.assertIsNotNone(match, "Phase 2 section not found")
+        return match.group(0)
+
+    def _log_format_section(self) -> str:
+        match = re.search(
+            r"## Implementation Log Format.*?(?=\n## Cross-Session|\Z)",
+            self.impl_guidance, re.DOTALL,
+        )
+        self.assertIsNotNone(match, "Implementation Log Format section not found")
+        return match.group(0)
+
+    def test_impl_guidance_has_parallel_group_derivation(self):
+        """Step 3 contains parallel group derivation from depends_on DAG."""
+        section = self._step3_section()
+        self.assertIn("parallel", section.lower())
+        self.assertIn("depends_on", section)
+        self.assertIn("group", section.lower())
+
+    def test_impl_guidance_has_worktree_isolation(self):
+        """Step 3 or Subagent section contains worktree and isolation."""
+        step3 = self._step3_section()
+        subagent = re.search(
+            r"## Subagent Task Prompts.*?(?=\n## Implementation Log Format|\Z)",
+            self.impl_guidance, re.DOTALL,
+        )
+        combined = step3 + (subagent.group(0) if subagent else "")
+        self.assertIn("worktree", combined.lower())
+        self.assertIn("isolation", combined.lower())
+
+    def test_impl_guidance_has_merge_back_handling(self):
+        """Step 3 contains merge-back with BLOCK on conflict."""
+        section = self._step3_section()
+        self.assertIn("merge", section.lower())
+        self.assertIn("BLOCK", section)
+        self.assertIn("conflict", section.lower())
+
+    def test_impl_guidance_preflight_has_worktree_readiness(self):
+        """Phase 2 pre-flight contains worktree readiness check."""
+        section = self._phase2_section()
+        self.assertTrue(
+            "worktree" in section.lower() or "clean" in section.lower(),
+            "Phase 2 missing worktree readiness check",
+        )
+
+    def test_impl_guidance_log_has_parallel_recording(self):
+        """Implementation Log Format section contains parallel recording."""
+        section = self._log_format_section()
+        self.assertIn("parallel", section.lower())
+
+    def test_claude_md_updated_parallel_rule(self):
+        """CLAUDE.md contains worktree-related language in parallel execution context."""
+        self.assertIn("worktree", self.claude_md.lower())
+
+    def test_impl_guidance_parallel_reports_to_user(self):
+        """Step 3 parallel subsection reports to user before execution."""
+        section = self._step3_section()
+        lower = section.lower()
+        self.assertTrue(
+            "report" in lower and "parallel" in lower,
+            "Step 3 missing user notification about parallel execution",
+        )
+
+    def test_impl_guidance_preserves_sequential_for_dependent_tasks(self):
+        """Step 3 preserves sequential execution for dependent tasks."""
+        section = self._step3_section()
+        lower = section.lower()
+        self.assertTrue(
+            ("sequential" in lower or "without" in lower)
+            and ("dependenc" in lower or "dependent" in lower),
+            "Step 3 missing sequential preservation for dependent tasks",
+        )
+
+    def test_impl_guidance_skips_worktree_for_single_task(self):
+        """Step 3 skips worktree for single-task plans."""
+        section = self._step3_section()
+        lower = section.lower()
+        self.assertTrue(
+            "skip" in lower and ("1 task" in lower or "single" in lower),
+            "Step 3 missing skip-worktree-for-single-task guidance",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
