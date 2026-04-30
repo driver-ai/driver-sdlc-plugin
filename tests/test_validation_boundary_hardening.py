@@ -1200,5 +1200,85 @@ class TestDriverizeTemplateStructural(unittest.TestCase):
         self.assertIn("./commands/un-driverize.md", commands)
 
 
+class TestPostPRLifecycle(unittest.TestCase):
+    """Structural tests for PE-3528 (post-PR lifecycle phases and open-pr command)."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.orchestration = (PLUGIN_ROOT / "skills" / "sdlc-orchestration" / "SKILL.md").read_text()
+        cls.claude_md = (PLUGIN_ROOT / "CLAUDE.md").read_text()
+        cls.template_md = (PLUGIN_ROOT / "templates" / "CLAUDE.md.template").read_text()
+        cls.conftest = (PLUGIN_ROOT / "tests" / "conftest.py").read_text()
+        cls.test_structural = (PLUGIN_ROOT / "tests" / "test_plugin_structural.py").read_text()
+        cls.open_pr_path = PLUGIN_ROOT / "commands" / "open-pr.md"
+
+    def test_orchestration_has_post_pr_transitions(self):
+        transitions = [
+            "### Handoff → Open PR",
+            "### Open PR → PR Review",
+            "### PR Review → Revision",
+            "### PR Review → Merge",
+            "### Merge → Verification",
+            "### Verification → Shipped",
+            "### Any Post-PR → Closed",
+        ]
+        for t in transitions:
+            with self.subTest(transition=t):
+                self.assertIn(t, self.orchestration)
+
+    def test_orchestration_has_closed_terminal_state(self):
+        self.assertIn("Closed", self.orchestration)
+
+    def test_orchestration_has_post_pr_phase_detection(self):
+        self.assertIn("pr_created", self.orchestration)
+        self.assertIn("pr_merged", self.orchestration)
+        self.assertIn("gh pr view", self.orchestration)
+
+    def test_orchestration_has_post_pr_loops(self):
+        self.assertIn("PR Review → Revision", self.orchestration)
+        self.assertIn("Revision → PR Review", self.orchestration)
+
+    def test_open_pr_command_exists(self):
+        self.assertTrue(self.open_pr_path.exists(), "commands/open-pr.md must exist")
+        content = self.open_pr_path.read_text()
+        self.assertIn("description:", content)
+        self.assertIn("argument-hint:", content)
+        self.assertIn("allowed-tools:", content)
+
+    def test_open_pr_has_driver_docs_gate(self):
+        self.assertTrue(self.open_pr_path.exists(), "commands/open-pr.md must exist")
+        content = self.open_pr_path.read_text()
+        self.assertIn("driver-docs", content)
+        self.assertIn("BLOCK", content)
+        self.assertIn("gh auth", content,
+            "open-pr must gate on gh auth status")
+
+    def test_lifecycle_diagram_extended(self):
+        for name, content in [("CLAUDE.md", self.claude_md), ("template", self.template_md)]:
+            with self.subTest(file=name):
+                self.assertIn("open-pr", content)
+                self.assertIn("Shipped", content)
+
+    def test_phase_skill_mapping_has_post_pr_rows(self):
+        for name, content in [("CLAUDE.md", self.claude_md), ("template", self.template_md)]:
+            with self.subTest(file=name):
+                self.assertIn("Open PR", content)
+                self.assertIn("Shipped", content)
+
+    def test_is_active_feature_done_phases(self):
+        self.assertIn('"Shipped"', self.conftest)
+        self.assertIn('"Closed"', self.conftest)
+        done_match = re.search(r'done_phases\s*=\s*\(([^)]+)\)', self.conftest)
+        self.assertIsNotNone(done_match, "done_phases tuple not found in conftest.py")
+        done_content = done_match.group(1)
+        self.assertNotIn('"Handoff"', done_content,
+            "Handoff must not be in done_phases — it is now an intermediate phase")
+        self.assertNotIn('"Assessment"', done_content,
+            "Assessment must not be in done_phases — it is now an intermediate phase")
+
+    def test_open_pr_in_commands_list(self):
+        self.assertIn('"open-pr"', self.test_structural)
+
+
 if __name__ == "__main__":
     unittest.main()
