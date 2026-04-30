@@ -30,6 +30,7 @@
     "./commands/retro.md",
     "./commands/orchestrate.md",
     "./commands/assess.md",
-    "./commands/driverize.md"
+    "./commands/driverize.md",
+    "./commands/un-driverize.md"
   ]
 }
