@@ -19,7 +19,8 @@ You are creating an implementation plan for a software engineering task. You wor
 2. **Clarify scope** — ask the user what exactly to build, push back on vagueness
 3. **Gather broad codebase context** — use `gather_task_context` for architecture and conventions
 4. **Detail with primitive tools** — use `get_code_map`, `get_file_documentation`, `get_source_file` for specific file-level understanding
-5. **Write the plan** — approach, TDD-ordered task breakdown, acceptance criteria
+4.5. **Confirm approach** — present architecture, test strategy, scope, and sizing for user confirmation
+5. **Write the plan** — environment, approach, TDD-ordered task breakdown, acceptance criteria
 6. **Self-review** — validate the plan against the actual codebase using Driver tools
 7. **Approve** — user reviews, approves plan for implementation
 
@@ -124,6 +125,36 @@ Read the actual source code. Use this to:
 
 ---
 
+## Step 4.5: Confirm Approach
+
+Before writing the plan, present your proposed direction to the user. At this point you have all the codebase context from Steps 3–4 but haven't committed to a plan structure.
+
+**Present a summary covering:**
+
+1. **Architecture approach** — which existing patterns to follow, key files to modify, integration strategy
+2. **Test strategy** — framework, test types (unit/integration/e2e), coverage approach, fixture sourcing
+3. **Scope adjustments** — anything surfaced during context gathering that wasn't in the original Step 2 scope (additions or exclusions)
+4. **Plan sizing** — estimated task count, single plan vs. split, and rationale
+
+**Format:**
+
+> Here's my planning direction:
+>
+> - **Architecture**: [summary of approach, key patterns, files]
+> - **Test strategy**: [framework, coverage approach, test types]
+> - **Scope changes**: [any additions/exclusions discovered during context gathering, or "none"]
+> - **Sizing**: [N tasks, single plan / split rationale]
+>
+> Does this look right? (Say "looks good" to proceed, or tell me what to change.)
+
+**If the user confirms** ("looks good", "yes", "proceed"): append confirmed choices to `DECISIONS.md` using the entry template in the Decision Logging section below, then proceed to Step 5. Step 4.5 decisions capture the broad direction (which pattern to follow, which framework, single vs. split). Specific design decisions with rejected alternatives are logged during Step 7 — do not duplicate.
+
+**If the user requests changes**: adjust the proposed direction and re-present. Do not proceed to Step 5 until the user confirms.
+
+**Skipping**: If the user says "skip" or moves directly to "write the plan", respect that — the checkpoint is advisory, not a gate. Note "Step 4.5 skipped at user direction" and proceed.
+
+---
+
 ## Step 5: Write the Plan
 
 ## CRITICAL: Write Plans to Files
@@ -209,6 +240,10 @@ When creating `plans/00-overview.md`, populate the Implementation Environment se
 the environment details sub-agents will need: codebase paths, base branch (for Driver MCP context and merge target), feature branch (for local implementation), test commands, and anything else relevant. Pull from research Codebases and codebase
 CLAUDE.md as starting points, then confirm with the user.
 
+#### Populate Environment
+
+When writing each plan, populate the `## Environment` section. Source values from: the research Codebases table (`research/00-overview.md` `## Codebases`), the codebase's CLAUDE.md, and Driver context gathered in Steps 3–4. Confirm values with the user. For multi-plan features, the per-plan Environment section may duplicate values from the overview's Implementation Environment — this is intentional (each plan is self-contained for materialize-tasks).
+
 #### Interface Contracts Are Critical
 
 The interface contracts section prevents the most expensive planning failure: discovering during implementation that Plan B's assumptions don't match Plan A's definitions. Define contracts explicitly when writing each plan.
@@ -232,6 +267,18 @@ This catches interface design problems during planning (free to fix) rather than
 
 ````markdown
 # Plan: <name>
+
+## Environment
+
+| Field | Value |
+|-------|-------|
+| Codebase | <name> |
+| Path | `<absolute path>` |
+| Base Branch | `<branch>` |
+| Feature Branch | `<branch>` |
+| Test Command | `<command>` |
+| Key Directories | `<dir1>`, `<dir2>` |
+| Standards Doc | `<path to CLAUDE.md or equivalent>` |
 
 ## Context
 _Summary from research — problem statement, scope, key decisions_
@@ -601,12 +648,14 @@ When appending the first decision entry (replacing the `_No decisions recorded y
 - [ ] **Driver context?** — Have I called `gather_task_context` for architecture AND testing patterns?
 - [ ] **Writing to file?** — Plan content goes in `plans/*.md`, not chat
 - [ ] **Overview needed?** — Multi-plan feature? Create `plans/00-overview.md`
-- [ ] **All sections covered?** — Context, Architecture, Acceptance, Tests, Approach, Scope, Constraints, Tasks
+- [ ] **All sections covered?** — Environment, Context, Architecture, Acceptance, Tests, Approach, Scope, Constraints, Tasks
 - [ ] **Consumer validation?** — Do downstream plans match this plan's interface?
 - [ ] **TDD task ordering?** — Test tasks before implementation tasks
 - [ ] **Constraints explicit?** — Specific rules, not generic advice
 - [ ] **Plan sized right?** — 5-12 tasks, one PR, one logical unit
 - [ ] **Feature log?** — Did I update `FEATURE_LOG.md` when creating plans or the overview?
+- [ ] **Approach confirmed?** — Did I present architecture, test strategy, scope, and sizing before writing the plan?
+- [ ] **Environment section?** — Does the plan include `## Environment` with codebase, branches, test commands?
 - [ ] **Standards encoded?** — If a codebase standards artifact exists, are applicable standards included as plan constraints with source citations?
 - [ ] **Local state validated?** — Did the self-review include local file checks alongside Driver tool checks?
 - [ ] **Decision log?** — Did I append to DECISIONS.md for significant decisions, rejected alternatives, or scope boundary calls?
