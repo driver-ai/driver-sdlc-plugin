@@ -285,7 +285,7 @@ class TestCommandQualification(unittest.TestCase):
 
     COMMANDS = [
         "feature", "assess", "context", "dry-run-plan",
-        "docs-artifacts", "orchestrate", "retro", "setup",
+        "docs-artifacts", "open-pr", "orchestrate", "retro", "setup",
         "driverize", "un-driverize",
     ]
 
