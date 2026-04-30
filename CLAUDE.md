@@ -77,7 +77,7 @@ updated: "YYYY-MM-DD"
 
 ### Required Plan Sections
 
-Plan documents (`01-*.md`, `02-*.md`, etc.) must include these H2 sections: `Context`, `Architecture Fit`, `Data Structures & Callables`, `Acceptance Criteria`, `Test Strategy`, `Task Breakdown`. Enforced by `test_plan_doc_sections`.
+Plan documents (`01-*.md`, `02-*.md`, etc.) must include these H2 sections: `Environment`, `Context`, `Architecture Fit`, `Data Structures & Callables`, `Acceptance Criteria`, `Test Strategy`, `Task Breakdown`. Environment is template-enforced; remaining sections enforced by `test_plan_doc_sections`.
 
 ---
 
