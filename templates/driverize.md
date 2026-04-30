@@ -1,350 +1,595 @@
-# Driverize — Transform Your CLAUDE.md for Driver
+# Driverize — Install Driver Enforcement Stack
 
-You are transforming an existing CLAUDE.md into a Driver-aware version. Driver MCP provides pre-computed codebase intelligence — architecture docs, symbol-level file documentation, directory maps, and development history — exposed as tools your agent can call. Your job is to produce a `CLAUDE.driver.md` that preserves the team's existing conventions while adding prescriptive guidance for when and how to use Driver.
+You are installing a defense-in-depth enforcement stack that ensures Claude Code uses Driver MCP for codebase intelligence instead of native exploration tools. The stack has four tiers:
 
-**You are running from the repo root.** Driver MCP is already connected.
+1. **Permissions & hooks** — deterministic enforcement via `settings.json` deny rules and a PreToolUse hook
+2. **Shadow agents** — replace built-in Explore, Plan, and general-purpose agents with Driver-only versions
+3. **Context injection** — SessionStart and UserPromptSubmit hooks re-inject routing policy on every session event
+4. **Thin CLAUDE.md** — decision tree and examples positioned at the top of CLAUDE.md
 
-Follow these 6 phases in order. If there is no existing CLAUDE.md, skip to the No CLAUDE.md Path at the end.
+**You are running from the repo root.** Driver MCP is already connected. This prompt works standalone — no plugins required.
+
+Follow these 6 phases in order.
 
 ---
 
 ## Phase 1: Read
 
-1. **Verify Driver connectivity.** Call `get_codebase_names`. If it fails, stop and tell the user: "Driver MCP is not responding. Check your MCP configuration in `.mcp.json`, verify your token is valid, and ensure your codebases are onboarded in Driver." Do not proceed if this fails.
+### 1.1: Verify Driver Connectivity
 
-2. **Note available codebases.** Store the list of codebase names returned — you'll include these in the output so the agent knows what's available.
+Call `get_codebase_names`. If it fails, stop and tell the user:
+> "Driver MCP is not responding. Check your MCP configuration in `.mcp.json`, verify your token is valid, and ensure your codebases are onboarded in Driver."
 
-3. **Read the existing CLAUDE.md** at the repo root. If no `CLAUDE.md` exists, skip to the **No CLAUDE.md Path** section below.
+Store the list of available codebase names — you'll include these in the output summary.
 
-4. **Follow `@` include directives.** If the CLAUDE.md contains lines like `@AGENTS.md` or `@path/to/file.md`, read those files too. These are Claude Code include directives — the content they reference is part of the effective CLAUDE.md. You'll need to analyze their content for conflicts and conventions, but preserve the `@` reference in the output rather than inlining the content.
+### 1.2: Detect MCP Server Name
 
-5. **Store the raw content** — you'll need the full original text for Phase 2 and Phase 4.
+Read `.mcp.json` in the current directory. Also read `~/.claude/.mcp.json` if it exists. The file uses the format `{"mcpServers": {"server-name": {...}}}`. Look inside `mcpServers` for a key matching `*driver*` (case-insensitive). Apply these rules:
+
+- If exactly one match → use it
+- If `driver-mcp` exists → prefer it
+- If multiple ambiguous matches → ask the user to confirm which one
+- If no match → stop with: "Driver MCP server not found in `.mcp.json`. Configure it first, then re-run."
+
+Store the detected name as `MCP_SERVER_NAME`. All tool references and settings will use this as the prefix (e.g., `mcp__driver-mcp__*` becomes `mcp__<MCP_SERVER_NAME>__*`).
+
+Also note where Driver MCP is configured:
+- **Project-scoped** (`.mcp.json` in repo root) — note for output summary warning
+- **User-scoped** (`~/.claude/.mcp.json`) — no warning needed
+
+### 1.3: Read Existing Configuration
+
+Read the following if they exist. Store their content for Phase 2.
+
+- `CLAUDE.md` (repo root)
+- `.claude/settings.json`
+- `.claude/hooks/` (list all files)
+- `.claude/agents/` (list all files)
+- `.claude/skills/` (list all directories)
+
+If any `@` include directives exist in CLAUDE.md (lines starting with `@path/to/file.md`), read those files too.
 
 ---
 
 ## Phase 2: Analyze
 
-Parse the existing CLAUDE.md (and any included files) into conceptual categories:
+### 2.1: Inventory Existing Config
 
-### 2a: Extract Core Concepts
+If `.claude/settings.json` exists, parse it and note:
+- Existing `permissions.deny` rules
+- Existing `permissions.ask` rules
+- Existing hook registrations (by event type and matcher)
+- Any other top-level keys (preserve them in merge)
 
-Scan for and extract a checklist of the team's core concepts. Look for:
+If it fails to parse as JSON, warn the user and proceed as if no settings.json exists.
 
-| Category | What to Look For |
-|----------|-----------------|
-| Build commands | `npm run`, `make`, `cargo`, `pytest`, `uv run`, etc. |
-| Test commands | How to run tests, test frameworks, test file conventions |
-| Style/lint rules | Formatting, naming conventions, linting config references |
-| Architecture descriptions | How the codebase is organized, key directories, patterns |
-| Naming conventions | Variable, function, file naming rules |
-| Error handling patterns | How errors should be handled |
-| Framework-specific guidance | React, Django, Rails, etc. specific rules |
-| Import conventions | How imports should be organized, alias rules |
-| Type system rules | Type annotation requirements, strict mode settings |
+If `.claude/hooks/` exists, note filenames — check for collisions with Driver hooks.
+If `.claude/agents/` exists, note filenames — check for collisions with shadow agents.
+If `.claude/skills/` exists, note directory names — check for collision with `explore-codebase`.
 
-Save this as your **preservation checklist** — you'll verify these survive the merge in Phase 5.
+### 2.2: Parse CLAUDE.md
 
-### 2b: Detect Conflicts
+If CLAUDE.md exists, identify:
+- The first heading (project title)
+- Whether an existing "Driver" section exists (for in-place replacement)
+- Core content sections (build commands, style rules, architecture, conventions, etc.)
 
-Scan for instructions that would prevent effective Driver usage.
+### 2.3: Back Up Files
 
-**Explicit conflicts** — instructions that directly block Driver tools:
-- "Don't use external tools" / "Don't use MCP servers"
-- "Only use native/built-in tools"
-- "Never call external APIs from the agent"
-- "Don't use third-party tools or services"
-- "Disable all MCP integrations"
-- Any instruction restricting or prohibiting MCP tool calls
+Create backups of files that will be modified:
+- `CLAUDE.md` → `CLAUDE.md.pre-driver` (if CLAUDE.md exists)
+- `.claude/settings.json` → `.claude/settings.json.pre-driver` (if settings.json exists)
 
-**Implicit conflicts** — instructions that don't mention Driver but route the agent away from it. Apply the test: *does this instruction route the agent AWAY from a Driver tool when Driver would produce better results?*
+### 2.4: Generate Verification Token
 
-| Conflict Pattern | Why It Conflicts | Driver Alternative |
-|-----------------|-----------------|-------------------|
-| "Always grep the codebase to understand the architecture" | Duplicates `gather_task_context` which provides pre-computed, synthesized architecture context | Use `gather_task_context` for architectural understanding, grep for specific string searches |
-| "Read files one at a time to understand the codebase structure" | Duplicates `get_code_map` which provides annotated directory structure instantly | Use `get_code_map` to understand structure, then read specific files as needed |
-| "Explore the codebase by reading files to understand how it works" | Duplicates `get_architecture_overview` and `get_llm_onboarding_guide` | Use Driver's deep context documents for orientation |
-| "Always read the full source of files before modifying them" (for understanding, not editing) | When the goal is understanding interfaces, `get_file_documentation` provides structured symbol-level docs faster | Use `get_file_documentation` for interfaces; read source locally for exact implementation details |
-| "Before starting any task, manually explore the project directory structure" | Duplicates `get_code_map` | Use `get_code_map` with pre-computed descriptions |
-
-**NOT conflicts — preserve these:**
-- "Run tests before committing" — testing workflow, orthogonal to Driver
-- "Use the linter before submitting changes" — code quality, orthogonal
-- "Always read the file you're about to edit" — good practice for editing context
-- "Use TypeScript strict mode" — language configuration, orthogonal
-- "Prefer functional components" — code style, orthogonal
-- Any build commands, test commands, or code style rules
-
-Store detected conflicts — you'll move them to the educational section in Phase 4.
-
----
-
-## Phase 3: Generate Driver Guidance
-
-Generate the Driver MCP Integration section. This is the core content that gets added to every output. Use the exact content below — it encodes prescriptive, opinionated guidance for when and how to use Driver tools.
-
----
-
-### BEGIN DRIVER GUIDANCE TEMPLATE
-
-## IMPORTANT: Use Driver MCP for Codebase Understanding
-
-**ALWAYS use Driver MCP tools — not native file exploration — when you need to understand this codebase.** Driver provides pre-computed architecture docs, symbol-level file documentation, and development history that native tools cannot replicate.
-
-**Rules:**
-1. **ALWAYS call `gather_task_context` BEFORE using any other method to understand the codebase.** This includes before spawning ANY native agent (Explore, claude-code-guide, general-purpose, or any other agent type), before manual grep/find, and before reading files for orientation. `gather_task_context` takes 1-3 minutes and returns synthesized, task-specific context. This is your FIRST action for ANY task requiring codebase understanding.
-2. **Do NOT use ANY native agent type as a SUBSTITUTE for Driver tools when understanding the codebase.** This includes Explore agents, claude-code-guide agents, general-purpose agents, Plan agents, and any other agent type. These agents see raw source only. Driver provides pre-computed architecture docs, symbol-level documentation, and development history that no native agent can replicate. Use native agents only for targeted follow-up AFTER Driver provides the broad picture.
-3. **Do NOT abandon `gather_task_context` because it takes time.** 1-3 minutes of server-side synthesis is faster than 5+ minutes of manual exploration through any method.
-4. **After `gather_task_context` returns, use Driver's navigation tools for specifics:** `get_code_map` to find files, `get_file_documentation` for interfaces, `get_source_file` for exact implementation.
-5. **Verify connectivity first.** Call `get_codebase_names` before your first Driver call in a session. If it fails, check `.mcp.json` configuration.
-
----
-
-## Driver MCP Tools Reference
-
-Driver provides pre-computed, exhaustive documentation for your codebase — architecture overviews, symbol-level file docs, directory maps, and development history. These are exposed as MCP tools that your coding agent can call during any task.
-
-> **Note on tool names:** The exact tool names depend on how Driver MCP is configured in your `.mcp.json`. If your MCP server is named `driver-mcp`, tools appear as `mcp__driver-mcp__gather_task_context`. If named `driver`, they appear as `mcp__driver__gather_task_context`. The short names below (e.g., `gather_task_context`) refer to the tool regardless of prefix.
-
-### Tool Inventory
-
-#### Primary Tool
-
-| Tool | Description |
-|------|-------------|
-| `gather_task_context` | **Start here.** Runs a specialized context agent server-side that reads architecture docs, code maps, file documentation, and changelogs, then synthesizes task-specific context. Takes 1-3 minutes — this is expected. |
-
-#### Discovery
-
-| Tool | Description |
-|------|-------------|
-| `get_codebase_names` | List all codebases available to your organization. Call this first to verify Driver is connected and discover valid codebase names. |
-
-#### Deep Context (broad orientation)
-
-| Tool | Description |
-|------|-------------|
-| `get_architecture_overview` | Complete architecture document — components, data flow, design principles. |
-| `get_llm_onboarding_guide` | Codebase orientation — navigation tips, conventions, directory map. |
-| `get_changelog` | High-level development history by year and month. |
-| `get_detailed_changelog` | Detailed changelog for a specific year and month. |
-
-#### Navigation & Detail (targeted lookups)
-
-| Tool | Description |
-|------|-------------|
-| `get_code_map` | Directory structure with pre-computed descriptions. Use to find where things live. |
-| `get_file_documentation` | Symbol-level docs — function signatures, classes, types. Understand a file's interface without reading source. |
-| `get_source_file` | Read actual source code with line numbers. Use when you need exact implementation logic. Prefer local file reads when you have local access. |
-
-#### Registered Content (team documentation)
-
-| Tool | Description |
-|------|-------------|
-| `get_registered_content_list` | List team-curated documentation — domain knowledge, architectural decisions, custom guides. |
-| `fetch_registered_content` | Fetch full content of a registered document by name. |
-
-### When to Use Driver
-
-| When | Do |
-|------|----|
-| Starting any task that requires understanding unfamiliar code | Call `gather_task_context` with a detailed task description |
-| Beginning a new session or recovering lost context | Call `gather_task_context` to rebuild understanding |
-| Need to find where functionality lives in the codebase | Use `get_code_map` to explore directory structure |
-| Need to understand a file's API, types, or interface | Use `get_file_documentation` for symbol-level docs |
-| Need exact implementation logic or control flow | Use `get_source_file` (or prefer local file reads if available) |
-| Need historical context — why was something built this way? | Use `get_changelog` or `get_detailed_changelog` |
-| Need broad architectural orientation on a new codebase | Use `get_architecture_overview` or `get_llm_onboarding_guide` |
-| Working across multiple codebases | Pass all relevant codebases to `gather_task_context` |
-| Before any heavy Driver call | Pre-check connectivity with `get_codebase_names` |
-| After `gather_task_context` returns | Validate key files exist locally — check branch, check for uncommitted changes |
-| Looking for team-specific documentation or domain knowledge | Use `get_registered_content_list` then `fetch_registered_content` |
-
-### Usage Patterns
-
-**The progression:** broad → navigate → interfaces → implementation.
-
-```
-gather_task_context  →  get_code_map  →  get_file_documentation  →  get_source_file
-   (broad context)     (find files)     (understand interfaces)    (read exact code)
+Generate a random verification token for the PreToolUse hook's flag file. Use:
+```bash
+VERIFY_TOKEN=$(head -c 32 /dev/urandom | base64 | tr -d '/+=' | head -c 24)
 ```
 
-You won't always need all four steps, but follow this order when drilling into specifics.
+Store this — it will be embedded in the hook script.
 
-**Cross-codebase:** Driver can pull context for any onboarded codebase, not just the one you're working in. Use `get_codebase_names` to discover available codebases. This is useful for understanding how services interact, checking API contracts across repos, or working on features that span multiple systems.
+---
 
-### What NOT to Do
+## Phase 3: Generate
 
-- **Don't abandon `gather_task_context` because it takes 1-3 minutes.** It's doing real work — synthesizing architecture, code maps, and file docs into task-specific context. Waiting is faster than manually piecing together the same understanding.
-- **Don't skip Driver and rely only on grep/find for codebase understanding.** Native file reading sees raw source only. Driver provides pre-computed architecture docs, symbol-level documentation, and development history that grep cannot replicate.
-- **Don't call `get_architecture_overview` or `get_llm_onboarding_guide` directly when `gather_task_context` would suffice.** These produce large responses. `gather_task_context` synthesizes them into just what you need.
-- **Don't assume Driver shows your current local state.** Driver documents committed code. After getting context, verify key files exist locally, check you're on the right branch, and note any uncommitted changes to files Driver referenced.
-- **Don't guess codebase names.** Always verify with `get_codebase_names`. Typos produce empty results with no warning.
+Generate all enforcement artifacts, substituting `__MCP_SERVER_NAME__` with the detected `MCP_SERVER_NAME` and `__DRIVER_VERIFY_TOKEN__` with the generated verification token.
 
-### Connectivity Check
+### 3.1: PreToolUse Hook — `.claude/hooks/driver-first.sh`
 
-Before your first Driver call in a session, verify connectivity:
+```bash
+#!/usr/bin/env bash
+# PreToolUse hook: gate native exploration tools behind Driver context
 
-1. Call `get_codebase_names`
-2. If it succeeds, Driver is connected — proceed
-3. If it fails: "Driver MCP is not responding. Check your MCP configuration in `.mcp.json`, verify your token is valid, and ensure your codebases are onboarded in Driver."
+if ! command -v jq &>/dev/null; then exit 0; fi
 
-### Important: Driver Shows Committed State
+STDIN=$(cat)
+SESSION=$(echo "$STDIN" | jq -r '.session_id')
+TOOL=$(echo "$STDIN" | jq -r '.tool_name')
 
-Driver's documentation reflects committed code, not your local uncommitted changes. After receiving context from Driver:
+FLAG_FILE="/tmp/driver-context-loaded-${SESSION}"
+UNAVAIL_FILE="/tmp/driver-unavailable-${SESSION}"
+VERIFY_TOKEN="__DRIVER_VERIFY_TOKEN__"
 
-- Verify you're on the expected branch
-- Check that key files referenced by Driver exist locally
-- Note any uncommitted changes to files Driver described — they may have diverged
+if [ -f "$UNAVAIL_FILE" ]; then
+  exit 0
+fi
 
-### END DRIVER GUIDANCE TEMPLATE
+if echo "$TOOL" | grep -q '^mcp__'; then
+  if echo "$TOOL" | grep -qE '(gather_task_context|get_architecture_overview|get_code_map)$'; then
+    echo "$VERIFY_TOKEN" > "$FLAG_FILE"
+  fi
+  exit 0
+fi
+
+check_context_loaded() {
+  [ -f "$FLAG_FILE" ] && [ "$(cat "$FLAG_FILE" 2>/dev/null)" = "$VERIFY_TOKEN" ]
+}
+
+if [ "$TOOL" = "Read" ]; then
+  exit 0
+fi
+
+if [ "$TOOL" = "Grep" ] || [ "$TOOL" = "Glob" ]; then
+  if ! check_context_loaded; then
+    echo "Use Driver MCP tools instead: gather_task_context for broad context, get_code_map to navigate structure, get_file_documentation for symbol-level detail. Native $TOOL is blocked until Driver context is loaded." >&2
+    exit 2
+  fi
+  exit 0
+fi
+
+if [ "$TOOL" = "Bash" ]; then
+  if ! check_context_loaded; then
+    CMD=$(echo "$STDIN" | jq -r '.tool_input.command // ""')
+    if echo "$CMD" | grep -qiE '(^|[;&|( ])\s*(env |command |nice |nohup |xargs )?\s*(grep|rg|find|ag|ack|fd|tree)\b'; then
+      echo "Use Driver MCP tools for codebase search: gather_task_context, get_code_map, get_file_documentation. Native search commands are blocked until Driver context is loaded." >&2
+      exit 2
+    fi
+  fi
+  exit 0
+fi
+
+if [ "$TOOL" = "Agent" ]; then
+  SUBAGENT=$(echo "$STDIN" | jq -r '.tool_input.subagent_type // ""')
+  case "$SUBAGENT" in
+    Explore|Plan|general-purpose|claude-code-guide)
+      echo "Use Driver MCP tools instead of the $SUBAGENT agent: gather_task_context for broad context, get_code_map for structure, get_file_documentation for details. Shadow agents in .claude/agents/ provide Driver-integrated alternatives." >&2
+      exit 2
+      ;;
+    ""|null)
+      echo "Agent calls require an explicit subagent_type. Use Driver MCP tools for exploration: gather_task_context, get_code_map, get_file_documentation." >&2
+      exit 2
+      ;;
+  esac
+  exit 0
+fi
+
+exit 0
+```
+
+### 3.2: SessionStart Hook — `.claude/hooks/inject-driver-policy.sh`
+
+```bash
+#!/usr/bin/env bash
+# SessionStart hook: inject Driver routing policy on startup/resume/clear/compact
+
+if ! command -v jq &>/dev/null; then exit 0; fi
+
+STDIN=$(cat)
+SESSION=$(echo "$STDIN" | jq -r '.session_id')
+CWD=$(echo "$STDIN" | jq -r '.cwd')
+
+rm -f "/tmp/driver-context-loaded-${SESSION}" "/tmp/driver-unavailable-${SESSION}"
+
+DRIVER_FOUND=false
+for MCP_PATH in "${CWD}/.mcp.json" "${HOME}/.claude/.mcp.json"; do
+  if [ -f "$MCP_PATH" ]; then
+    if jq -e '(.mcpServers // .) | to_entries[] | select(.key | test("driver"; "i"))' "$MCP_PATH" >/dev/null 2>&1; then
+      DRIVER_FOUND=true
+      break
+    fi
+  fi
+done
+
+if [ "$DRIVER_FOUND" = true ]; then
+  rm -f "/tmp/driver-unavailable-${SESSION}"
+
+  POLICY=$(cat <<'POLICY_EOF'
+## Driver MCP Routing Policy
+
+This project uses Driver MCP for codebase intelligence. Native exploration tools (Grep, Glob, search Bash commands, Explore/Plan/general-purpose agents) are blocked by project hooks until Driver context is loaded.
+
+**Decision tree — pick the Driver tool that fits your need:**
+
+| Need | Driver Tool |
+|------|-------------|
+| Broad task context, suggested approach | `gather_task_context` (start here for new tasks) |
+| Architecture overview, system design | `get_architecture_overview` |
+| Directory structure, navigate codebase | `get_code_map` |
+| Symbol-level detail for a specific file | `get_file_documentation` |
+| Read actual source code | `get_source_file` (or native `Read` after Driver identifies the file) |
+| Recent changes, development history | `get_changelog` / `get_detailed_changelog` |
+| Onboarding, conventions, navigation tips | `get_llm_onboarding_guide` |
+
+**After Driver returns context**, use native Read/Edit/Write for surgical file modifications.
+POLICY_EOF
+)
+
+  POLICY_JSON=$(echo "$POLICY" | jq -Rs .)
+  printf '{"continue": true, "additionalContext": %s}' "$POLICY_JSON"
+else
+  touch "/tmp/driver-unavailable-${SESSION}"
+
+  WARNING="## Driver MCP Not Configured\n\nDriver MCP server was not found in .mcp.json. Native exploration tools (Grep, Glob, Bash search, Agent) are allowed as fallback. To enable Driver enforcement, configure Driver MCP in .mcp.json or ~/.claude/.mcp.json."
+  WARNING_JSON=$(printf '%s' "$WARNING" | jq -Rs .)
+  printf '{"continue": true, "additionalContext": %s}' "$WARNING_JSON"
+fi
+```
+
+### 3.3: UserPromptSubmit Hook — `.claude/hooks/route-to-driver.sh`
+
+```bash
+#!/usr/bin/env bash
+# UserPromptSubmit hook: detect exploration prompts and re-inject Driver routing
+
+if ! command -v jq &>/dev/null; then exit 0; fi
+
+STDIN=$(cat)
+PROMPT=$(echo "$STDIN" | jq -r '.prompt')
+
+if echo "$PROMPT" | tr '[:upper:]' '[:lower:]' | grep -qE 'where is|how does|what does|trace the|explore the|find the file|find the function|find the class|search the code|search for the|architecture of|navigate to|callers of|usage of|references to|who calls|defined in|implemented in|grep for|locate the'; then
+  RULE="Reminder: Use Driver MCP tools for codebase exploration. Start with gather_task_context for broad context, get_code_map for structure, or get_file_documentation for symbol-level detail. Native search tools are blocked by project hooks until Driver context is loaded."
+  RULE_JSON=$(printf '%s' "$RULE" | jq -Rs .)
+  printf '{"continue": true, "additionalContext": %s}' "$RULE_JSON"
+fi
+
+exit 0
+```
+
+### 3.4: Shadow Agent — `.claude/agents/Explore.md`
+
+```markdown
+---
+name: Explore
+description: "Search and explore the codebase using Driver MCP tools. Use for: finding files, tracing code paths, locating symbols, understanding architecture, navigating structure."
+model: sonnet
+tools: mcp____MCP_SERVER_NAME____*, Read
+---
+
+Use Driver MCP tools to explore the codebase. Pick the tool that fits:
+
+| Need | Tool |
+|------|------|
+| Broad task context | `gather_task_context` — start here |
+| Directory structure | `get_code_map` |
+| Symbol-level detail | `get_file_documentation` |
+| Architecture overview | `get_architecture_overview` |
+| Read source code | `get_source_file` or `Read` |
+| Recent changes | `get_changelog` |
+
+Use `Read` for targeted file access after Driver identifies the file. Do not attempt Grep, Glob, or Bash search commands — they are blocked by project hooks.
+```
+
+### 3.5: Shadow Agent — `.claude/agents/Plan.md`
+
+```markdown
+---
+name: Plan
+description: "Plan implementation strategy using Driver MCP for codebase context. Use for: designing features, planning implementations, evaluating trade-offs, architectural decisions."
+model: sonnet
+tools: mcp____MCP_SERVER_NAME____*, Read
+---
+
+Before planning, gather codebase context using Driver MCP:
+
+1. Call `gather_task_context` with a rich description of what you're planning
+2. Use `get_architecture_overview` if you need the system design
+3. Use `get_code_map` to understand directory structure
+4. Use `get_file_documentation` for symbol-level detail on key files
+
+Use `Read` for targeted file access after Driver identifies relevant files. Do not attempt Grep, Glob, or Bash search commands — they are blocked by project hooks.
+```
+
+### 3.6: Shadow Agent — `.claude/agents/general-purpose.md`
+
+```markdown
+---
+name: general-purpose
+description: "General-purpose agent with Driver MCP for codebase context and full implementation capability. Use for: complex tasks, multi-step operations, code changes requiring broad context."
+model: sonnet
+tools: mcp____MCP_SERVER_NAME____*, Read, Edit, Write, Bash
+---
+
+Before exploring or searching the codebase, gather context using Driver MCP:
+
+1. Call `gather_task_context` with a description of what you need
+2. Use `get_code_map` for directory navigation
+3. Use `get_file_documentation` for symbol-level detail
+
+After Driver returns context, use Read/Edit/Write/Bash for implementation. Prefer Driver tools over Bash search commands (grep, find, rg) — search commands are blocked by project hooks until Driver context is loaded.
+```
+
+### 3.7: Skill — `.claude/skills/explore-codebase/SKILL.md`
+
+```markdown
+---
+description: "Explore the codebase using Driver MCP tools. Use when: searching for files, tracing code paths, understanding architecture, finding symbols, navigating structure, locating implementations."
+---
+
+# Explore Codebase
+
+Use Driver MCP to explore and search the codebase:
+
+1. **Start with `gather_task_context`** — give it a rich description of what you're looking for
+2. **Navigate with `get_code_map`** — browse directory structure at any depth
+3. **Drill into files with `get_file_documentation`** — get symbol-level detail
+4. **Read source with `Read`** — after Driver identifies the relevant file
+
+Native search tools (Grep, Glob, find, grep) are blocked by project hooks. Use Driver MCP instead.
+```
+
+### 3.8: Settings Template — `.claude/settings.json`
+
+The following is the Driver settings block. It will be merged with any existing settings in Phase 4.
+
+```json
+{
+  "permissions": {
+    "deny": [
+      "Bash(grep:*)",
+      "Bash(rg:*)",
+      "Bash(find:*)",
+      "Bash(ag:*)",
+      "Bash(ack:*)",
+      "Bash(fd:*)",
+      "Bash(tree:*)",
+      "Bash(env grep:*)",
+      "Bash(command grep:*)",
+      "Bash(env rg:*)",
+      "Bash(command rg:*)",
+      "Bash(env find:*)",
+      "Bash(command find:*)",
+      "Bash(touch /tmp/driver:*)",
+      "Bash(rm /tmp/driver:*)"
+    ],
+    "ask": [
+      "Edit(.claude/**)",
+      "Write(.claude/**)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Grep|Glob|Read|Bash|Agent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/driver-first.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/inject-driver-policy.sh",
+            "timeout": 15
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/route-to-driver.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+### 3.9: CLAUDE.md Block
+
+Insert this block near the top of CLAUDE.md — after the first heading (project title) but before detailed content sections. If an existing Driver block is detected (heading containing "Driver"), replace it in place.
+
+```markdown
+## Codebase Intelligence — Driver MCP
+
+This project uses Driver MCP for pre-computed codebase documentation. Native exploration tools (Grep, Glob, search commands, Explore/Plan agents) are blocked by project hooks until Driver context is loaded. Prefer Driver tools over native alternatives.
+
+### Decision Tree
+
+| I need to… | Use this Driver tool |
+|------------|---------------------|
+| Understand a task, get suggested approach | `gather_task_context` (start here) |
+| See system architecture | `get_architecture_overview` |
+| Navigate directory structure | `get_code_map` |
+| Get symbol-level detail for a file | `get_file_documentation` |
+| Read actual source code | `get_source_file` or native `Read` |
+| See recent changes | `get_changelog` |
+| Learn conventions, onboarding tips | `get_llm_onboarding_guide` |
+
+### After Driver Returns
+
+Use native Read/Edit/Write for surgical file modifications. Driver gives you the map; native tools do the surgery.
+
+### Examples
+
+**"Add retry logic to the API client"**
+→ `gather_task_context` with description: "Add retry logic to the API client. Need to find the HTTP client implementation, understand error handling patterns, and identify where retries should be added."
+
+**"Where is the authentication middleware defined?"**
+→ `get_code_map` at the top level, then `get_file_documentation` on the auth-related file Driver identifies.
+
+**"How does the billing service calculate invoices?"**
+→ `gather_task_context` with description: "Trace the invoice calculation flow in the billing service. Need to understand the data model, calculation logic, and integration points."
+
+**"Refactor the logger to use structured output"**
+→ `gather_task_context` first, then `Read` the specific files, then `Edit` to make changes.
+```
 
 ---
 
 ## Phase 4: Merge
 
-Build the output `CLAUDE.driver.md` by layering the original content with Driver guidance.
+Write files in this exact order. **settings.json is written LAST** because its permission rules apply dynamically — writing it earlier would trigger `ask` prompts for every subsequent `.claude/` file write.
 
-### Structure
+### 4.1: Create Directories
 
-Assemble the output in this order:
+```
+mkdir -p .claude/hooks .claude/agents .claude/skills/explore-codebase
+```
 
-1. **Project header** — preserved from original, or generate a simple `# <directory name>` header
-2. **Driver behavioral rules** — the "IMPORTANT: Use Driver MCP for Codebase Understanding" section from the template. **This MUST appear near the top of the file**, before architecture or conventions sections, so the agent processes it before forming its approach.
-3. **Preserved sections** — all non-conflicting content from the original CLAUDE.md, in their original order:
-   - Build & test commands
-   - Code style & conventions
-   - Architecture notes
-   - Framework-specific guidance
-   - Error handling patterns
-   - Any other sections that don't conflict with Driver
-4. **Driver MCP Tools Reference** — the detailed tool inventory, trigger table, usage patterns, and gotchas from the template
-5. **Conflicting Instructions Removed** — the educational section (only if conflicts were found in Phase 2)
+### 4.2: Write Hook Scripts
 
-### Merge Rules
+For each hook script (`driver-first.sh`, `inject-driver-policy.sh`, `route-to-driver.sh`):
 
-- **Preserve original formatting** — if the original uses specific heading levels, bullet styles, or table formats, match them
-- **Preserve `@` include directives** — keep them as-is in the output; don't inline the referenced content
-- **Preserve YAML frontmatter** — if the original has frontmatter, keep it
-- **Don't duplicate** — if the original already has content that covers the same ground as a Driver guidance section (e.g., the original mentions `gather_task_context`), use the Driver guidance version and remove the original's version
-- **Conflicting instructions go to the educational section** — don't just delete them; move them to the bottom with explanations
-- **Non-conflicting workflow instructions survive** — testing workflows, code review processes, deployment procedures all stay
+1. Substitute `__DRIVER_VERIFY_TOKEN__` with the generated verification token (in `driver-first.sh` only)
+2. Check if a file with the same name already exists in `.claude/hooks/`
+3. If collision: rename the new file with a `-driver` suffix (e.g., `driver-first-driver.sh`) and update the settings.json command path to match. Note the collision in the output summary.
+4. If no collision: write the file normally
+5. Make executable: `chmod +x .claude/hooks/<filename>`
+
+### 4.3: Write Shadow Agents
+
+For each shadow agent (`Explore.md`, `Plan.md`, `general-purpose.md`):
+
+1. Substitute `__MCP_SERVER_NAME__` with the detected MCP server name in the `tools:` field
+2. Check if a file with the same name already exists in `.claude/agents/`
+3. If collision: **DO NOT overwrite** — the customer's existing agent takes priority. Note in the output summary that this shadow agent could not be installed.
+4. If no collision: write the file normally
+
+### 4.4: Write Skill
+
+1. Check if `.claude/skills/explore-codebase/` already exists
+2. If collision: warn in summary and skip
+3. If no collision: write `SKILL.md`
+
+### 4.5: Write CLAUDE.md Block
+
+If CLAUDE.md exists:
+1. Look for an existing heading containing "Driver" (e.g., `## Codebase Intelligence — Driver MCP`, `## Driver MCP`)
+2. If found: replace that entire section (up to the next same-level or higher heading) with the new block
+3. If not found: insert the Driver block after the first heading (project title line) and before the next section
+4. Preserve all other content — build commands, style rules, architecture, conventions, `@` includes, frontmatter
+
+If CLAUDE.md does not exist:
+1. Generate a new CLAUDE.md with:
+   - `# <directory-name>` as the title
+   - The Driver MCP block (from 3.9)
+   - Placeholder sections for Build & Test, Code Style, Architecture with HTML comments
+
+### 4.6: Write settings.json (LAST)
+
+If existing settings.json was parsed successfully in Phase 2:
+1. Load the existing JSON
+2. Append Driver deny rules to `permissions.deny` array — skip any that already exist
+3. Append Driver ask rules to `permissions.ask` array — skip any that already exist
+4. For each hook event (PreToolUse, SessionStart, UserPromptSubmit):
+   - If the event key exists, append the Driver matcher entry to the array — skip if an identical matcher already exists
+   - If the event key does not exist, create it with the Driver entry
+5. Preserve all other top-level keys (e.g., `allowedTools`, `model`, etc.)
+6. Write the merged JSON
+
+If no existing settings.json (or it failed to parse):
+1. Write the Driver settings template directly
 
 ---
 
 ## Phase 5: Validate
 
-Before writing the output, run two validation passes:
+1. Verify all expected files exist:
+   - `.claude/hooks/driver-first.sh` (or `-driver` variant)
+   - `.claude/hooks/inject-driver-policy.sh` (or `-driver` variant)
+   - `.claude/hooks/route-to-driver.sh` (or `-driver` variant)
+   - `.claude/agents/Explore.md` (unless collision)
+   - `.claude/agents/Plan.md` (unless collision)
+   - `.claude/agents/general-purpose.md` (unless collision)
+   - `.claude/skills/explore-codebase/SKILL.md` (unless collision)
+   - `.claude/settings.json`
+   - `CLAUDE.md` (with Driver block)
 
-### 5a: Fixed Schema Check
+2. Verify all hook scripts are executable: `test -x .claude/hooks/*.sh`
 
-Verify the output contains ALL required Driver sections:
+3. Verify settings.json is valid JSON: read it back and parse it
 
-- [ ] **Behavioral rules near the top** — "IMPORTANT: Use Driver MCP for Codebase Understanding" section with ALWAYS/NEVER rules, positioned before architecture or conventions sections
-- [ ] Driver MCP tool inventory (at minimum: `gather_task_context`, `get_code_map`, `get_file_documentation`, `get_source_file`, `get_codebase_names`)
-- [ ] Prescriptive trigger table ("When to Use Driver" with concrete when → do mappings)
-- [ ] Anti-patterns ("What NOT to Do" section)
-- [ ] Connectivity pre-check instructions
-- [ ] Local validation reminder (Driver shows committed state)
-
-If any are missing, add them before proceeding.
-
-### 5b: Preservation Check
-
-Compare the output against the preservation checklist from Phase 2a:
-
-- [ ] All build commands present
-- [ ] All test commands present
-- [ ] All style/lint rules present
-- [ ] Architecture descriptions preserved
-- [ ] Naming conventions preserved
-- [ ] Error handling patterns preserved
-- [ ] Framework-specific guidance preserved
-
-If any are missing, add them back — the merge dropped content it shouldn't have.
-
-### 5c: Conflict Residue Check
-
-Scan the merged output (excluding the "Conflicting Instructions Removed" section) for any remaining instructions that would prevent Driver usage. If found, move them to the educational section.
+4. Verify the CLAUDE.md Driver block exists: look for the "Codebase Intelligence — Driver MCP" heading
 
 ---
 
 ## Phase 6: Output
 
-1. **Write `CLAUDE.driver.md`** in the current directory (repo root). Do NOT overwrite `CLAUDE.md`.
-
-2. **Print a summary** to chat:
+Print a summary to the user:
 
 ```
-## CLAUDE.driver.md Generated
+## Driver Enforcement Stack Installed
 
-### Preserved from original:
-- <list what was kept: build commands, style rules, architecture notes, etc.>
+### What was configured:
 
-### Driver guidance added:
-- Behavioral rules at the top — ALWAYS use Driver for codebase understanding, NEVER substitute native exploration
-- Tool inventory with 14 Driver MCP tools
-- Prescriptive trigger table — when to use each tool
-- Anti-patterns — what NOT to do
-- Connectivity check and local validation reminders
+**Tier 1 — Permissions & Hooks (deterministic enforcement)**
+- `.claude/settings.json` — deny rules block native search commands (grep, rg, find, ag, ack, fd, tree) and wrapper bypasses (env grep, command grep, etc.)
+- `.claude/hooks/driver-first.sh` — PreToolUse hook blocks Grep/Glob/search-Bash/native-Agent before Driver context is loaded
+- Flag file protection: deny rules prevent forgery of `/tmp/driver-*` flag files
+- Tamper resistance: ask rules require user approval before modifying `.claude/` config
 
-### Conflicts detected and documented:
-- <list each conflict, or "None detected">
+**Tier 2 — Shadow Agents (structural channeling)**
+- `.claude/agents/Explore.md` — replaces built-in Explore with Driver-only version
+- `.claude/agents/Plan.md` — replaces built-in Plan with Driver-only version
+- `.claude/agents/general-purpose.md` — replaces built-in with Driver-first version (keeps Edit/Write/Bash)
 
-### Next steps:
-- Review the generated file: `cat CLAUDE.driver.md`
-- Compare with original: `diff CLAUDE.md CLAUDE.driver.md`
-- When ready, replace: `mv CLAUDE.driver.md CLAUDE.md`
+**Tier 3 — Context Injection (self-healing)**
+- `.claude/hooks/inject-driver-policy.sh` — re-injects routing policy on startup, resume, clear, and compact
+- `.claude/hooks/route-to-driver.sh` — detects exploration prompts and re-injects routing
+
+**Tier 4 — CLAUDE.md (prompt steering)**
+- Decision tree and examples added near the top of CLAUDE.md
+
+### Available codebases:
+<list codebase names from Phase 1>
+
+### Merge notes:
+<list any collisions, skipped files, or warnings>
+
+### Backups:
+- `CLAUDE.md.pre-driver` — original CLAUDE.md
+- `.claude/settings.json.pre-driver` — original settings (if existed)
+
+### Known limitations:
+- `--allowedTools "*"` bypasses deny rules and hooks — enforcement is disabled
+- `--dangerously-skip-permissions` bypasses all permission checks
+- Managed settings with org-level agent definitions cannot be shadowed
+- Headless mode (`-p`) has known issues with hooks (Claude Code issue #36071)
+<if Driver is project-scoped>
+- Driver MCP is configured at project scope (`.mcp.json`). Shadow agents work most reliably when Driver MCP is at user scope (`~/.claude/.mcp.json`). Consider moving the config if you encounter issues with agent tool access (known bugs: #13605, #13898, #25200).
+</if>
+
+### To verify:
+Start a new Claude Code session in this directory and ask an exploration question (e.g., "Where is the main entry point?"). The agent should use Driver MCP tools instead of native exploration.
+
+### To rollback:
+mv CLAUDE.md.pre-driver CLAUDE.md
+mv .claude/settings.json.pre-driver .claude/settings.json
+rm .claude/hooks/driver-first.sh .claude/hooks/inject-driver-policy.sh .claude/hooks/route-to-driver.sh
+rm .claude/agents/Explore.md .claude/agents/Plan.md .claude/agents/general-purpose.md 
+rm -rf .claude/skills/explore-codebase 
 ```
-
----
-
-## No CLAUDE.md Path
-
-If no `CLAUDE.md` exists at the repo root, generate a Driver-aware CLAUDE.md from scratch.
-
-Skip Phase 2 (Analyze) and Phase 4 (Merge). Instead:
-
-1. Run Phase 1 (verify connectivity, note available codebases)
-2. Generate this structure:
-
-```markdown
-# <directory name>
-
-<"IMPORTANT: Use Driver MCP for Codebase Understanding" behavioral rules section from Phase 3 template — this goes FIRST>
-
-## Project Overview
-<!-- Describe your project here -->
-
-## Build & Test Commands
-<!-- Add your build and test commands here. Examples: -->
-<!-- - `npm test` — run tests -->
-<!-- - `npm run build` — build the project -->
-<!-- - `npm run lint` — lint the code -->
-
-## Code Style & Conventions
-<!-- Add your team's coding standards here. Examples: -->
-<!-- - Naming conventions -->
-<!-- - Error handling patterns -->
-<!-- - Import ordering rules -->
-
-## Architecture
-<!-- Describe how your codebase is organized. Examples: -->
-<!-- - Key directories and what they contain -->
-<!-- - Major components and how they interact -->
-<!-- - Important patterns used in the codebase -->
-
-<full Driver MCP Tools Reference section from Phase 3 template — detailed tool inventory, trigger table, usage patterns, gotchas>
-```
-
-3. Run Phase 5 validation (fixed schema only — no preservation check needed)
-4. Write `CLAUDE.driver.md` and print a summary noting this was generated from scratch with placeholder sections for the team to fill in
 
 ---
 
 ## Reminders
 
-- **Never overwrite CLAUDE.md** — always write to `CLAUDE.driver.md`
+- **Write settings.json LAST** — permission rules apply dynamically and would block your own writes
+- **Never overwrite existing customer agents** — their customizations take priority
+- **Substitute all placeholders** — `__MCP_SERVER_NAME__` and `__DRIVER_VERIFY_TOKEN__` must be replaced before writing
 - **This prompt works without any plugins** — it only needs Driver MCP connected
-- **Be thorough in conflict detection** — both explicit blocks and implicit routing-around patterns
-- **Be conservative in what you remove** — when in doubt, preserve the original instruction and don't flag it as a conflict
-- **The educational section is valuable** — explain WHY each instruction conflicts, not just that it does
+- **The verification token is unique per installation** — it prevents flag file forgery
