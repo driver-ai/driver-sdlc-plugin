@@ -286,7 +286,7 @@ class TestCommandQualification(unittest.TestCase):
     COMMANDS = [
         "feature", "assess", "context", "dry-run-plan",
         "docs-artifacts", "open-pr", "orchestrate", "retro", "setup",
-        "driverize", "un-driverize",
+        "driverize", "un-driverize", "review",
     ]
 
     SCAN_DIRS = ["commands", "skills", "agents", "docs", "hooks", "templates"]

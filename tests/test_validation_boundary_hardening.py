@@ -1280,5 +1280,83 @@ class TestPostPRLifecycle(unittest.TestCase):
         self.assertIn('"open-pr"', self.test_structural)
 
 
+class TestInternalReviewStructural(unittest.TestCase):
+    """Structural tests for internal review command and standards-review agent."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.claude_md = (PLUGIN_ROOT / "CLAUDE.md").read_text()
+        cls.template_md = (PLUGIN_ROOT / "templates" / "CLAUDE.md.template").read_text()
+        cls.sdlc_orch = (PLUGIN_ROOT / "skills" / "sdlc-orchestration" / "SKILL.md").read_text()
+        cls.test_structural = (PLUGIN_ROOT / "tests" / "test_plugin_structural.py").read_text()
+        cls.plugin_json = json.loads((PLUGIN_ROOT / ".claude-plugin" / "plugin.json").read_text())
+        cls.review_command_path = PLUGIN_ROOT / "commands" / "review.md"
+        cls.standards_review_agent_path = PLUGIN_ROOT / "agents" / "standards-review.md"
+
+    def test_review_command_exists(self):
+        self.assertTrue(self.review_command_path.is_file(), "commands/review.md must exist")
+
+    def test_review_command_frontmatter(self):
+        self.assertTrue(self.review_command_path.exists(), "commands/review.md must exist")
+        content = self.review_command_path.read_text()
+        self.assertIn("description:", content)
+        self.assertIn("argument-hint:", content)
+        self.assertIn("allowed-tools:", content)
+        self.assertIn("Agent", content)
+
+    def test_standards_review_agent_exists(self):
+        self.assertTrue(self.standards_review_agent_path.is_file(), "agents/standards-review.md must exist")
+
+    def test_standards_review_agent_frontmatter(self):
+        self.assertTrue(self.standards_review_agent_path.exists(), "agents/standards-review.md must exist")
+        content = self.standards_review_agent_path.read_text()
+        self.assertIn("name: standards-review", content)
+        self.assertIn("model: sonnet", content)
+
+    def test_review_command_registered(self):
+        self.assertIn("./commands/review.md", self.plugin_json.get("commands", []))
+
+    def test_standards_review_agent_registered(self):
+        self.assertIn("./agents/standards-review.md", self.plugin_json.get("agents", []))
+
+    def test_review_in_claude_md_commands(self):
+        self.assertIn("/drvr:review", self.claude_md)
+
+    def test_standards_review_in_claude_md_agents(self):
+        self.assertIn("standards-review", self.claude_md)
+
+    def test_review_phase_in_claude_md(self):
+        self.assertIn("| Internal Review |", self.claude_md)
+
+    def test_review_in_template_commands(self):
+        self.assertIn("/drvr:review", self.template_md)
+
+    def test_standards_review_in_template_agents(self):
+        self.assertIn("standards-review", self.template_md)
+
+    def test_review_phase_in_template(self):
+        self.assertIn("| Internal Review |", self.template_md)
+
+    def test_sdlc_orch_has_review_transition(self):
+        self.assertIn("### Assessment → Internal Review", self.sdlc_orch)
+
+    def test_sdlc_orch_review_phase_detection(self):
+        self.assertIn("Internal review complete", self.sdlc_orch)
+
+    def test_review_in_commands_list(self):
+        self.assertIn('"review"', self.test_structural)
+
+    def test_review_in_lifecycle_diagram(self):
+        for name, content in [("CLAUDE.md", self.claude_md), ("template", self.template_md)]:
+            with self.subTest(file=name):
+                self.assertIn("[/drvr:review]", content)
+
+    def test_review_in_orchestration_events(self):
+        self.assertIn("/drvr:review", self.sdlc_orch)
+
+    def test_review_in_orchestration_related(self):
+        self.assertIn("commands/review.md", self.sdlc_orch)
+
+
 if __name__ == "__main__":
     unittest.main()
