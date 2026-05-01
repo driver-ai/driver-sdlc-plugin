@@ -99,7 +99,7 @@ The drvr plugin generates most artifacts through guided workflows. Your job is t
 |-------|-------------|
 | **Intent** | Mine the author's tacit knowledge, domain context, and non-negotiables. Produce `research/00-intent.md` before codebase research begins. Phase gate: Intent → Research (BLOCK on missing artifact, explicit "skip intent" opt-out). |
 | **Research** | Explore the problem space using structured Why-What-How questioning. Produce research docs and design decisions. |
-| **Planning** | Write implementation plans with TDD-first task ordering, test strategy, explicit constraints, and concrete code snippets for every added or modified data structure and callable (the `## Data Structures & Callables` rollup). The `plans/00-overview.md` carries the `## Implementation Environment` — codebase paths, branches, and test commands that `materialize-tasks` hydrates into each task doc. |
+| **Planning** | Write implementation plans with TDD-first task ordering, test strategy, explicit constraints, and concrete code snippets for every added or modified data structure and callable (the `## Data Structures & Callables` rollup). Each plan includes a per-plan `## Environment` section (codebase, branches, test commands) as the primary source for `materialize-tasks`. The `plans/00-overview.md` `## Implementation Environment` supplements this for multi-plan features. |
 | **Validation** | Dry-run each plan to find gaps before writing code. All gaps are reviewed, classified by severity. |
 | **Materialization** | Approved plan tasks are converted into standalone task documents. Each embeds codebase root, file paths, standards, and instructions for sub-agent execution. |
 | **Implementation** | Execute materialized task documents. Track deviations from the plan. Commit after each task. |
@@ -143,6 +143,20 @@ Reflect on what happened in the current session and capture improvements.
 > "write it"
 > (retro saved to retrospectives/ with actionable improvements)
 ```
+
+### Easy: Driverize a Repo
+
+Install the Driver enforcement stack to ensure Claude Code uses Driver MCP for codebase intelligence instead of native exploration tools. The stack includes 4 tiers: permissions & hooks, shadow agents, context injection, and CLAUDE.md routing.
+
+```
+/drvr:driverize
+> (scans repo, backs up existing files, installs 9 artifacts + CLAUDE.md block)
+> (version-stamped for re-run detection and clean reversal)
+/drvr:un-driverize
+> (detects artifacts via provenance markers, confirms removal plan, restores backups)
+```
+
+Both commands work standalone — copy the `.md` file and paste as a prompt, no plugin required.
 
 ### Medium: Single-Plan Feature End-to-End
 
@@ -271,6 +285,8 @@ For high-stakes features, run every plan through validation before writing any c
 | `/drvr:docs-artifacts <path>` | Generate handoff docs (overview, architecture, testing guide, risk assessment) for code review | `/drvr:docs-artifacts features/user-notifications` |
 | `/drvr:context <task>` | Gather codebase context for a specific task via Driver | `/drvr:context How does the billing module work? --codebases backend` |
 | `/drvr:retro` | Analyze the current session -- evaluate work quality, identify improvements, think about what is next | `/drvr:retro --write` |
+| `/drvr:driverize` | Install Driver enforcement stack -- hooks, shadow agents, context injection, and CLAUDE.md routing | `/drvr:driverize` |
+| `/drvr:un-driverize` | Remove Driver enforcement stack -- restore backups and remove driverize artifacts | `/drvr:un-driverize` |
 
 ## Skills
 

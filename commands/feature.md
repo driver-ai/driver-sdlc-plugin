@@ -34,9 +34,10 @@ Before creating any files, gather project logistics through conversation.
 Ask these questions **one at a time**, waiting for the user's answer before proceeding:
 
 1. **"Which codebases are involved?"**
-   - For each codebase, ask: name, local path, and which branch to work on
+   - For each codebase, ask: name, local path, base branch (where you'll merge back to — also used for Driver MCP context), and feature branch (where you're working)
    - Ask for the Driver MCP codebase name if they know it (they can check by running `get_codebase_names` separately)
    - Validate that local paths exist on disk (`ls <path>`)
+   - If the user specifies only one branch, use it as both Base Branch and Feature Branch
    - If the user doesn't know yet: accept "TBD" and move on
    - Store as a list for the Codebases table in `00-overview.md`
 
@@ -216,9 +217,9 @@ _See `research/00-intent.md` for full problem framing and author's domain contex
 
 ## Codebases
 
-| Name | Local Path | Driver Name | Branch |
-|------|------------|-------------|--------|
-| <name from Step 3> | <validated path> | <Driver MCP name> | <branch> |
+| Name | Local Path | Driver Name | Base Branch | Feature Branch |
+|------|------------|-------------|-------------|----------------|
+| <name from Step 3> | <validated path> | <Driver MCP name> | <base branch> | <feature branch> |
 
 ---
 

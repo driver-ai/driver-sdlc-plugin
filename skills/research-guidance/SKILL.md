@@ -115,6 +115,34 @@ Now explore implementation approaches.
 
 ---
 
+## Step 1.5: Cross-Feature Scan
+
+Before diving into codebase context, scan for other active features that may overlap with this one. This is an **awareness scan** — at this point, this feature's file scope isn't concrete yet (that comes from `gather_task_context` in Step 3). The goal is situational awareness, not precise file-to-file comparison.
+
+**Scan other active features:**
+
+1. Determine the projects directory from the current feature path — navigate up to the `features/` parent directory
+2. List other feature directories (exclude the current feature): `find <projects_path>/features -maxdepth 2 -name "FEATURE_LOG.md" -not -path "<current_feature>/*"`
+3. For each, read the `**Phase**:` field from `FEATURE_LOG.md`. Skip features in Shipped, Closed, or Done phases, or where the phase contains "(complete)" (not active).
+4. For each active feature, read plan files (`plans/[0-9][0-9]-*.md`, excluding `00-overview.md`):
+   - Extract file paths from `**Files**:` entries in Task Breakdown sections — these may be inline (same line as `**Files**:`) or multiline (paths on subsequent `- ` lines). Paths may be backtick-wrapped.
+   - Extract file paths from `Target File` columns in Data Structures & Callables tables
+5. Present findings as **WARN advisory** — which features exist, what files they plan to touch, and what phase they're in:
+
+````
+Active features with planned file modifications:
+- feature/<name> (Phase: <phase>) — files: <file1>, <file2>
+  Risk: <HIGH if in Implementation, MEDIUM if in Planning, LOW if in Research>
+````
+
+The user can identify potential overlaps based on their knowledge of this feature's scope. Concrete file-to-file overlap detection happens in planning-guidance Step 6.
+
+6. If no other features exist, no active features have plans, or no plan files contain parseable file references — skip silently
+
+**This is advisory only.** The user decides whether to coordinate with other features. Do not block research progress.
+
+---
+
 ## Step 2: Resolve Codebase Standards
 
 **Why a separate step**: This step reads the codebase's standards documents directly because `gather_task_context` (Step 3) synthesizes conventions from its pre-computed documentation, which may paraphrase or omit specific rules. The raw CLAUDE.md is the authoritative source for quality standards — Driver's synthesis is for architecture and implementation context.
@@ -206,7 +234,7 @@ Index this artifact in `research/00-overview.md`'s Research Documents table (use
 
 **What it does:** It spawns a specialized context agent on Driver's servers that reads pre-computed, exhaustive codebase documentation — architecture overviews, code maps, file-level documentation, changelogs — and does live runtime analysis. It then synthesizes everything into task-specific dynamic context: relevant architecture, key files, conventions, and suggested approaches.
 
-**How to call it:** Provide a detailed task description and codebase names. The richer your description, the better the context you get back.
+**How to call it:** Provide a detailed task description and codebase names. The richer your description, the better the context you get back. When calling `gather_task_context`, pass the Base Branch from the Codebases table as `branch_name` in the codebases array entry. This ensures Driver MCP returns context from the stable branch, not the default branch. If the Codebases table uses a single `Branch` column (legacy format), use that value as `branch_name`. For multi-codebase features, pass each codebase's Base Branch as its own `branch_name` in its own codebases array entry (e.g., `codebases: [{codebase_name: 'backend', branch_name: 'develop'}, {codebase_name: 'frontend', branch_name: 'main'}]`).
 
 ```
 Example task description:
@@ -252,7 +280,7 @@ This step runs immediately after `gather_task_context` returns. It's a lightweig
 
 For each codebase in the Codebases table, run these commands in the directory specified by its Local Path column:
 
-- **Branch check**: run `git branch --show-current` in the target codebase's Local Path directory. Report the current branch so the user can confirm they're on the right one. If the Codebases table has a Branch column entry, compare against it. If different, note: "Local branch is `<branch>`, Codebases table specifies `<expected>`. You may need to switch branches before implementation." This is a user-awareness check, not a validation failure.
+- **Branch check**: run `git branch --show-current` in the target codebase's Local Path directory. Report the current branch so the user can confirm they're on the right one. Compare against the Feature Branch column from the Codebases table (or the `Branch` column in legacy format). If different, note: "Local branch is `<branch>`, Codebases table specifies Feature Branch `<expected>`." This is a user-awareness check, not a validation failure.
 - **Key file existence**: for files that `gather_task_context` referenced as architecturally important, verify they exist locally at the stated paths using `ls` or `Glob`. Flag any that are missing locally — they may have been renamed or deleted.
 - **Uncommitted changes**: run `git status --short` in the target codebase's Local Path directory. If there are uncommitted changes to files that `gather_task_context` referenced in its response, note them: "Local file `<path>` has uncommitted changes — Driver's documentation may not reflect the current state of this file."
 - **Not a git repo**: if the Local Path is not a git repository (`git rev-parse --git-dir` fails), skip branch check and uncommitted changes. Note: "Codebase at `<path>` is not a git repo — skipping git-based validation."
@@ -426,3 +454,4 @@ Before sending any response during research, verify:
 - [ ] **Local state validated?** — After gather_task_context, did I check branch, key file existence, and uncommitted changes locally?
 - [ ] **Decision log?** — Did I append to DECISIONS.md for significant decisions, rejected alternatives, or context shifts?
 - [ ] **Artifacts committed?** — Did I commit new artifacts to the projects repo?
+- [ ] **Cross-feature scan?** — Did I check other active features for overlapping file targets?

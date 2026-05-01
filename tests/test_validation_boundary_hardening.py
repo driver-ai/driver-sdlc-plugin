@@ -11,6 +11,7 @@ Verifies:
 """
 
 import os
+import json
 import re
 import unittest
 from pathlib import Path
@@ -783,6 +784,655 @@ class TestDecisionLog(unittest.TestCase):
     def test_decisions_log_agent_references_decisions_md(self) -> None:
         """decisions-log agent must reference DECISIONS.md as a source."""
         self.assertIn("DECISIONS.md", self.agent_content)
+
+
+class TestBranchAwareness(unittest.TestCase):
+    """Structural tests for branch awareness (Base Branch / Feature Branch) across the pipeline."""
+
+    feature_cmd: str
+    claude_template: str
+    research_guidance: str
+    materialize_tasks: str
+    impl_guidance: str
+    sdlc_orch: str
+    driver_task_context: str
+    handoff_analyzer: str
+
+    @classmethod
+    def setUpClass(cls):
+        cls.feature_cmd = (PLUGIN_ROOT / "commands" / "feature.md").read_text()
+        cls.claude_template = (PLUGIN_ROOT / "templates" / "CLAUDE.md.template").read_text()
+        cls.research_guidance = (PLUGIN_ROOT / "skills" / "research-guidance" / "SKILL.md").read_text()
+        cls.materialize_tasks = (PLUGIN_ROOT / "skills" / "materialize-tasks" / "SKILL.md").read_text()
+        cls.impl_guidance = (PLUGIN_ROOT / "skills" / "implementation-guidance" / "SKILL.md").read_text()
+        cls.sdlc_orch = (PLUGIN_ROOT / "skills" / "sdlc-orchestration" / "SKILL.md").read_text()
+        cls.driver_task_context = (PLUGIN_ROOT / "agents" / "driver-task-context.md").read_text()
+        cls.handoff_analyzer = (PLUGIN_ROOT / "agents" / "handoff-analyzer.md").read_text()
+
+    def test_feature_cmd_asks_for_base_and_feature_branch(self):
+        """feature.md Step 3 contains 'base branch' and 'feature branch' language."""
+        lower = self.feature_cmd.lower()
+        self.assertIn("base branch", lower)
+        self.assertIn("feature branch", lower)
+
+    def test_feature_cmd_codebases_table_has_two_branch_columns(self):
+        """feature.md Step 6 template has Base Branch and Feature Branch in table header."""
+        self.assertIn("Base Branch", self.feature_cmd)
+        self.assertIn("Feature Branch", self.feature_cmd)
+        self.assertRegex(self.feature_cmd, r"\|[^|]*Base Branch[^|]*\|[^|]*Feature Branch[^|]*\|")
+
+    def test_claude_template_codebases_table_has_two_branch_columns(self):
+        """CLAUDE.md template Codebases table has Base Branch and Feature Branch in table header."""
+        self.assertIn("Base Branch", self.claude_template)
+        self.assertIn("Feature Branch", self.claude_template)
+        self.assertRegex(self.claude_template, r"\|[^|]*Base Branch[^|]*\|[^|]*Feature Branch[^|]*\|")
+
+    def test_research_guidance_validates_feature_branch(self):
+        """research-guidance Step 4 references 'Feature Branch'."""
+        match = re.search(
+            r"## Step 4: Validate Remote Context.*?(?=\n## |\Z)",
+            self.research_guidance, re.DOTALL,
+        )
+        self.assertIsNotNone(match, "Step 4 section not found in research-guidance")
+        self.assertIn("Feature Branch", match.group(0))
+
+    def test_research_guidance_step3_has_branch_passthrough(self):
+        """research-guidance Step 3 contains branch_name near gather_task_context guidance."""
+        match = re.search(
+            r"## Step 3: Gather Codebase Context.*?(?=\n## |\Z)",
+            self.research_guidance, re.DOTALL,
+        )
+        self.assertIsNotNone(match, "Step 3 section not found in research-guidance")
+        section = match.group(0)
+        self.assertTrue(
+            "branch_name" in section or "Base Branch" in section,
+            "Step 3 missing branch_name or Base Branch passthrough guidance",
+        )
+
+    def test_materialize_tasks_template_has_both_branches(self):
+        """materialize-tasks task doc template has **Base Branch** and **Feature Branch**."""
+        self.assertIn("**Base Branch**", self.materialize_tasks)
+        self.assertIn("**Feature Branch**", self.materialize_tasks)
+
+    def test_impl_guidance_preflight_validates_feature_branch(self):
+        """implementation-guidance pre-flight Phase 2 references 'Feature Branch'."""
+        match = re.search(
+            r"#### Phase 2: Codebase Targeting.*?(?=\n#### Phase 3|\Z)",
+            self.impl_guidance, re.DOTALL,
+        )
+        self.assertIsNotNone(match, "Phase 2 section not found in implementation-guidance")
+        self.assertIn("Feature Branch", match.group(0))
+
+    def test_impl_guidance_subagent_prompt_has_feature_branch(self):
+        """Subagent prompt template has 'Feature Branch'."""
+        match = re.search(
+            r"## Subagent Task Prompts.*?(?=\n## Implementation Log Format|\Z)",
+            self.impl_guidance, re.DOTALL,
+        )
+        self.assertIsNotNone(match, "Subagent Task Prompts section not found")
+        self.assertIn("Feature Branch", match.group(0))
+
+    def test_sdlc_orch_resume_reports_both_branches(self):
+        """Session resume format includes both branch fields."""
+        match = re.search(
+            r"5\.\s+\*\*Report current state:\*\*.*?(?=\n---|\n## |\n### |\Z)",
+            self.sdlc_orch, re.DOTALL,
+        )
+        self.assertIsNotNone(match, "Report current state section not found")
+        section = match.group(0)
+        self.assertTrue(
+            "base:" in section.lower() or "base branch" in section.lower(),
+            "Session resume missing base branch reporting",
+        )
+        self.assertTrue(
+            "feature:" in section.lower() or "feature branch" in section.lower(),
+            "Session resume missing feature branch reporting",
+        )
+
+    def test_driver_task_context_has_branch_passthrough(self):
+        """driver-task-context agent instructions mention branch_name."""
+        self.assertIn("branch_name", self.driver_task_context)
+
+    def test_handoff_analyzer_reads_base_branch_from_table(self):
+        """handoff-analyzer references Codebases table for base branch with fallback chain."""
+        self.assertIn("Base Branch", self.handoff_analyzer)
+        self.assertTrue(
+            "legacy" in self.handoff_analyzer.lower()
+            or "Branch` column" in self.handoff_analyzer
+            or "fallback" in self.handoff_analyzer.lower(),
+            "handoff-analyzer missing legacy/fallback branch handling",
+        )
+
+    def test_consumers_handle_legacy_branch_column(self):
+        """All branch consumers contain 'legacy format' for backward compat."""
+        consumers = {
+            "research-guidance": self.research_guidance,
+            "materialize-tasks": self.materialize_tasks,
+            "implementation-guidance": self.impl_guidance,
+            "sdlc-orchestration": self.sdlc_orch,
+        }
+        for name, content in consumers.items():
+            with self.subTest(consumer=name):
+                self.assertIn("legacy format", content.lower(),
+                    f"{name} missing 'legacy format' backward compat language")
+
+
+class TestTransitionAdvisoryChecks(unittest.TestCase):
+    """Structural tests for transition advisory checks (open question scanning)."""
+
+    sdlc_orch: str
+
+    @classmethod
+    def setUpClass(cls):
+        cls.sdlc_orch = (
+            PLUGIN_ROOT / "skills" / "sdlc-orchestration" / "SKILL.md"
+        ).read_text()
+
+    def _research_planning_slice(self) -> str:
+        match = re.search(
+            r"### Research → Planning.*?(?=\n### |\Z)",
+            self.sdlc_orch,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(match, "Research → Planning section not found")
+        return match.group(0)
+
+    def _validation_materialization_slice(self) -> str:
+        match = re.search(
+            r"### Validation → Materialization.*?(?=\n### |\Z)",
+            self.sdlc_orch,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(match, "Validation → Materialization section not found")
+        return match.group(0)
+
+    def test_research_planning_has_open_question_scan(self):
+        """Research→Planning section contains scanning instructions and is advisory (not BLOCK)."""
+        section = self._research_planning_slice()
+        self.assertIn("Open Questions", section)
+        self.assertIn("~~", section)
+        self.assertNotIn("BLOCK", section)
+
+    def test_research_planning_scan_covers_all_research_docs(self):
+        """Research→Planning section references scanning research docs by path."""
+        section = self._research_planning_slice()
+        self.assertIn("research/", section)
+        self.assertIn("[0-9]", section)
+
+    def test_validation_materialization_has_open_question_check(self):
+        """Validation→Materialization section has open questions check."""
+        section = self._validation_materialization_slice()
+        self.assertIn("open questions remain", section.lower())
+
+    def test_validation_materialization_open_question_check_references_overview(self):
+        """Open questions check references planning overview and Open Questions section."""
+        section = self._validation_materialization_slice()
+        self.assertIn("plans/00-overview.md", section)
+        self.assertIn("## Open Questions", section)
+
+
+class TestWorktreeParallelExecution(unittest.TestCase):
+    """Structural tests for worktree parallel execution support in implementation-guidance."""
+
+    impl_guidance: str
+    claude_md: str
+
+    @classmethod
+    def setUpClass(cls):
+        cls.impl_guidance = (
+            PLUGIN_ROOT / "skills" / "implementation-guidance" / "SKILL.md"
+        ).read_text()
+        cls.claude_md = (PLUGIN_ROOT / "CLAUDE.md").read_text()
+
+    def _step3_section(self) -> str:
+        match = re.search(
+            r"### Step 3: Execute Each Task.*?(?=\n### Step 4|\Z)",
+            self.impl_guidance, re.DOTALL,
+        )
+        self.assertIsNotNone(match, "Step 3 section not found")
+        return match.group(0)
+
+    def _phase2_section(self) -> str:
+        match = re.search(
+            r"#### Phase 2: Codebase Targeting.*?(?=\n#### Phase 3|\Z)",
+            self.impl_guidance, re.DOTALL,
+        )
+        self.assertIsNotNone(match, "Phase 2 section not found")
+        return match.group(0)
+
+    def _log_format_section(self) -> str:
+        match = re.search(
+            r"## Implementation Log Format.*?(?=\n## Cross-Session|\Z)",
+            self.impl_guidance, re.DOTALL,
+        )
+        self.assertIsNotNone(match, "Implementation Log Format section not found")
+        return match.group(0)
+
+    def test_impl_guidance_has_parallel_group_derivation(self):
+        """Step 3 contains parallel group derivation from depends_on DAG."""
+        section = self._step3_section()
+        self.assertIn("parallel", section.lower())
+        self.assertIn("depends_on", section)
+        self.assertIn("group", section.lower())
+
+    def test_impl_guidance_has_worktree_isolation(self):
+        """Step 3 or Subagent section contains worktree and isolation."""
+        step3 = self._step3_section()
+        subagent = re.search(
+            r"## Subagent Task Prompts.*?(?=\n## Implementation Log Format|\Z)",
+            self.impl_guidance, re.DOTALL,
+        )
+        combined = step3 + (subagent.group(0) if subagent else "")
+        self.assertIn("worktree", combined.lower())
+        self.assertIn("isolation", combined.lower())
+
+    def test_impl_guidance_has_merge_back_handling(self):
+        """Step 3 contains merge-back with BLOCK on conflict."""
+        section = self._step3_section()
+        self.assertIn("merge", section.lower())
+        self.assertIn("BLOCK", section)
+        self.assertIn("conflict", section.lower())
+
+    def test_impl_guidance_preflight_has_worktree_readiness(self):
+        """Phase 2 pre-flight contains worktree readiness check."""
+        section = self._phase2_section()
+        self.assertTrue(
+            "worktree" in section.lower() or "clean" in section.lower(),
+            "Phase 2 missing worktree readiness check",
+        )
+
+    def test_impl_guidance_log_has_parallel_recording(self):
+        """Implementation Log Format section contains parallel recording."""
+        section = self._log_format_section()
+        self.assertIn("parallel", section.lower())
+
+    def test_claude_md_updated_parallel_rule(self):
+        """CLAUDE.md contains worktree-related language in parallel execution context."""
+        self.assertIn("worktree", self.claude_md.lower())
+
+    def test_impl_guidance_parallel_reports_to_user(self):
+        """Step 3 parallel subsection reports to user before execution."""
+        section = self._step3_section()
+        lower = section.lower()
+        self.assertTrue(
+            "report" in lower and "parallel" in lower,
+            "Step 3 missing user notification about parallel execution",
+        )
+
+    def test_impl_guidance_preserves_sequential_for_dependent_tasks(self):
+        """Step 3 preserves sequential execution for dependent tasks."""
+        section = self._step3_section()
+        lower = section.lower()
+        self.assertTrue(
+            ("sequential" in lower or "without" in lower)
+            and ("dependenc" in lower or "dependent" in lower),
+            "Step 3 missing sequential preservation for dependent tasks",
+        )
+
+    def test_impl_guidance_skips_worktree_for_single_task(self):
+        """Step 3 skips worktree for single-task plans."""
+        section = self._step3_section()
+        lower = section.lower()
+        self.assertTrue(
+            "skip" in lower and ("1 task" in lower or "single" in lower),
+            "Step 3 missing skip-worktree-for-single-task guidance",
+        )
+
+
+class TestPlanningQualityImprovements(unittest.TestCase):
+    """Structural tests for PE-3529 (Step 4.5 checkpoint) and PE-3531 (Environment section)."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.planning_guidance = (PLUGIN_ROOT / "skills" / "planning-guidance" / "SKILL.md").read_text()
+        cls.materialize_tasks = (PLUGIN_ROOT / "skills" / "materialize-tasks" / "SKILL.md").read_text()
+        cls.claude_md = (PLUGIN_ROOT / "CLAUDE.md").read_text()
+
+    def test_planning_has_step_4_5_checkpoint(self):
+        self.assertIn("## Step 4.5:", self.planning_guidance)
+        step45 = re.search(r"## Step 4\.5:.*?(?=\n## Step 5|\Z)", self.planning_guidance, re.DOTALL)
+        self.assertIsNotNone(step45, "Step 4.5 section not found")
+        content = step45.group(0).lower()
+        self.assertIn("architecture", content)
+        self.assertIn("test strategy", content)
+        self.assertIn("scope", content)
+        self.assertIn("decisions.md", content)
+
+    def test_planning_template_has_environment_section(self):
+        match = re.search(
+            r"### Plan Document Template.*?````markdown\n(.*?)\n````",
+            self.planning_guidance, re.DOTALL,
+        )
+        self.assertIsNotNone(match, "Plan document template block not found")
+        template = match.group(1)
+        self.assertIn("## Environment", template)
+        env_idx = template.find("## Environment")
+        ctx_idx = template.find("## Context")
+        self.assertGreater(ctx_idx, env_idx,
+            "## Environment must appear before ## Context in the plan template")
+
+    def test_materialize_tasks_reads_plan_environment(self):
+        step2 = re.search(r"## Step 2:.*?(?=\n## Step 3|\Z)", self.materialize_tasks, re.DOTALL)
+        self.assertIsNotNone(step2)
+        step2_text = step2.group(0)
+        self.assertIn("## Environment", step2_text,
+            "materialize-tasks Step 2 must reference per-plan ## Environment section")
+        self.assertIn("Implementation Environment", step2_text,
+            "materialize-tasks Step 2 must still reference overview Implementation Environment as fallback")
+
+    def test_claude_md_required_sections_includes_environment(self):
+        self.assertIn("Environment", self.claude_md)
+        match = re.search(r"### Required Plan Sections\n\n(.+?)(?:\n\n|\n---|\Z)", self.claude_md, re.DOTALL)
+        self.assertIsNotNone(match)
+        self.assertIn("Environment", match.group(1))
+
+
+class TestDriverizeTemplateStructural(unittest.TestCase):
+    """Structural tests for PE-3573 (driverize improvements) and PE-3572 (un-driverize)."""
+
+    @classmethod
+    def setUpClass(cls):
+        driverize_path = PLUGIN_ROOT / "commands" / "driverize.md"
+        undriverize_path = PLUGIN_ROOT / "commands" / "un-driverize.md"
+        plugin_json_path = PLUGIN_ROOT / ".claude-plugin" / "plugin.json"
+        cls.driverize = driverize_path.read_text() if driverize_path.exists() else ""
+        cls.undriverize = undriverize_path.read_text() if undriverize_path.exists() else ""
+        cls.plugin_json = json.loads(plugin_json_path.read_text()) if plugin_json_path.exists() else {}
+
+    def _require_driverize(self):
+        self.assertTrue(self.driverize, "commands/driverize.md not found or empty")
+
+    def _require_undriverize(self):
+        self.assertTrue(self.undriverize, "commands/un-driverize.md not found or empty")
+
+    def test_driverize_has_version_string(self):
+        self._require_driverize()
+        self.assertIn("DRIVERIZE_VERSION", self.driverize)
+
+    def test_driverize_artifacts_have_version_stamps(self):
+        self._require_driverize()
+        self.assertIn("driverize:v", self.driverize)
+        self.assertIn("# Driverize v", self.driverize)
+
+    def test_driverize_has_rerun_detection(self):
+        self._require_driverize()
+        self.assertRegex(self.driverize, r"### 2\.5.*Detect|Existing Installation",
+            "Phase 2.5 re-run detection section not found")
+        self.assertIn("_driverize", self.driverize,
+            "Re-run detection must reference _driverize metadata key")
+
+    def test_driverize_has_backup_safety(self):
+        self._require_driverize()
+        self.assertIn(".pre-driver", self.driverize)
+        self.assertIn("already preserved", self.driverize.lower(),
+            "Backup section must include backup-only-once guard ('already preserved')")
+
+    def test_driverize_has_changelog(self):
+        self._require_driverize()
+        self.assertIn("## Changelog", self.driverize)
+
+    def test_driverize_claude_md_block_has_markers(self):
+        self._require_driverize()
+        self.assertIn("<!-- driverize:v", self.driverize)
+        self.assertIn("<!-- /driverize -->", self.driverize)
+
+    def test_undriverize_has_provenance_detection(self):
+        self._require_undriverize()
+        self.assertIn("driverize:v", self.undriverize,
+            "Un-driverize must reference provenance markers for artifact identification")
+
+    def test_undriverize_has_backup_restoration(self):
+        self._require_undriverize()
+        self.assertIn(".pre-driver", self.undriverize,
+            "Un-driverize must reference .pre-driver backups for restoration")
+
+    def test_undriverize_has_user_confirmation(self):
+        self._require_undriverize()
+        lower = self.undriverize.lower()
+        self.assertTrue(
+            "confirm" in lower or "proceed" in lower or "approve" in lower,
+            "Un-driverize must include a user confirmation step before removal",
+        )
+
+    def test_plugin_json_has_driverize_commands(self):
+        commands = self.plugin_json.get("commands", [])
+        self.assertIn("./commands/driverize.md", commands)
+        self.assertIn("./commands/un-driverize.md", commands)
+
+
+class TestPostPRLifecycle(unittest.TestCase):
+    """Structural tests for PE-3528 (post-PR lifecycle phases and open-pr command)."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.orchestration = (PLUGIN_ROOT / "skills" / "sdlc-orchestration" / "SKILL.md").read_text()
+        cls.claude_md = (PLUGIN_ROOT / "CLAUDE.md").read_text()
+        cls.template_md = (PLUGIN_ROOT / "templates" / "CLAUDE.md.template").read_text()
+        cls.conftest = (PLUGIN_ROOT / "tests" / "conftest.py").read_text()
+        cls.test_structural = (PLUGIN_ROOT / "tests" / "test_plugin_structural.py").read_text()
+        cls.open_pr_path = PLUGIN_ROOT / "commands" / "open-pr.md"
+
+    def test_orchestration_has_post_pr_transitions(self):
+        transitions = [
+            "### Handoff → Open PR",
+            "### Open PR → PR Review",
+            "### PR Review → Revision",
+            "### PR Review → Merge",
+            "### Merge → Verification",
+            "### Verification → Shipped",
+            "### Any Post-PR → Closed",
+        ]
+        for t in transitions:
+            with self.subTest(transition=t):
+                self.assertIn(t, self.orchestration)
+
+    def test_orchestration_has_closed_terminal_state(self):
+        self.assertIn("Closed", self.orchestration)
+
+    def test_orchestration_has_post_pr_phase_detection(self):
+        self.assertIn("pr_created", self.orchestration)
+        self.assertIn("pr_merged", self.orchestration)
+        self.assertIn("gh pr view", self.orchestration)
+
+    def test_orchestration_has_post_pr_loops(self):
+        self.assertIn("PR Review → Revision", self.orchestration)
+        self.assertIn("Revision → PR Review", self.orchestration)
+
+    def test_open_pr_command_exists(self):
+        self.assertTrue(self.open_pr_path.exists(), "commands/open-pr.md must exist")
+        content = self.open_pr_path.read_text()
+        self.assertIn("description:", content)
+        self.assertIn("argument-hint:", content)
+        self.assertIn("allowed-tools:", content)
+
+    def test_open_pr_has_driver_docs_gate(self):
+        self.assertTrue(self.open_pr_path.exists(), "commands/open-pr.md must exist")
+        content = self.open_pr_path.read_text()
+        self.assertIn("driver-docs", content)
+        self.assertIn("BLOCK", content)
+        self.assertIn("gh auth", content,
+            "open-pr must gate on gh auth status")
+
+    def test_lifecycle_diagram_extended(self):
+        for name, content in [("CLAUDE.md", self.claude_md), ("template", self.template_md)]:
+            with self.subTest(file=name):
+                self.assertIn("open-pr", content)
+                self.assertIn("Shipped", content)
+
+    def test_phase_skill_mapping_has_post_pr_rows(self):
+        for name, content in [("CLAUDE.md", self.claude_md), ("template", self.template_md)]:
+            with self.subTest(file=name):
+                self.assertIn("Open PR", content)
+                self.assertIn("Shipped", content)
+
+    def test_is_active_feature_done_phases(self):
+        self.assertIn('"Shipped"', self.conftest)
+        self.assertIn('"Closed"', self.conftest)
+        done_match = re.search(r'done_phases\s*=\s*\(([^)]+)\)', self.conftest)
+        self.assertIsNotNone(done_match, "done_phases tuple not found in conftest.py")
+        done_content = done_match.group(1)
+        self.assertNotIn('"Handoff"', done_content,
+            "Handoff must not be in done_phases — it is now an intermediate phase")
+        self.assertNotIn('"Assessment"', done_content,
+            "Assessment must not be in done_phases — it is now an intermediate phase")
+
+    def test_open_pr_in_commands_list(self):
+        self.assertIn('"open-pr"', self.test_structural)
+
+
+class TestInternalReviewStructural(unittest.TestCase):
+    """Structural tests for internal review command and standards-review agent."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.claude_md = (PLUGIN_ROOT / "CLAUDE.md").read_text()
+        cls.template_md = (PLUGIN_ROOT / "templates" / "CLAUDE.md.template").read_text()
+        cls.sdlc_orch = (PLUGIN_ROOT / "skills" / "sdlc-orchestration" / "SKILL.md").read_text()
+        cls.test_structural = (PLUGIN_ROOT / "tests" / "test_plugin_structural.py").read_text()
+        cls.plugin_json = json.loads((PLUGIN_ROOT / ".claude-plugin" / "plugin.json").read_text())
+        cls.review_command_path = PLUGIN_ROOT / "commands" / "review.md"
+        cls.standards_review_agent_path = PLUGIN_ROOT / "agents" / "standards-review.md"
+
+    def test_review_command_exists(self):
+        self.assertTrue(self.review_command_path.is_file(), "commands/review.md must exist")
+
+    def test_review_command_frontmatter(self):
+        self.assertTrue(self.review_command_path.exists(), "commands/review.md must exist")
+        content = self.review_command_path.read_text()
+        self.assertIn("description:", content)
+        self.assertIn("argument-hint:", content)
+        self.assertIn("allowed-tools:", content)
+        self.assertIn("Agent", content)
+
+    def test_standards_review_agent_exists(self):
+        self.assertTrue(self.standards_review_agent_path.is_file(), "agents/standards-review.md must exist")
+
+    def test_standards_review_agent_frontmatter(self):
+        self.assertTrue(self.standards_review_agent_path.exists(), "agents/standards-review.md must exist")
+        content = self.standards_review_agent_path.read_text()
+        self.assertIn("name: standards-review", content)
+        self.assertIn("model: sonnet", content)
+
+    def test_review_command_registered(self):
+        self.assertIn("./commands/review.md", self.plugin_json.get("commands", []))
+
+    def test_standards_review_agent_registered(self):
+        self.assertIn("./agents/standards-review.md", self.plugin_json.get("agents", []))
+
+    def test_review_in_claude_md_commands(self):
+        self.assertIn("/drvr:review", self.claude_md)
+
+    def test_standards_review_in_claude_md_agents(self):
+        self.assertIn("standards-review", self.claude_md)
+
+    def test_review_phase_in_claude_md(self):
+        self.assertIn("| Internal Review |", self.claude_md)
+
+    def test_review_in_template_commands(self):
+        self.assertIn("/drvr:review", self.template_md)
+
+    def test_standards_review_in_template_agents(self):
+        self.assertIn("standards-review", self.template_md)
+
+    def test_review_phase_in_template(self):
+        self.assertIn("| Internal Review |", self.template_md)
+
+    def test_sdlc_orch_has_review_transition(self):
+        self.assertIn("### Assessment → Internal Review", self.sdlc_orch)
+
+    def test_sdlc_orch_review_phase_detection(self):
+        self.assertIn("Internal review complete", self.sdlc_orch)
+
+    def test_review_in_commands_list(self):
+        self.assertIn('"review"', self.test_structural)
+
+    def test_review_in_lifecycle_diagram(self):
+        for name, content in [("CLAUDE.md", self.claude_md), ("template", self.template_md)]:
+            with self.subTest(file=name):
+                self.assertIn("[/drvr:review]", content)
+
+    def test_review_in_orchestration_events(self):
+        self.assertIn("/drvr:review", self.sdlc_orch)
+
+    def test_review_in_orchestration_related(self):
+        self.assertIn("commands/review.md", self.sdlc_orch)
+
+
+class TestCrossFeatureDependencies(unittest.TestCase):
+    """Structural tests for AR-1/AR-6: cross-feature dependency discovery and registry."""
+
+    research_guidance: str
+    planning_guidance: str
+    sdlc_orch: str
+
+    @classmethod
+    def setUpClass(cls):
+        cls.research_guidance = (PLUGIN_ROOT / "skills" / "research-guidance" / "SKILL.md").read_text()
+        cls.planning_guidance = (PLUGIN_ROOT / "skills" / "planning-guidance" / "SKILL.md").read_text()
+        cls.sdlc_orch = (PLUGIN_ROOT / "skills" / "sdlc-orchestration" / "SKILL.md").read_text()
+
+    def test_research_guidance_has_cross_feature_scan(self):
+        self.assertIn("Cross-Feature", self.research_guidance)
+        self.assertRegex(self.research_guidance, r"(?i)scan.*active.*feature|active.*feature.*scan")
+
+    def test_research_guidance_scan_is_advisory(self):
+        self.assertRegex(self.research_guidance, r"(?i)WARN|advisory")
+
+    def test_research_guidance_checklist_has_cross_feature(self):
+        checklist_match = re.search(r"## Before Responding Checklist.*", self.research_guidance, re.DOTALL)
+        self.assertIsNotNone(checklist_match)
+        self.assertIn("cross-feature", checklist_match.group(0).lower())
+
+    def test_planning_step2_asks_about_dependencies(self):
+        step2_match = re.search(r"## Step 2.*?(?=## Step [34])", self.planning_guidance, re.DOTALL)
+        self.assertIsNotNone(step2_match)
+        step2_text = step2_match.group(0).lower()
+        self.assertTrue(
+            "cross-feature" in step2_text or "feature dependenc" in step2_text,
+            "Step 2 should ask about cross-feature dependencies"
+        )
+
+    def test_planning_self_review_has_overlap_check(self):
+        step6_match = re.search(r"## Step 6.*?(?=## Step 7)", self.planning_guidance, re.DOTALL)
+        self.assertIsNotNone(step6_match)
+        step6_text = step6_match.group(0).lower()
+        self.assertTrue(
+            "cross-feature" in step6_text or "feature overlap" in step6_text,
+            "Step 6 should include cross-feature file overlap check"
+        )
+
+    def test_planning_overview_template_has_feature_dependencies(self):
+        self.assertIn("## Feature Dependencies", self.planning_guidance)
+
+    def test_planning_checklist_has_cross_feature(self):
+        checklist_match = re.search(r"## Before Responding Checklist.*", self.planning_guidance, re.DOTALL)
+        self.assertIsNotNone(checklist_match)
+        self.assertIn("cross-feature", checklist_match.group(0).lower())
+
+    def test_plan_overview_required_sections_includes_feature_dependencies(self):
+        schemas_text = (PLUGIN_ROOT / "tests" / "test_artifact_schemas.py").read_text()
+        self.assertIn('"Feature Dependencies"', schemas_text)
+
+    # --- Task 5: sdlc-orchestration cross-feature scan ---
+
+    def test_orchestration_session_resumption_has_cross_feature_scan(self):
+        resumption_match = re.search(r"## Session Resumption.*?(?=## Transition Boundaries)", self.sdlc_orch, re.DOTALL)
+        self.assertIsNotNone(resumption_match)
+        resumption_text = resumption_match.group(0).lower()
+        self.assertTrue(
+            "cross-feature" in resumption_text or "feature dependenc" in resumption_text,
+            "Session resumption should include cross-feature dependency scan"
+        )
+
+    def test_orchestration_cross_feature_is_advisory(self):
+        resumption_match = re.search(r"## Session Resumption.*?(?=## Transition Boundaries)", self.sdlc_orch, re.DOTALL)
+        self.assertIsNotNone(resumption_match)
+        resumption_text = resumption_match.group(0)
+        self.assertTrue(
+            "cross-feature" in resumption_text.lower() and
+            re.search(r"(?i)(advisory|skip silently|skip.*entirely)", resumption_text),
+            "Cross-feature scan in session resumption should be advisory (not blocking)"
+        )
 
 
 if __name__ == "__main__":
