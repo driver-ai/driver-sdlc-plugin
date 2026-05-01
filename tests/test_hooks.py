@@ -370,5 +370,36 @@ class TestTrackSkillLoad(unittest.TestCase):
             self.assertEqual(rc, 0, f"Expected exit 0 for kwargs={kwargs}")
 
 
+class TestCommitArtifactsHook(unittest.TestCase):
+    """Verify commit-artifacts.sh SessionEnd hook behavior."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.hook_path = str(PLUGIN_ROOT / "hooks" / "commit-artifacts.sh")
+
+    def test_commit_artifacts_hook_exits_zero(self) -> None:
+        """commit-artifacts.sh must exit 0 with empty stdin."""
+        result = subprocess.run(
+            ["sh", self.hook_path],
+            input="{}",
+            capture_output=True,
+            text=True,
+            cwd="/tmp",
+        )
+        self.assertEqual(result.returncode, 0)
+
+    def test_commit_artifacts_hook_no_crash_on_missing_feature(self) -> None:
+        """commit-artifacts.sh must handle missing FEATURE_LOG.md gracefully."""
+        result = subprocess.run(
+            ["sh", self.hook_path],
+            input="{}",
+            capture_output=True,
+            text=True,
+            cwd="/tmp",
+        )
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.stderr, "")
+
+
 if __name__ == "__main__":
     unittest.main()

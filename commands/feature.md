@@ -1,6 +1,6 @@
 ---
 description: Start a new feature project with research, plans, and implementation structure
-argument-hint: <project-name> [--prd <path>]
+argument-hint: <project-name> [--prd <path>] [--brief <path>]
 allowed-tools: Read, Write, Edit, Bash, Glob
 ---
 
@@ -14,7 +14,9 @@ Create a new feature project with research, plans, and implementation structure.
 
 Extract project name from arguments. If not provided, ask for it.
 
-**Optional:** Check for `--prd <path>` flag. If provided, this PRD will be included as context in the research overview.
+**Optional flags:**
+- `--prd <path>` — PRD from product planning, included as context in the research overview.
+- `--brief <path>` — Author's pre-written brief or detailed ticket. Captured in FEATURE_LOG; `intent-guidance` Step 1 reads it as the conversational starting point. If the path is supplied but the file doesn't exist, WARN and proceed without it.
 
 ### Step 2: Check Configuration
 
@@ -25,14 +27,36 @@ If `~/.driver/config.json` doesn't exist or doesn't have a `projects_path`:
 
 Stop here — do not create config or ask for the path. `/drvr:setup` owns that configuration.
 
-### Step 3: Create Folder Structure
+### Step 3: Gather Project Context
+
+Before creating any files, gather project logistics through conversation.
+
+Ask these questions **one at a time**, waiting for the user's answer before proceeding:
+
+1. **"Which codebases are involved?"**
+   - For each codebase, ask: name, local path, base branch (where you'll merge back to — also used for Driver MCP context), and feature branch (where you're working)
+   - Ask for the Driver MCP codebase name if they know it (they can check by running `get_codebase_names` separately)
+   - Validate that local paths exist on disk (`ls <path>`)
+   - If the user specifies only one branch, use it as both Base Branch and Feature Branch
+   - If the user doesn't know yet: accept "TBD" and move on
+   - Store as a list for the Codebases table in `00-overview.md`
+
+2. **"Are there known coding standards or conventions?"**
+   - For each codebase: CLAUDE.md path, test framework/commands, key conventions
+   - If unknown: note "will discover during research"
+
+After gathering answers, proceed to Step 4 with the collected context.
+
+### Step 4: Create Folder Structure
 
 Create the following structure at `{projects_path}/features/<project-name>/`:
 
 ```
 <project-name>/
+├── DECISIONS.md
 ├── FEATURE_LOG.md
 ├── research/
+│   ├── 00-intent.md
 │   └── 00-overview.md
 ├── plans/
 ├── dry-runs/
@@ -42,18 +66,93 @@ Create the following structure at `{projects_path}/features/<project-name>/`:
     └── results/
 ```
 
+**Scaffold `research/00-intent.md`** using this template (skip if file already exists with `status: confirmed`):
+
+```markdown
+---
+type: research
+status: in_progress
+created: "<today's date>"
+updated: "<today's date>"
+---
+
+# Intent: <Project Name>
+
+## Status
+
+**Phase**: Intent
+**Last Updated**: <today's date>
+
+## Starting Materials
+
+- Brief: <path from --brief, or "none">
+- PRD: <path from --prd, or "none">
+
+## Why Now
+
+_What triggered this feature? What happens if we don't solve it? — fill in during intent mining_
+
+## The Problem
+
+_What problem are we solving? Who experiences it? What does the bad path look like today? — fill in during intent mining_
+
+## Desired End State
+
+_What does "done" look like? — fill in during intent mining_
+
+## Author's Domain Context
+
+_Domain knowledge: mental model of the system, intuition on approach, likely gotchas, unwritten rules, how users actually use it, broader vision. Problem history: prior attempts, incidents, adjacent features, undocumented context, code already examined. Don't self-censor. — fill in during intent mining_
+
+## Non-Negotiables
+
+_What must be true of the solution? What should definitely NOT happen? — fill in during intent mining_
+
+## Constraints
+
+_Timeline, compatibility, performance, team — fill in during intent mining_
+
+## What's Been Ruled Out
+
+_Approaches already considered and rejected, with reasoning — fill in during intent mining_
+
+## Definition of Done
+
+_How will we know the feature is shipped? Acceptance bar? — fill in during intent mining_
+
+## Decisions Captured During Intent
+
+| Decision | Choice | Rationale |
+|----------|--------|-----------|
+| _none yet_ | | |
+
+## References
+
+- _tickets, Slack threads, prior features, PRDs — fill in during intent mining_
+
+## Raw Author Notes
+
+_Verbatim capture of the author's thinking — filled in during intent mining_
+
+## Exit Criteria
+
+- [ ] Problem, why-now, and desired end state are clear
+- [ ] Author's key context and constraints are captured
+- [ ] Anything already ruled out is documented (prevents re-litigation)
+```
+
 Note: `wireframes/` is created on-demand during research when UI exploration is needed — not scaffolded upfront.
 
-### Step 4: Create FEATURE_LOG.md
+### Step 5: Create FEATURE_LOG.md and DECISIONS.md
 
-Create the feature log that tracks lifecycle state and artifact history:
+Create the feature log that tracks lifecycle state and artifact history, and the decision log:
 
 ```markdown
 # Feature Log: <Project Name>
 
 ## Current State
-**Phase**: Research
-**Active**: Setting up — answer Setup Questions in `research/00-overview.md`
+**Phase**: Intent
+**Active**: Capture intent — say "capture intent" to activate `intent-guidance`
 **Last updated**: <today's date>
 
 ## Log
@@ -61,10 +160,22 @@ Create the feature log that tracks lifecycle state and artifact history:
 | Date | Event | Artifact |
 |------|-------|----------|
 | <today> | Feature created | `FEATURE_LOG.md` |
-| <today> | Research started | `research/00-overview.md` |
+| <today> | Intent started | `research/00-intent.md` |
+| <today> | Decision log created | `DECISIONS.md` |
 ```
 
-### Step 5: Create research/00-overview.md
+**Decision Log:** Create `DECISIONS.md` at the feature root:
+
+```markdown
+# Decision Log: <Project Name>
+
+Append-only record of significant decisions made during feature development.
+Each entry captures what was decided, what alternatives were considered, and why.
+
+_No decisions recorded yet._
+```
+
+### Step 6: Create research/00-overview.md
 
 Create the research overview. If `--prd <path>` was provided, include a PRD Reference section.
 
@@ -90,36 +201,25 @@ _Read the PRD and summarize the key requirements here._
 
 ## Problem Statement
 
-_What problem are we solving? For whom?_
+_See `research/00-intent.md` for full problem framing and author's domain context._
 
 ---
 
 ## Scope
 
 **In Scope:**
-- _TBD_
+- _Populated during Intent/Research_
 
 **Out of Scope:**
-- _TBD_
+- _Populated during Intent/Research_
 
 ---
 
 ## Codebases
 
-| Name | Local Path | Driver Name | Branch |
-|------|------------|-------------|--------|
-| _TBD_ | _TBD_ | _TBD_ | _TBD_ |
-
----
-
-## Setup Questions
-
-Answer these before diving into research:
-
-- [ ] Which codebases are involved? (Driver codebase names + local paths)
-- [ ] Which branches should we work on?
-- [ ] What problem are we solving? (1-2 sentences)
-- [ ] Are there known coding standards for each codebase? (CLAUDE.md path, URL, or "will discover during research")
+| Name | Local Path | Driver Name | Base Branch | Feature Branch |
+|------|------------|-------------|-------------|----------------|
+| <name from Step 3> | <validated path> | <Driver MCP name> | <base branch> | <feature branch> |
 
 ---
 
@@ -138,13 +238,23 @@ Answer these before diving into research:
 | _None yet_ | | |
 ```
 
-### Step 6: Confirm and Guide
+### Step 7: Confirm and Guide
 
 After creating the structure:
 
 1. Confirm what was created
-2. Tell the user: "Please answer the Setup Questions in `research/00-overview.md`. When you're ready to start research, say 'let's research' or use any research trigger phrase. The `research-guidance` skill will guide the process."
+2. Tell the user: "Next: capture intent. Say 'capture intent' to activate `intent-guidance`,
+   or invoke `/drvr:feature <name> --brief <path>` if you have a pre-written brief or detailed
+   ticket. When substantive external content exists, intent-guidance takes a lighter path —
+   it mines the content, presents what it captured, and asks if there's anything to add. Intent
+   produces `research/00-intent.md` and gates entry into research."
 3. Note that `/drvr:orchestrate <feature-path>` can be used to resume this feature in future sessions
+
+Commit the scaffolded feature project to the projects repo:
+
+```
+git add FEATURE_LOG.md research/ && git commit -m "chore: Initialize feature project — <name>"
+```
 
 ## Notes
 
@@ -155,6 +265,7 @@ After creating the structure:
 - Resume with `/drvr:orchestrate <feature-path>` in future sessions
 - Config is stored per-user in `~/.driver/config.json`
 - Use `--prd <path>` to include a PRD from product planning as context
+- Use `--brief <path>` to pass a pre-written brief or detailed ticket for intent mining
 
 ## PRD Handoff from Product Planning
 

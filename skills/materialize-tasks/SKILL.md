@@ -45,15 +45,18 @@ After approval, verify that outstanding dry-run gaps do not block materializatio
 
 ## Step 2: Resolve Codebase Target
 
-Read `research/00-overview.md` and find the `## Codebases` section and its table. The table header is `| Name | Local Path | Driver Name | Branch |`. Extract the `Local Path` column (second column) from each data row.
+Read environment information using this fallback chain:
 
-**Parsing rules:**
-- Ignore rows where Local Path is `_TBD_`, empty, contains only whitespace, or contains other placeholder text (e.g., `_fill in_`)
-- Verify each extracted path is an absolute path (starts with `/`) and exists on disk
-- If no valid Local Path entries remain after filtering, BLOCK: "No valid codebase paths in Codebases table. Fill in the Local Path column in `research/00-overview.md`."
-- If `research/00-overview.md` does not exist, BLOCK: "No research overview found. Run research phase first."
+1. **Per-plan `## Environment` section** — read the plan file's own `## Environment` section. This is the primary source for new plans (always present in plans written after the Environment template was added).
+2. **Overview `## Implementation Environment`** — if the plan's `## Environment` section is absent (no `## Environment` heading) or incomplete (any field has a `<placeholder>` value, is blank, or the table has fewer than 4 rows), supplement missing fields from `plans/00-overview.md` `## Implementation Environment`.
+3. **Research Codebases** — if the overview doesn't exist or is missing the Implementation Environment section, read `research/00-overview.md` `## Codebases` for codebase paths and branches. If falling back to research Codebases and it has a single `Branch` column (legacy format), use that value as both `**Base Branch**` and `**Feature Branch**` in the task doc.
 
-**Multi-codebase resolution:** If the Codebases table has multiple valid rows:
+Extract codebase paths, Base Branch, Feature Branch, test commands, and any other environment
+details captured. Include all available environment information in each task doc's `## Codebase` section.
+
+Verify each codebase path exists on disk. If no valid paths are found, BLOCK.
+
+**Multi-codebase resolution:** If the source has multiple valid rows:
 1. First, try to infer the target codebase from the plan's `## Task Breakdown` file paths. Collect all file paths from `**Files**:` fields across tasks. For each codebase's Local Path, check if the plan's file paths resolve under it (e.g., `<Local Path>/<relative file path>` exists). If all files resolve under exactly one codebase, auto-resolve to that codebase.
 2. If files resolve under multiple codebases (ambiguous), or no files resolve under any codebase, ask the user: "This plan's file paths match multiple codebases. Which codebase does this plan target? [list options]"
 3. Report the resolution in Step 6: "Codebase auto-resolved from file paths" or "Codebase selected by user."
@@ -100,8 +103,11 @@ materialized_at: "<ISO 8601 local time, e.g., 2026-04-15T14:32:00>"
 # Task N: <name>
 
 ## Codebase
-**Root**: <absolute path from Codebases table>
-**Branch**: <branch from Codebases table>
+**Root**: <absolute path from Implementation Environment or research Codebases>
+**Base Branch**: <from IE or Codebases>
+**Feature Branch**: <from IE or Codebases>
+<include all remaining environment details from the Implementation Environment section:
+test commands, and any other relevant info. Omit fields not available.>
 
 All file paths below are relative to the codebase root.
 Execute all commands from the codebase root directory.
@@ -137,7 +143,7 @@ Read the plan for full architectural context if needed.
 3. Read the code quality standards at the source path above
 4. Implement exactly what's specified — no extras
 5. Verify your code follows the standards
-6. Run tests after implementation
+6. Run tests after implementation (use test command from Codebase section if present, otherwise follow Pre-flight Phase 4.3 discovery)
 7. Report what you built, files touched, any deviations, and standards compliance
 ```
 

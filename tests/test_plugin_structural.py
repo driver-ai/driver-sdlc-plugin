@@ -285,7 +285,8 @@ class TestCommandQualification(unittest.TestCase):
 
     COMMANDS = [
         "feature", "assess", "context", "dry-run-plan",
-        "docs-artifacts", "orchestrate", "retro", "setup",
+        "docs-artifacts", "open-pr", "orchestrate", "retro", "setup",
+        "driverize", "un-driverize", "review",
     ]
 
     SCAN_DIRS = ["commands", "skills", "agents", "docs", "hooks", "templates"]
@@ -301,6 +302,7 @@ class TestCommandQualification(unittest.TestCase):
         re.compile(r'branch\s*[:=]'),
         re.compile(r'[Bb]ackward\s+compat'),
         re.compile(r'/drvr:'),
+        re.compile(r'<!--\s*/'),
     ]
 
     @classmethod

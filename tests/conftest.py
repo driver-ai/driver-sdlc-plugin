@@ -37,7 +37,7 @@ def is_active_feature(project: Path) -> bool:
     if not match:
         return True
     phase = match.group(1).strip()
-    done_phases = ("Handoff", "Assessment", "Done")
+    done_phases = ("Shipped", "Closed", "Done")
     return phase not in done_phases and "(complete)" not in phase.lower()
 
 

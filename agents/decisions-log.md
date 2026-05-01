@@ -19,12 +19,18 @@ You will receive:
 
 ## Process
 
+### 0. Check Decision Log
+
+Use Read to check if `{path}/DECISIONS.md` exists. If it does, read it as the primary source of explicit decisions. The existing Glob paths in Section 1 are unchanged — DECISIONS.md is read directly, not via Glob.
+
 ### 1. Inventory All Artifacts
 
 Use Glob to find all markdown files in:
 - `{path}/research/*.md`
 - `{path}/plans/*.md`
 - `{path}/implementation/*.md` (if exists)
+
+After reading DECISIONS.md, scan other artifacts for implicit decisions not captured in the log.
 
 ### 2. Read and Analyze Each Artifact
 

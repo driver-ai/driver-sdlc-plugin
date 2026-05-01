@@ -19,7 +19,8 @@ You are creating an implementation plan for a software engineering task. You wor
 2. **Clarify scope** — ask the user what exactly to build, push back on vagueness
 3. **Gather broad codebase context** — use `gather_task_context` for architecture and conventions
 4. **Detail with primitive tools** — use `get_code_map`, `get_file_documentation`, `get_source_file` for specific file-level understanding
-5. **Write the plan** — approach, TDD-ordered task breakdown, acceptance criteria
+4.5. **Confirm approach** — present architecture, test strategy, scope, and sizing for user confirmation
+5. **Write the plan** — environment, approach, TDD-ordered task breakdown, acceptance criteria
 6. **Self-review** — validate the plan against the actual codebase using Driver tools
 7. **Approve** — user reviews, approves plan for implementation
 
@@ -52,6 +53,7 @@ With research context loaded, ask the user what they want to build.
 - What's the desired end state?
 - What constraints exist? (timeline, compatibility, dependencies)
 - What's explicitly out of scope?
+- Are there cross-feature dependencies — other active features that may overlap with or depend on this work? (Check other features' plans for overlapping file targets.)
 
 **Push back on scope creep.** If the user says "and also..." that's a signal to split into separate plans. Each plan should deliver one logical unit of work.
 
@@ -124,6 +126,36 @@ Read the actual source code. Use this to:
 
 ---
 
+## Step 4.5: Confirm Approach
+
+Before writing the plan, present your proposed direction to the user. At this point you have all the codebase context from Steps 3–4 but haven't committed to a plan structure.
+
+**Present a summary covering:**
+
+1. **Architecture approach** — which existing patterns to follow, key files to modify, integration strategy
+2. **Test strategy** — framework, test types (unit/integration/e2e), coverage approach, fixture sourcing
+3. **Scope adjustments** — anything surfaced during context gathering that wasn't in the original Step 2 scope (additions or exclusions)
+4. **Plan sizing** — estimated task count, single plan vs. split, and rationale
+
+**Format:**
+
+> Here's my planning direction:
+>
+> - **Architecture**: [summary of approach, key patterns, files]
+> - **Test strategy**: [framework, coverage approach, test types]
+> - **Scope changes**: [any additions/exclusions discovered during context gathering, or "none"]
+> - **Sizing**: [N tasks, single plan / split rationale]
+>
+> Does this look right? (Say "looks good" to proceed, or tell me what to change.)
+
+**If the user confirms** ("looks good", "yes", "proceed"): append confirmed choices to `DECISIONS.md` using the entry template in the Decision Logging section below, then proceed to Step 5. Step 4.5 decisions capture the broad direction (which pattern to follow, which framework, single vs. split). Specific design decisions with rejected alternatives are logged during Step 7 — do not duplicate.
+
+**If the user requests changes**: adjust the proposed direction and re-present. Do not proceed to Step 5 until the user confirms.
+
+**Skipping**: If the user says "skip" or moves directly to "write the plan", respect that — the checkpoint is advisory, not a gate. Note "Step 4.5 skipped at user direction" and proceed.
+
+---
+
 ## Step 5: Write the Plan
 
 ## CRITICAL: Write Plans to Files
@@ -180,6 +212,12 @@ For features that span multiple plans, create `plans/00-overview.md` as the cent
 | 01 <name> | NOT STARTED | — | <what it delivers> |
 | 02 <name> | NOT STARTED | — | <what it delivers> |
 
+## Implementation Environment
+
+_Capture the environment information that implementation needs: codebase paths, base/feature branches,
+test commands, and any other environment details relevant to this feature. Materialize-tasks
+reads this section to hydrate task docs so sub-agents arrive pre-loaded._
+
 ## Planning Strategy
 _Why the feature is broken into these plans, what order, what the rationale is_
 
@@ -195,7 +233,25 @@ _Surfaced during implementation — deviations that affect other plans_
 
 ## Open Questions
 - [ ] <unresolved decisions>
+
+## Feature Dependencies
+_Known overlaps or dependencies with other active features. Populated during research (Step 1.5)
+and updated during planning (Step 6 self-review). Advisory only — user decides whether to coordinate._
+
+| Feature | Relation | Overlap | Status |
+|---------|----------|---------|--------|
+| _none discovered_ | | | |
 ````
+
+#### Fill In Implementation Environment
+
+When creating `plans/00-overview.md`, populate the Implementation Environment section with
+the environment details sub-agents will need: codebase paths, base branch (for Driver MCP context and merge target), feature branch (for local implementation), test commands, and anything else relevant. Pull from research Codebases and codebase
+CLAUDE.md as starting points, then confirm with the user.
+
+#### Populate Environment
+
+When writing each plan, populate the `## Environment` section. Source values from: the research Codebases table (`research/00-overview.md` `## Codebases`), the codebase's CLAUDE.md, and Driver context gathered in Steps 3–4. Confirm values with the user. For multi-plan features, the per-plan Environment section may duplicate values from the overview's Implementation Environment — this is intentional (each plan is self-contained for materialize-tasks).
 
 #### Interface Contracts Are Critical
 
@@ -220,6 +276,18 @@ This catches interface design problems during planning (free to fix) rather than
 
 ````markdown
 # Plan: <name>
+
+## Environment
+
+| Field | Value |
+|-------|-------|
+| Codebase | <name> |
+| Path | `<absolute path>` |
+| Base Branch | `<branch>` |
+| Feature Branch | `<branch>` |
+| Test Command | `<command>` |
+| Key Directories | `<dir1>`, `<dir2>` |
+| Standards Doc | `<path to CLAUDE.md or equivalent>` |
 
 ## Context
 _Summary from research — problem statement, scope, key decisions_
@@ -429,6 +497,14 @@ Each test case must have enough detail for a subagent to write it:
 
 **Good:** "Test: `login_with_valid_credentials_returns_token` — POST `/auth/login` with valid credentials returns 200 with JWT containing `user_id` claim"
 
+### Commit After Writing
+
+Commit the plan to the projects repo:
+
+```
+git add plans/ FEATURE_LOG.md && git commit -m "chore: Plan created — <plan name>"
+```
+
 ---
 
 ## Step 6: Self-Review
@@ -482,6 +558,26 @@ After drafting, verify:
 3. **Signature drift on modified items** — for each Modified row, use `get_file_documentation` on the target file and verify the snippet signature matches the current codebase signature. If drifted, update the plan to match reality, OR mark the signature change as intentional in the Constraints section (breaking change).
 4. **Collision check on added items** — for each Added row, verify the name does not already exist in the target file (`get_file_documentation`).
 
+### Cross-Feature File Overlap Check
+
+After validating the plan against the codebase, check for cross-feature file overlap:
+
+1. Determine the projects directory from the current feature path (navigate up to `features/` parent)
+2. Find other active features: `find <projects_path>/features -maxdepth 2 -name "FEATURE_LOG.md" -not -path "<current_feature>/*"` — filter to active (phase not Shipped, Closed, Done, and phase does not contain "(complete)")
+3. For each active feature, read `plans/[0-9][0-9]-*.md` (excluding `00-overview.md`):
+   - Extract file paths from `**Files**:` entries in Task Breakdown — these may be inline (same line) or multiline (paths on subsequent `- ` lines). Paths may be backtick-wrapped.
+   - Extract file paths from `Target File` columns in Data Structures & Callables tables
+4. Compare against THIS plan's `## Task Breakdown` file paths
+5. If overlaps found, report as **WARN advisory**:
+
+````
+Cross-feature file overlap detected:
+- feature/<name> (Phase: <phase>) — overlapping files: <file1>, <file2>
+````
+
+6. If overlaps found and `plans/00-overview.md` exists, update its `## Feature Dependencies` table
+7. If no overlaps or no other active features — note "No cross-feature overlaps detected" and continue
+
 ---
 
 ## Step 7: Approve
@@ -503,9 +599,51 @@ Present the plan to the user for review.
    - `status: approved`
    - `approved_at: <ISO 8601 UTC timestamp>` (e.g., `2026-04-16T14:30:00Z`)
    - `approved_by: <user identity>` — use the `userEmail` setting if available in conversation context, otherwise `"user"`
+
+   Commit the approved plan:
+
+   ```
+   git add plans/ FEATURE_LOG.md && git commit -m "chore: Plan approved — <plan name>"
+   ```
+
 6. End with: "Plan approved. Activate `drvr:materialize-tasks` to materialize task documents for plan `<plan-name>`."
 
 **If the user declines:** List what needs to change. Do not proceed. The user controls when to re-present for approval.
+
+### Decision Logging
+
+When planning surfaces significant decisions, append an entry to `DECISIONS.md` at the feature root. Log decisions for:
+- Plan breakdown rationale: why the feature is split into these plans
+- Architecture choices: when the plan picks one approach over alternatives
+- Test strategy decisions: what to test, how, and why
+- Scope boundaries: why something was included or deferred
+- Interface contract decisions: why signatures were designed this way
+
+Not every micro-decision needs an entry — trivial choices (variable naming, file ordering) should not be logged.
+
+#### Entry template
+
+```markdown
+---
+
+### DEC-NNN: <Title>
+
+**Date**: YYYY-MM-DD
+**Phase**: Planning
+**Trigger**: <what prompted this decision>
+
+**Decision**: <what was decided>
+
+**Alternatives Considered**:
+- <Alt 1>: <why rejected>
+- <Alt 2>: <why rejected>
+
+**Rationale**: <why this choice was made>
+
+**Context**: <links to research docs, plan sections, or external sources>
+```
+
+When appending the first decision entry (replacing the `_No decisions recorded yet._` placeholder), also append a row to `FEATURE_LOG.md`: `| <today> | First decision logged | \`DECISIONS.md\` |`
 
 ---
 
@@ -539,11 +677,16 @@ Present the plan to the user for review.
 - [ ] **Driver context?** — Have I called `gather_task_context` for architecture AND testing patterns?
 - [ ] **Writing to file?** — Plan content goes in `plans/*.md`, not chat
 - [ ] **Overview needed?** — Multi-plan feature? Create `plans/00-overview.md`
-- [ ] **All sections covered?** — Context, Architecture, Acceptance, Tests, Approach, Scope, Constraints, Tasks
+- [ ] **All sections covered?** — Environment, Context, Architecture, Acceptance, Tests, Approach, Scope, Constraints, Tasks
 - [ ] **Consumer validation?** — Do downstream plans match this plan's interface?
 - [ ] **TDD task ordering?** — Test tasks before implementation tasks
 - [ ] **Constraints explicit?** — Specific rules, not generic advice
 - [ ] **Plan sized right?** — 5-12 tasks, one PR, one logical unit
 - [ ] **Feature log?** — Did I update `FEATURE_LOG.md` when creating plans or the overview?
+- [ ] **Approach confirmed?** — Did I present architecture, test strategy, scope, and sizing before writing the plan?
+- [ ] **Environment section?** — Does the plan include `## Environment` with codebase, branches, test commands?
 - [ ] **Standards encoded?** — If a codebase standards artifact exists, are applicable standards included as plan constraints with source citations?
 - [ ] **Local state validated?** — Did the self-review include local file checks alongside Driver tool checks?
+- [ ] **Decision log?** — Did I append to DECISIONS.md for significant decisions, rejected alternatives, or scope boundary calls?
+- [ ] **Cross-feature overlap?** — Did I check this plan's files against other active features?
+- [ ] **Artifacts committed?** — Did I commit new artifacts to the projects repo?

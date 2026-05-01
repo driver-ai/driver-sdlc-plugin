@@ -77,7 +77,7 @@ updated: "YYYY-MM-DD"
 
 ### Required Plan Sections
 
-Plan documents (`01-*.md`, `02-*.md`, etc.) must include these H2 sections: `Context`, `Architecture Fit`, `Data Structures & Callables`, `Acceptance Criteria`, `Test Strategy`, `Task Breakdown`. Enforced by `test_plan_doc_sections`.
+Plan documents (`01-*.md`, `02-*.md`, etc.) must include these H2 sections: `Environment`, `Context`, `Architecture Fit`, `Data Structures & Callables`, `Acceptance Criteria`, `Test Strategy`, `Task Breakdown`. Environment is template-enforced; remaining sections enforced by `test_plan_doc_sections`.
 
 ---
 
@@ -86,12 +86,12 @@ Plan documents (`01-*.md`, `02-*.md`, etc.) must include these H2 sections: `Con
 Features follow a phased development lifecycle. Each phase has a dedicated skill or command that provides guidance.
 
 ```
-/drvr:feature --> Research --> Planning --> Validation --> Materialization --> Implementation --> Review --> Bookkeeping --> Next Plan --> ...
-                                                                                                                                |
-                                                                                                                   All plans complete
-                                                                                                                                |
-                                                                                                                                v
-                                                                                                        /drvr:assess --> /drvr:docs-artifacts --> Ship
+/drvr:feature --> Intent --> Research --> Planning --> Validation --> Materialization --> Implementation --> Review --> Bookkeeping --> Next Plan --> ...
+                                                                                                                                                 |
+                                                                                                                                    All plans complete
+                                                                                                                                                 |
+                                                                                                                                                 v
+                                                                                                                       /drvr:assess --> [/drvr:review] --> /drvr:docs-artifacts --> /drvr:open-pr --> PR Review <--> Revision --> Merge --> Verification --> Shipped
 ```
 
 ### Phase-Skill Mapping
@@ -100,7 +100,8 @@ Features follow a phased development lifecycle. Each phase has a dedicated skill
 
 | Phase | Skill / Command | What It Does | Entry Signal |
 |-------|----------------|--------------|-------------|
-| Research | `drvr:research-guidance` | Why-What-How methodology, document organization, completion criteria | `/drvr:feature`, "let's research", "explore" |
+| Intent | `drvr:intent-guidance` | Mine the author's tacit knowledge and produce `research/00-intent.md` before codebase research | `/drvr:feature`, "capture intent" |
+| Research | `drvr:research-guidance` | Why-What-How methodology, document organization, completion criteria | "let's research", "explore" |
 | Planning | `drvr:planning-guidance` | TDD-first task design, test strategy, architecture fit, task breakdown | "let's plan", "ready to plan" |
 | Validation | `/drvr:dry-run-plan` | Walk through plan to find gaps before implementation | "dry-run plan X" |
 | Materialization | `drvr:materialize-tasks` | Convert plan tasks into standalone task docs for sub-agent execution | plan approved (`status: approved`), no task docs |
@@ -109,7 +110,14 @@ Features follow a phased development lifecycle. Each phase has a dedicated skill
 | Bookkeeping | `drvr:implementation-guidance` Step 4 | Update plan status, overview, cascade check | deviations approved |
 | Transition | `drvr:sdlc-orchestration` | Identify next unblocked plan from dependency graph | bookkeeping complete |
 | Assessment | `/drvr:assess` | Curate test suite — categorize, prune scaffolding, promote | all plans complete, "assess tests" |
+| Internal Review | `/drvr:review` | Review code against standards, auto-fix violations | assessment has FAIL violations |
 | Handoff | `/drvr:docs-artifacts` | Generate feature overview, architecture, testing guide, risks | assessment complete |
+| Open PR | `/drvr:open-pr` | Create PR from handoff docs via gh CLI | handoff docs generated |
+| PR Review | `drvr:sdlc-orchestration` | Track review status, suggest next steps | PR created |
+| Revision | `drvr:sdlc-orchestration` | Guide revision cycle | review feedback received |
+| Merge | `drvr:sdlc-orchestration` | Track merge, verify CI | PR approved |
+| Verification | `drvr:sdlc-orchestration` | Advisory post-merge checks | PR merged |
+| Shipped | `drvr:sdlc-orchestration` | Terminal — suggest retro | verification confirmed |
 | Retro | `/drvr:retro` | Evaluate session quality, identify improvements | "retro", end of session |
 
 ---
@@ -147,14 +155,18 @@ Every feature has a `FEATURE_LOG.md` at its root -- the source of truth for life
 | `/drvr:orchestrate <path>` | Resume work on a feature -- read the feature log, report current state, suggest next action |
 | `/drvr:dry-run-plan <plan>` | Dry run a plan to identify gaps before implementation |
 | `/drvr:assess` | Curate the test suite after implementation -- categorize, prune scaffolding, promote valuable tests |
+| `/drvr:review` | Run internal standards review — check code against standards, verify criteria and test coverage, auto-fix |
 | `/drvr:docs-artifacts <path>` | Generate handoff docs (overview, architecture, testing guide, risks) for code review |
 | `/drvr:context <task>` | Gather codebase context for a specific task via Driver MCP |
 | `/drvr:retro` | Analyze current session -- evaluate work quality, identify improvements |
+| `/drvr:driverize` | Install Driver enforcement stack -- hooks, shadow agents, context injection, and CLAUDE.md routing |
+| `/drvr:un-driverize` | Remove Driver enforcement stack -- restore backups and remove driverize artifacts |
 
 ### Skills
 
 | Skill | Description |
 |-------|-------------|
+| `drvr:intent-guidance` | Mine author's tacit knowledge at feature start — produces `research/00-intent.md` and gates entry into research. |
 | `drvr:research-guidance` | Guide research with structured questioning (why, what, how), document organization, and completion criteria. |
 | `drvr:planning-guidance` | Guide planning with TDD-first task design, test strategy, architecture fit, and task breakdown. |
 | `drvr:materialize-tasks` | Materialize approved plan tasks into standalone task documents for sub-agent execution. |
@@ -172,6 +184,7 @@ Every feature has a `FEATURE_LOG.md` at its root -- the source of truth for life
 | `decisions-log` | Extract all design decisions from process artifacts in ADR format. |
 | `features-list` | Extract comprehensive feature inventory from code changes and process artifacts. |
 | `security-review` | Analyze code changes for security concerns -- auth, input validation, secrets handling. |
+| `standards-review` | Review code changes against codebase standards and plan criteria. Returns structured findings with proposed fixes. |
 | `test-coverage` | Analyze test coverage for code changes -- map tests to implementation, identify gaps. |
 | `dependency-analysis` | Analyze dependency changes -- new packages, version changes, license compliance, vulnerabilities. |
 
@@ -227,5 +240,5 @@ These rules govern how the plugin operates during all phases.
 - **Research existing codebase patterns before implementing** -- use Driver MCP to understand conventions
 - **Run tests and verification before declaring any task complete** -- never mark done without confirmation
 - **When a dry-run identifies gaps, fix ALL of them** -- do not skip any, regardless of severity
-- **Use parallel agents for research, sequential for implementation** -- research can fan out, implementation must be ordered
+- **Use parallel agents for research; for implementation, independent tasks run in parallel with worktree isolation, dependent tasks run sequentially**
 - **Follow existing codebase patterns** -- ask the user before deviating from established conventions
