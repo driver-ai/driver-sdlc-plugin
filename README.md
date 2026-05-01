@@ -382,3 +382,4 @@ There are two levels of customization:
 - **Select the correct command when multiple plugins are installed.** For example, typing `/drvr:feature` in Claude Code may match commands from other plugins — make sure to select the one with the full name `drvr:feature` in the list below. Here's a screenshot that shows an example:
 
 ![Command selection](docs/images/command_selection.png)
+
