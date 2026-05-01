@@ -115,6 +115,34 @@ Now explore implementation approaches.
 
 ---
 
+## Step 1.5: Cross-Feature Scan
+
+Before diving into codebase context, scan for other active features that may overlap with this one. This is an **awareness scan** — at this point, this feature's file scope isn't concrete yet (that comes from `gather_task_context` in Step 3). The goal is situational awareness, not precise file-to-file comparison.
+
+**Scan other active features:**
+
+1. Determine the projects directory from the current feature path — navigate up to the `features/` parent directory
+2. List other feature directories (exclude the current feature): `find <projects_path>/features -maxdepth 2 -name "FEATURE_LOG.md" -not -path "<current_feature>/*"`
+3. For each, read the `**Phase**:` field from `FEATURE_LOG.md`. Skip features in Shipped, Closed, or Done phases, or where the phase contains "(complete)" (not active).
+4. For each active feature, read plan files (`plans/[0-9][0-9]-*.md`, excluding `00-overview.md`):
+   - Extract file paths from `**Files**:` entries in Task Breakdown sections — these may be inline (same line as `**Files**:`) or multiline (paths on subsequent `- ` lines). Paths may be backtick-wrapped.
+   - Extract file paths from `Target File` columns in Data Structures & Callables tables
+5. Present findings as **WARN advisory** — which features exist, what files they plan to touch, and what phase they're in:
+
+````
+Active features with planned file modifications:
+- feature/<name> (Phase: <phase>) — files: <file1>, <file2>
+  Risk: <HIGH if in Implementation, MEDIUM if in Planning, LOW if in Research>
+````
+
+The user can identify potential overlaps based on their knowledge of this feature's scope. Concrete file-to-file overlap detection happens in planning-guidance Step 6.
+
+6. If no other features exist, no active features have plans, or no plan files contain parseable file references — skip silently
+
+**This is advisory only.** The user decides whether to coordinate with other features. Do not block research progress.
+
+---
+
 ## Step 2: Resolve Codebase Standards
 
 **Why a separate step**: This step reads the codebase's standards documents directly because `gather_task_context` (Step 3) synthesizes conventions from its pre-computed documentation, which may paraphrase or omit specific rules. The raw CLAUDE.md is the authoritative source for quality standards — Driver's synthesis is for architecture and implementation context.
@@ -426,3 +454,4 @@ Before sending any response during research, verify:
 - [ ] **Local state validated?** — After gather_task_context, did I check branch, key file existence, and uncommitted changes locally?
 - [ ] **Decision log?** — Did I append to DECISIONS.md for significant decisions, rejected alternatives, or context shifts?
 - [ ] **Artifacts committed?** — Did I commit new artifacts to the projects repo?
+- [ ] **Cross-feature scan?** — Did I check other active features for overlapping file targets?

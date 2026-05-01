@@ -62,6 +62,14 @@ When a user returns to a feature ("returning to feature/X", "resume feature X", 
    - Phase detection resolves to **Assessment** (all plans COMPLETE, no `assessment/test-curation-*.md`) → suggest `/drvr:assess`
    - Phase detection resolves to post-PR phase (PR Review, Revision, Merge, Verification, Shipped, Closed) via FEATURE_LOG event scanning → see Phase Detection: Post-PR
      - If phase is "PR Review" or "Revision", check PR status via `gh pr view <URL>` (extract URL from FEATURE_LOG `pr_created` event). If `gh pr view` fails (network, auth, or missing PR), report the failure and fall back to the FEATURE_LOG phase header — do not change the detected phase based on a failed check. Report current PR state (open, approved, changes requested, merged, closed).
+4.5. **Scan for cross-feature dependencies:**
+   - Determine the projects directory from the current feature path (navigate up to `features/` parent)
+   - Find other active features: `find <projects_path>/features -maxdepth 2 -name "FEATURE_LOG.md" -not -path "<current_feature>/*"` — filter to active (phase not Shipped, Closed, Done, and phase does not contain "(complete)")
+   - Check two sources of cross-feature overlap:
+     a. Read other features' `plans/00-overview.md` for `## Feature Dependencies` — look for rows referencing THIS feature
+     b. Read other features' plan files (`plans/[0-9][0-9]-*.md`) for `**Files**:` entries (inline or multiline `- ` list format; paths may be backtick-wrapped) and `Target File` columns — compare against this feature's planned files
+   - If dependencies found, include in the state report. If none, report "none detected"
+   - **Advisory only** — do not block session resumption. Skip silently if no other features exist or projects path can't be determined.
 5. **Report current state:**
 
 ```
@@ -71,6 +79,7 @@ Current state: <what's in progress or what's next>
 Last activity: <most recent artifact modified>
 Codebase: <name> at <local-path> (base: <base-branch>, feature: <feature-branch>)
 Test command: `<cmd>`
+Cross-feature dependencies: <summary or "none detected">
 Next action: <suggestion based on state — if assessment phase, "Run /drvr:assess to curate the test suite before handoff">
 ```
 
@@ -346,6 +355,7 @@ Update the "Current State" header to reflect the new phase and active work.
 - **No `plans/00-overview.md`** → phase detection only. Skip transition suggestions and cascade checks.
 - **No `research/` directory** → skip research completeness checks
 - **Feature doesn't follow standard structure** → describe what you see, ask user to clarify
+- **No projects directory** → skip cross-feature scan, omit `Cross-feature dependencies:` line
 
 ---
 

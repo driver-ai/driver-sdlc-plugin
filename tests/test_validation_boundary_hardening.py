@@ -1358,5 +1358,82 @@ class TestInternalReviewStructural(unittest.TestCase):
         self.assertIn("commands/review.md", self.sdlc_orch)
 
 
+class TestCrossFeatureDependencies(unittest.TestCase):
+    """Structural tests for AR-1/AR-6: cross-feature dependency discovery and registry."""
+
+    research_guidance: str
+    planning_guidance: str
+    sdlc_orch: str
+
+    @classmethod
+    def setUpClass(cls):
+        cls.research_guidance = (PLUGIN_ROOT / "skills" / "research-guidance" / "SKILL.md").read_text()
+        cls.planning_guidance = (PLUGIN_ROOT / "skills" / "planning-guidance" / "SKILL.md").read_text()
+        cls.sdlc_orch = (PLUGIN_ROOT / "skills" / "sdlc-orchestration" / "SKILL.md").read_text()
+
+    def test_research_guidance_has_cross_feature_scan(self):
+        self.assertIn("Cross-Feature", self.research_guidance)
+        self.assertRegex(self.research_guidance, r"(?i)scan.*active.*feature|active.*feature.*scan")
+
+    def test_research_guidance_scan_is_advisory(self):
+        self.assertRegex(self.research_guidance, r"(?i)WARN|advisory")
+
+    def test_research_guidance_checklist_has_cross_feature(self):
+        checklist_match = re.search(r"## Before Responding Checklist.*", self.research_guidance, re.DOTALL)
+        self.assertIsNotNone(checklist_match)
+        self.assertIn("cross-feature", checklist_match.group(0).lower())
+
+    def test_planning_step2_asks_about_dependencies(self):
+        step2_match = re.search(r"## Step 2.*?(?=## Step [34])", self.planning_guidance, re.DOTALL)
+        self.assertIsNotNone(step2_match)
+        step2_text = step2_match.group(0).lower()
+        self.assertTrue(
+            "cross-feature" in step2_text or "feature dependenc" in step2_text,
+            "Step 2 should ask about cross-feature dependencies"
+        )
+
+    def test_planning_self_review_has_overlap_check(self):
+        step6_match = re.search(r"## Step 6.*?(?=## Step 7)", self.planning_guidance, re.DOTALL)
+        self.assertIsNotNone(step6_match)
+        step6_text = step6_match.group(0).lower()
+        self.assertTrue(
+            "cross-feature" in step6_text or "feature overlap" in step6_text,
+            "Step 6 should include cross-feature file overlap check"
+        )
+
+    def test_planning_overview_template_has_feature_dependencies(self):
+        self.assertIn("## Feature Dependencies", self.planning_guidance)
+
+    def test_planning_checklist_has_cross_feature(self):
+        checklist_match = re.search(r"## Before Responding Checklist.*", self.planning_guidance, re.DOTALL)
+        self.assertIsNotNone(checklist_match)
+        self.assertIn("cross-feature", checklist_match.group(0).lower())
+
+    def test_plan_overview_required_sections_includes_feature_dependencies(self):
+        schemas_text = (PLUGIN_ROOT / "tests" / "test_artifact_schemas.py").read_text()
+        self.assertIn('"Feature Dependencies"', schemas_text)
+
+    # --- Task 5: sdlc-orchestration cross-feature scan ---
+
+    def test_orchestration_session_resumption_has_cross_feature_scan(self):
+        resumption_match = re.search(r"## Session Resumption.*?(?=## Transition Boundaries)", self.sdlc_orch, re.DOTALL)
+        self.assertIsNotNone(resumption_match)
+        resumption_text = resumption_match.group(0).lower()
+        self.assertTrue(
+            "cross-feature" in resumption_text or "feature dependenc" in resumption_text,
+            "Session resumption should include cross-feature dependency scan"
+        )
+
+    def test_orchestration_cross_feature_is_advisory(self):
+        resumption_match = re.search(r"## Session Resumption.*?(?=## Transition Boundaries)", self.sdlc_orch, re.DOTALL)
+        self.assertIsNotNone(resumption_match)
+        resumption_text = resumption_match.group(0)
+        self.assertTrue(
+            "cross-feature" in resumption_text.lower() and
+            re.search(r"(?i)(advisory|skip silently|skip.*entirely)", resumption_text),
+            "Cross-feature scan in session resumption should be advisory (not blocking)"
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -53,6 +53,7 @@ With research context loaded, ask the user what they want to build.
 - What's the desired end state?
 - What constraints exist? (timeline, compatibility, dependencies)
 - What's explicitly out of scope?
+- Are there cross-feature dependencies — other active features that may overlap with or depend on this work? (Check other features' plans for overlapping file targets.)
 
 **Push back on scope creep.** If the user says "and also..." that's a signal to split into separate plans. Each plan should deliver one logical unit of work.
 
@@ -232,6 +233,14 @@ _Surfaced during implementation — deviations that affect other plans_
 
 ## Open Questions
 - [ ] <unresolved decisions>
+
+## Feature Dependencies
+_Known overlaps or dependencies with other active features. Populated during research (Step 1.5)
+and updated during planning (Step 6 self-review). Advisory only — user decides whether to coordinate._
+
+| Feature | Relation | Overlap | Status |
+|---------|----------|---------|--------|
+| _none discovered_ | | | |
 ````
 
 #### Fill In Implementation Environment
@@ -549,6 +558,26 @@ After drafting, verify:
 3. **Signature drift on modified items** — for each Modified row, use `get_file_documentation` on the target file and verify the snippet signature matches the current codebase signature. If drifted, update the plan to match reality, OR mark the signature change as intentional in the Constraints section (breaking change).
 4. **Collision check on added items** — for each Added row, verify the name does not already exist in the target file (`get_file_documentation`).
 
+### Cross-Feature File Overlap Check
+
+After validating the plan against the codebase, check for cross-feature file overlap:
+
+1. Determine the projects directory from the current feature path (navigate up to `features/` parent)
+2. Find other active features: `find <projects_path>/features -maxdepth 2 -name "FEATURE_LOG.md" -not -path "<current_feature>/*"` — filter to active (phase not Shipped, Closed, Done, and phase does not contain "(complete)")
+3. For each active feature, read `plans/[0-9][0-9]-*.md` (excluding `00-overview.md`):
+   - Extract file paths from `**Files**:` entries in Task Breakdown — these may be inline (same line) or multiline (paths on subsequent `- ` lines). Paths may be backtick-wrapped.
+   - Extract file paths from `Target File` columns in Data Structures & Callables tables
+4. Compare against THIS plan's `## Task Breakdown` file paths
+5. If overlaps found, report as **WARN advisory**:
+
+````
+Cross-feature file overlap detected:
+- feature/<name> (Phase: <phase>) — overlapping files: <file1>, <file2>
+````
+
+6. If overlaps found and `plans/00-overview.md` exists, update its `## Feature Dependencies` table
+7. If no overlaps or no other active features — note "No cross-feature overlaps detected" and continue
+
 ---
 
 ## Step 7: Approve
@@ -659,4 +688,5 @@ When appending the first decision entry (replacing the `_No decisions recorded y
 - [ ] **Standards encoded?** — If a codebase standards artifact exists, are applicable standards included as plan constraints with source citations?
 - [ ] **Local state validated?** — Did the self-review include local file checks alongside Driver tool checks?
 - [ ] **Decision log?** — Did I append to DECISIONS.md for significant decisions, rejected alternatives, or scope boundary calls?
+- [ ] **Cross-feature overlap?** — Did I check this plan's files against other active features?
 - [ ] **Artifacts committed?** — Did I commit new artifacts to the projects repo?
