@@ -179,10 +179,30 @@ When all plans are complete, the next step is test suite assessment — not hand
 
 - "All plans complete. Next step: `/drvr:assess` to curate the test suite before handoff."
 - `/drvr:assess` handles the workflow independently and updates the feature log when done
-- After `/drvr:assess` completes, suggest `/drvr:docs-artifacts`
+- After `/drvr:assess` completes, check for standards violations and suggest `/drvr:review` if needed (see Assessment → Internal Review). If no violations, suggest `/drvr:docs-artifacts`
 - Do NOT suggest `/drvr:docs-artifacts` until assessment is complete
 
 **Mid-implementation assessment**: Users may invoke `/drvr:assess` before all plans are complete. This is allowed — `/drvr:assess` handles scoping and warnings internally. A partial assessment does not satisfy the mandatory pre-handoff requirement; the final assessment must cover all plans.
+
+### Assessment → Internal Review
+
+After `/drvr:assess` completes, check whether the assessment found standards violations.
+
+**Detection:**
+1. Read `assessment/test-curation-*.md`
+2. Find the `## Code Quality Review` section
+3. Check for any rows with Status = FAIL
+
+**If FAILs found:**
+- "Assessment found N standards violations. Run `/drvr:review` to fix them before generating handoff docs."
+- This is advisory (WARN) — the user can skip to `/drvr:docs-artifacts` if they choose
+
+**If no FAILs (or no Code Quality Review section):**
+- Skip directly to suggesting `/drvr:docs-artifacts`: "Assessment clean. Run `/drvr:docs-artifacts` to generate handoff docs."
+
+**If user skips review:**
+- Do not re-suggest within this session. Proceed to Handoff normally.
+- Note: on session resumption, orchestration re-evaluates phase from artifacts. If the user has not advanced past review (no `driver-docs/` directory and no "Internal review complete" in FEATURE_LOG), orchestration will re-suggest `/drvr:review`. This is expected — the user can skip again or proceed directly to `/drvr:docs-artifacts`.
 
 ### Handoff → Open PR
 
@@ -231,7 +251,8 @@ This applies only to post-PR phases — pre-PR abandonment is informal (features
 ### Phase Detection: Assessment
 
 - All plans COMPLETE in overview but no `assessment/test-curation-*.md` → phase is **Assessment**
-- Assessment artifact exists that covers all plans (check Scope line) → phase is **Handoff**
+- Assessment artifact exists with FAIL violations in Code Quality Review, no `Internal review complete` in FEATURE_LOG → suggest **Internal Review** (`/drvr:review`)
+- Assessment artifact exists, `Internal review complete` in FEATURE_LOG (or no FAILs in assessment) → phase is **Handoff**
 - Partial assessment exists but plans remain → phase is still **Implementation**
 
 ### Phase Detection: Post-PR
@@ -302,6 +323,7 @@ Each skill appends to the log at transition moments:
 | `materialize-tasks` | Tasks materialized (with task count and codebase target) |
 | `implementation-guidance` | Implementation started, implementation complete (with test count) |
 | `/drvr:assess` | Assessment complete (with prune/keep/promote counts) |
+| `/drvr:review` | Internal review complete (with violation/fix counts) |
 | `/drvr:open-pr` | PR opened (with URL) |
 | `sdlc-orchestration` | Bookkeeping complete, phase transitions, PR status changes, feature shipped, feature closed |
 
@@ -344,6 +366,7 @@ Update the "Current State" header to reflect the new phase and active work.
 - [implementation-guidance](../implementation-guidance/SKILL.md)
 - [/drvr:dry-run-plan](../../commands/dry-run-plan.md)
 - [/drvr:assess](../../commands/assess.md)
+- [/drvr:review](../../commands/review.md)
 - [/drvr:docs-artifacts](../../commands/docs-artifacts.md)
 - [cascade-check](../../agents/cascade-check.md)
 - [driver-task-context](../../agents/driver-task-context.md)
