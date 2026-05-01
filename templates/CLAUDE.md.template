@@ -80,7 +80,7 @@ Features follow a phased development lifecycle. Each phase has a dedicated skill
                                                                                                                                     All plans complete
                                                                                                                                                  |
                                                                                                                                                  v
-                                                                                                                       /drvr:assess --> /drvr:docs-artifacts --> /drvr:open-pr --> PR Review <--> Revision --> Merge --> Verification --> Shipped
+                                                                                                                       /drvr:assess --> [/drvr:review] --> /drvr:docs-artifacts --> /drvr:open-pr --> PR Review <--> Revision --> Merge --> Verification --> Shipped
 ```
 
 ### Phase -> Skill Mapping
@@ -96,6 +96,7 @@ Features follow a phased development lifecycle. Each phase has a dedicated skill
 | Review | `drvr:sdlc-orchestration` | Present deviations for user approval before bookkeeping |
 | Bookkeeping | `drvr:implementation-guidance` | Update plan status, overview, cascade check |
 | Assessment | `/drvr:assess` | Curate test suite — categorize, prune scaffolding, promote valuable tests |
+| Internal Review | `/drvr:review` | Review code against standards, auto-fix violations |
 | Handoff | `/drvr:docs-artifacts` | Generate feature-overview, architecture, testing-guide, risk-assessment |
 | Open PR | `/drvr:open-pr` | Create PR from handoff docs via gh CLI |
 | PR Review | `drvr:sdlc-orchestration` | Track review status, suggest next steps |
@@ -122,6 +123,7 @@ Features follow a phased development lifecycle. Each phase has a dedicated skill
 | `/drvr:orchestrate <path>` | Resume a feature — read log, report state, suggest next action |
 | `/drvr:dry-run-plan <plan>` | Walk through a plan to identify gaps before implementation |
 | `/drvr:assess` | Curate test suite after implementation — categorize, prune, promote |
+| `/drvr:review` | Run internal standards review — check code, verify criteria, auto-fix |
 | `/drvr:docs-artifacts` | Generate handoff documentation for code review |
 | `/drvr:retro` | Evaluate session quality, patterns, and improvements |
 
@@ -143,6 +145,7 @@ Features follow a phased development lifecycle. Each phase has a dedicated skill
 | `driver-task-context` | Gather task-specific context from Driver MCP |
 | `cascade-check` | Analyze implementation deviations against downstream plans |
 | `handoff-analyzer` | Synthesize process artifacts + git + Driver context for handoff |
+| `standards-review` | Review code changes against codebase standards and plan criteria |
 
 ---
 

@@ -91,7 +91,7 @@ Features follow a phased development lifecycle. Each phase has a dedicated skill
                                                                                                                                     All plans complete
                                                                                                                                                  |
                                                                                                                                                  v
-                                                                                                                       /drvr:assess --> /drvr:docs-artifacts --> /drvr:open-pr --> PR Review <--> Revision --> Merge --> Verification --> Shipped
+                                                                                                                       /drvr:assess --> [/drvr:review] --> /drvr:docs-artifacts --> /drvr:open-pr --> PR Review <--> Revision --> Merge --> Verification --> Shipped
 ```
 
 ### Phase-Skill Mapping
@@ -110,6 +110,7 @@ Features follow a phased development lifecycle. Each phase has a dedicated skill
 | Bookkeeping | `drvr:implementation-guidance` Step 4 | Update plan status, overview, cascade check | deviations approved |
 | Transition | `drvr:sdlc-orchestration` | Identify next unblocked plan from dependency graph | bookkeeping complete |
 | Assessment | `/drvr:assess` | Curate test suite — categorize, prune scaffolding, promote | all plans complete, "assess tests" |
+| Internal Review | `/drvr:review` | Review code against standards, auto-fix violations | assessment has FAIL violations |
 | Handoff | `/drvr:docs-artifacts` | Generate feature overview, architecture, testing guide, risks | assessment complete |
 | Open PR | `/drvr:open-pr` | Create PR from handoff docs via gh CLI | handoff docs generated |
 | PR Review | `drvr:sdlc-orchestration` | Track review status, suggest next steps | PR created |
@@ -154,6 +155,7 @@ Every feature has a `FEATURE_LOG.md` at its root -- the source of truth for life
 | `/drvr:orchestrate <path>` | Resume work on a feature -- read the feature log, report current state, suggest next action |
 | `/drvr:dry-run-plan <plan>` | Dry run a plan to identify gaps before implementation |
 | `/drvr:assess` | Curate the test suite after implementation -- categorize, prune scaffolding, promote valuable tests |
+| `/drvr:review` | Run internal standards review — check code against standards, verify criteria and test coverage, auto-fix |
 | `/drvr:docs-artifacts <path>` | Generate handoff docs (overview, architecture, testing guide, risks) for code review |
 | `/drvr:context <task>` | Gather codebase context for a specific task via Driver MCP |
 | `/drvr:retro` | Analyze current session -- evaluate work quality, identify improvements |
@@ -182,6 +184,7 @@ Every feature has a `FEATURE_LOG.md` at its root -- the source of truth for life
 | `decisions-log` | Extract all design decisions from process artifacts in ADR format. |
 | `features-list` | Extract comprehensive feature inventory from code changes and process artifacts. |
 | `security-review` | Analyze code changes for security concerns -- auth, input validation, secrets handling. |
+| `standards-review` | Review code changes against codebase standards and plan criteria. Returns structured findings with proposed fixes. |
 | `test-coverage` | Analyze test coverage for code changes -- map tests to implementation, identify gaps. |
 | `dependency-analysis` | Analyze dependency changes -- new packages, version changes, license compliance, vulnerabilities. |
 
