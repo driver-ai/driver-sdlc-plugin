@@ -19,7 +19,8 @@
     "./agents/security-review.md",
     "./agents/test-coverage.md",
     "./agents/dependency-analysis.md",
-    "./agents/cascade-check.md"
+    "./agents/cascade-check.md",
+    "./agents/standards-review.md"
   ],
   "commands": [
     "./commands/setup.md",
@@ -32,6 +33,7 @@
     "./commands/open-pr.md",
     "./commands/assess.md",
     "./commands/driverize.md",
-    "./commands/un-driverize.md"
+    "./commands/un-driverize.md",
+    "./commands/review.md"
   ]
 }
