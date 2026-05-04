@@ -218,7 +218,12 @@ STDIN=$(cat)
 SESSION=$(echo "$STDIN" | jq -r '.session_id')
 CWD=$(echo "$STDIN" | jq -r '.cwd')
 
-rm -f "/tmp/driver-context-loaded-${SESSION}" "/tmp/driver-unavailable-${SESSION}"
+EVENT=$(echo "$STDIN" | jq -r '.type // "startup"')
+if [ "$EVENT" = "compact" ] || [ "$EVENT" = "resume" ]; then
+  : # Preserve flag file on compaction/resume — don't re-lock mid-session
+else
+  rm -f "/tmp/driver-context-loaded-${SESSION}" "/tmp/driver-unavailable-${SESSION}"
+fi
 
 DRIVER_FOUND=false
 for MCP_PATH in "${CWD}/.mcp.json" "${HOME}/.claude/.mcp.json"; do
@@ -236,7 +241,7 @@ if [ "$DRIVER_FOUND" = true ]; then
   POLICY=$(cat <<'POLICY_EOF'
 ## Driver MCP Routing Policy
 
-This project uses Driver MCP for codebase intelligence. Native exploration tools (Grep, Glob, search Bash commands, Explore/Plan/general-purpose agents) are blocked by project hooks until Driver context is loaded.
+This project uses Driver MCP for codebase intelligence. **Start with Driver tools** for codebase exploration. After calling any Driver MCP tool, native tools (Grep, Glob, Bash search, Explore/Plan agents) become available for follow-up.
 
 **Decision tree — pick the Driver tool that fits your need:**
 
@@ -250,7 +255,7 @@ This project uses Driver MCP for codebase intelligence. Native exploration tools
 | Recent changes, development history | `get_changelog` / `get_detailed_changelog` |
 | Onboarding, conventions, navigation tips | `get_llm_onboarding_guide` |
 
-**After Driver returns context**, use native Read/Edit/Write for surgical file modifications.
+**After calling any Driver MCP tool**, use native tools for follow-up work — Read, Edit, Write, Grep, Glob, Bash, and Explore/Plan agents are all available.
 POLICY_EOF
 )
 
@@ -279,7 +284,7 @@ STDIN=$(cat)
 PROMPT=$(echo "$STDIN" | jq -r '.prompt')
 
 if echo "$PROMPT" | tr '[:upper:]' '[:lower:]' | grep -qE 'where is|how does|what does|trace the|explore the|find the file|find the function|find the class|search the code|search for the|architecture of|navigate to|callers of|usage of|references to|who calls|defined in|implemented in|grep for|locate the'; then
-  RULE="Reminder: Use Driver MCP tools for codebase exploration. Start with gather_task_context for broad context, get_code_map for structure, or get_file_documentation for symbol-level detail. Native search tools are blocked by project hooks until Driver context is loaded."
+  RULE="Reminder: Start with Driver MCP tools for codebase exploration. Native tools are available after loading Driver context. Use gather_task_context for broad context, get_code_map for structure, or get_file_documentation for symbol-level detail."
   RULE_JSON=$(printf '%s' "$RULE" | jq -Rs .)
   printf '{"continue": true, "additionalContext": %s}' "$RULE_JSON"
 fi
@@ -370,7 +375,7 @@ Use Driver MCP to explore and search the codebase:
 3. **Drill into files with `get_file_documentation`** — get symbol-level detail
 4. **Read source with `Read`** — after Driver identifies the relevant file
 
-Native search tools (Grep, Glob, find, grep) are blocked by project hooks. Use Driver MCP instead.
+Start with Driver MCP for exploration. After loading Driver context, native search tools (Grep, Glob, Bash search) are available for targeted follow-up.
 ```
 
 ### 3.8: Settings Template — `.claude/settings.json`
@@ -443,7 +448,7 @@ Insert this block near the top of CLAUDE.md — after the first heading (project
 <!-- driverize:v__DRIVERIZE_VERSION__ -->
 ## Codebase Intelligence — Driver MCP
 
-This project uses Driver MCP for pre-computed codebase documentation. Native exploration tools (Grep, Glob, search commands, Explore/Plan agents) are blocked by project hooks until Driver context is loaded. Prefer Driver tools over native alternatives.
+**Start with Driver tools** for codebase exploration. After loading Driver context (calling any Driver MCP tool), native tools (Grep, Glob, Bash search, Explore/Plan agents) are available for follow-up.
 
 ### Decision Tree
 
@@ -459,7 +464,7 @@ This project uses Driver MCP for pre-computed codebase documentation. Native exp
 
 ### After Driver Returns
 
-Use native Read/Edit/Write for surgical file modifications. Driver gives you the map; native tools do the surgery.
+Use native tools (Read, Edit, Write, Grep, Glob, Bash, Explore/Plan agents) for follow-up work. Driver gives you the map; native tools do the surgery.
 
 ### Examples
 
