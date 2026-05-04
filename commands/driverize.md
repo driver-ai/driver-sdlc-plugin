@@ -294,7 +294,7 @@ exit 0
 name: Explore
 description: "Search and explore the codebase using Driver MCP tools. Use for: finding files, tracing code paths, locating symbols, understanding architecture, navigating structure."
 model: sonnet
-tools: mcp____MCP_SERVER_NAME____*, Read
+tools: mcp____MCP_SERVER_NAME____*, Read, Grep, Glob
 ---
 <!-- driverize:v__DRIVERIZE_VERSION__ -->
 
@@ -309,7 +309,7 @@ Use Driver MCP tools to explore the codebase. Pick the tool that fits:
 | Read source code | `get_source_file` or `Read` |
 | Recent changes | `get_changelog` |
 
-Use `Read` for targeted file access after Driver identifies the file. Do not attempt Grep, Glob, or Bash search commands — they are blocked by project hooks.
+Start by calling a Driver MCP tool (e.g. `get_code_map` or `gather_task_context`). Then use Grep and Glob for targeted follow-up. Prefer Driver tools for initial exploration.
 ```
 
 ### 3.5: Shadow Agent — `.claude/agents/Plan.md`
@@ -319,7 +319,7 @@ Use `Read` for targeted file access after Driver identifies the file. Do not att
 name: Plan
 description: "Plan implementation strategy using Driver MCP for codebase context. Use for: designing features, planning implementations, evaluating trade-offs, architectural decisions."
 model: sonnet
-tools: mcp____MCP_SERVER_NAME____*, Read
+tools: mcp____MCP_SERVER_NAME____*, Read, Grep, Glob
 ---
 <!-- driverize:v__DRIVERIZE_VERSION__ -->
 
@@ -330,7 +330,7 @@ Before planning, gather codebase context using Driver MCP:
 3. Use `get_code_map` to understand directory structure
 4. Use `get_file_documentation` for symbol-level detail on key files
 
-Use `Read` for targeted file access after Driver identifies relevant files. Do not attempt Grep, Glob, or Bash search commands — they are blocked by project hooks.
+Start by calling a Driver MCP tool (e.g. `get_code_map` or `gather_task_context`). Then use Grep and Glob for targeted follow-up. Prefer Driver tools for initial exploration.
 ```
 
 ### 3.6: Shadow Agent — `.claude/agents/general-purpose.md`
@@ -340,7 +340,7 @@ Use `Read` for targeted file access after Driver identifies relevant files. Do n
 name: general-purpose
 description: "General-purpose agent with Driver MCP for codebase context and full implementation capability. Use for: complex tasks, multi-step operations, code changes requiring broad context."
 model: sonnet
-tools: mcp____MCP_SERVER_NAME____*, Read, Edit, Write, Bash
+tools: mcp____MCP_SERVER_NAME____*, Read, Edit, Write, Bash, Grep, Glob
 ---
 <!-- driverize:v__DRIVERIZE_VERSION__ -->
 
@@ -350,7 +350,7 @@ Before exploring or searching the codebase, gather context using Driver MCP:
 2. Use `get_code_map` for directory navigation
 3. Use `get_file_documentation` for symbol-level detail
 
-After Driver returns context, use Read/Edit/Write/Bash for implementation. Prefer Driver tools over Bash search commands (grep, find, rg) — search commands are blocked by project hooks until Driver context is loaded.
+Start by calling a Driver MCP tool (e.g. `gather_task_context`). Then use Grep, Glob, and Bash search for targeted follow-up. Prefer Driver tools for initial exploration.
 ```
 
 ### 3.7: Skill — `.claude/skills/explore-codebase/SKILL.md`
