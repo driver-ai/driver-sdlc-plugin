@@ -147,7 +147,7 @@ if [ -f "$UNAVAIL_FILE" ]; then
 fi
 
 if echo "$TOOL" | grep -q '^mcp__'; then
-  if echo "$TOOL" | grep -qE '(gather_task_context|get_architecture_overview|get_code_map)$'; then
+  if echo "$TOOL" | grep -qE '(gather_task_context|get_architecture_overview|get_code_map|get_file_documentation|get_llm_onboarding_guide|get_source_file|get_changelog|get_detailed_changelog)$'; then
     echo "$VERIFY_TOKEN" > "$FLAG_FILE"
   fi
   exit 0
@@ -184,12 +184,18 @@ if [ "$TOOL" = "Agent" ]; then
   SUBAGENT=$(echo "$STDIN" | jq -r '.tool_input.subagent_type // ""')
   case "$SUBAGENT" in
     Explore|Plan|general-purpose|claude-code-guide)
-      echo "Use Driver MCP tools instead of the $SUBAGENT agent: gather_task_context for broad context, get_code_map for structure, get_file_documentation for details. Shadow agents in .claude/agents/ provide Driver-integrated alternatives." >&2
-      exit 2
+      if ! check_context_loaded; then
+        echo "Use any Driver MCP tool first (e.g. gather_task_context, get_code_map, get_file_documentation). Native $SUBAGENT agent is available after Driver context is loaded." >&2
+        exit 2
+      fi
+      exit 0
       ;;
     ""|null)
-      echo "Agent calls require an explicit subagent_type. Use Driver MCP tools for exploration: gather_task_context, get_code_map, get_file_documentation." >&2
-      exit 2
+      if ! check_context_loaded; then
+        echo "Use any Driver MCP tool first to load context. Native agents are available after Driver context is loaded." >&2
+        exit 2
+      fi
+      exit 0
       ;;
   esac
   exit 0
@@ -376,21 +382,12 @@ The following is the Driver settings block. It will be merged with any existing 
   "_driverize": {"version": "__DRIVERIZE_VERSION__", "installed_at": "__TIMESTAMP__"},
   "permissions": {
     "deny": [
-      "Bash(grep:*)",
-      "Bash(rg:*)",
-      "Bash(find:*)",
-      "Bash(ag:*)",
-      "Bash(ack:*)",
-      "Bash(fd:*)",
-      "Bash(tree:*)",
-      "Bash(env grep:*)",
-      "Bash(command grep:*)",
-      "Bash(env rg:*)",
-      "Bash(command rg:*)",
-      "Bash(env find:*)",
-      "Bash(command find:*)",
-      "Bash(touch /tmp/driver:*)",
-      "Bash(rm /tmp/driver:*)"
+      "Bash(touch /tmp/driver-*)",
+      "Bash(rm /tmp/driver-*)",
+      "Bash(echo * > /tmp/driver-*)",
+      "Bash(printf * > /tmp/driver-*)",
+      "Bash(tee /tmp/driver-*)",
+      "Bash(cp * /tmp/driver-*)"
     ],
     "ask": [
       "Edit(.claude/**)",
