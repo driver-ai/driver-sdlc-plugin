@@ -6,7 +6,7 @@ allowed-tools: Read, Write, Edit, Bash, Glob, Grep, mcp__driver-mcp__get_codebas
 
 # Driverize — Install Driver Enforcement Stack
 
-DRIVERIZE_VERSION: "1.0"
+DRIVERIZE_VERSION: "1.1"
 
 You are installing a defense-in-depth enforcement stack that ensures Claude Code uses Driver MCP for codebase intelligence instead of native exploration tools. The stack has four tiers:
 
@@ -537,13 +537,14 @@ If CLAUDE.md does not exist:
 
 If existing settings.json was parsed successfully in Phase 2:
 1. Load the existing JSON
-2. Append Driver deny rules to `permissions.deny` array — skip any that already exist
-3. Append Driver ask rules to `permissions.ask` array — skip any that already exist
-4. For each hook event (PreToolUse, SessionStart, UserPromptSubmit):
+2. If upgrading from a prior version (existing `_driverize` key with a version less than current): remove these v1.0-specific deny entries from `permissions.deny` before merging: `Bash(grep:*)`, `Bash(rg:*)`, `Bash(find:*)`, `Bash(ag:*)`, `Bash(ack:*)`, `Bash(fd:*)`, `Bash(tree:*)`, `Bash(env grep:*)`, `Bash(command grep:*)`, `Bash(env rg:*)`, `Bash(command rg:*)`, `Bash(env find:*)`, `Bash(command find:*)`. Also remove old colon-pattern entries: `Bash(touch /tmp/driver:*)`, `Bash(rm /tmp/driver:*)`. Then add the v1.1 deny entries.
+3. Append Driver deny rules to `permissions.deny` array — skip any that already exist
+4. Append Driver ask rules to `permissions.ask` array — skip any that already exist
+5. For each hook event (PreToolUse, SessionStart, UserPromptSubmit):
    - If the event key exists, append the Driver matcher entry to the array — skip if an identical matcher already exists
    - If the event key does not exist, create it with the Driver entry
-5. Preserve all other top-level keys (e.g., `allowedTools`, `model`, etc.)
-6. Write the merged JSON
+6. Preserve all other top-level keys (e.g., `allowedTools`, `model`, etc.)
+7. Write the merged JSON
 
 If no existing settings.json (or it failed to parse):
 1. Write the Driver settings template directly
@@ -633,6 +634,7 @@ rm -rf .claude/skills/explore-codebase
 
 ## Changelog
 
+- v1.1: Conditional enforcement — gate native tools behind Driver context instead of blocking permanently. Expand MCP triggers, add Agent unlock, fix deny rule paths, add forgery prevention, event-type-aware SessionStart hook, Grep/Glob in shadow agents.
 - v1.0: Initial defense-in-depth stack (4 tiers, 9 artifacts + CLAUDE.md block)
 
 ---
