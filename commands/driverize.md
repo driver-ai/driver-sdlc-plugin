@@ -6,7 +6,7 @@ allowed-tools: Read, Write, Edit, Bash, Glob, Grep, mcp__driver-mcp__get_codebas
 
 # Driverize — Install Driver Enforcement Stack
 
-DRIVERIZE_VERSION: "1.0"
+DRIVERIZE_VERSION: "1.1"
 
 You are installing a defense-in-depth enforcement stack that ensures Claude Code uses Driver MCP for codebase intelligence instead of native exploration tools. The stack has four tiers:
 
@@ -147,7 +147,7 @@ if [ -f "$UNAVAIL_FILE" ]; then
 fi
 
 if echo "$TOOL" | grep -q '^mcp__'; then
-  if echo "$TOOL" | grep -qE '(gather_task_context|get_architecture_overview|get_code_map)$'; then
+  if echo "$TOOL" | grep -qE '(gather_task_context|get_architecture_overview|get_code_map|get_file_documentation|get_llm_onboarding_guide|get_source_file|get_changelog|get_detailed_changelog)$'; then
     echo "$VERIFY_TOKEN" > "$FLAG_FILE"
   fi
   exit 0
@@ -184,12 +184,18 @@ if [ "$TOOL" = "Agent" ]; then
   SUBAGENT=$(echo "$STDIN" | jq -r '.tool_input.subagent_type // ""')
   case "$SUBAGENT" in
     Explore|Plan|general-purpose|claude-code-guide)
-      echo "Use Driver MCP tools instead of the $SUBAGENT agent: gather_task_context for broad context, get_code_map for structure, get_file_documentation for details. Shadow agents in .claude/agents/ provide Driver-integrated alternatives." >&2
-      exit 2
+      if ! check_context_loaded; then
+        echo "Use any Driver MCP tool first (e.g. gather_task_context, get_code_map, get_file_documentation). Native $SUBAGENT agent is available after Driver context is loaded." >&2
+        exit 2
+      fi
+      exit 0
       ;;
     ""|null)
-      echo "Agent calls require an explicit subagent_type. Use Driver MCP tools for exploration: gather_task_context, get_code_map, get_file_documentation." >&2
-      exit 2
+      if ! check_context_loaded; then
+        echo "Use any Driver MCP tool first to load context. Native agents are available after Driver context is loaded." >&2
+        exit 2
+      fi
+      exit 0
       ;;
   esac
   exit 0
@@ -212,7 +218,12 @@ STDIN=$(cat)
 SESSION=$(echo "$STDIN" | jq -r '.session_id')
 CWD=$(echo "$STDIN" | jq -r '.cwd')
 
-rm -f "/tmp/driver-context-loaded-${SESSION}" "/tmp/driver-unavailable-${SESSION}"
+EVENT=$(echo "$STDIN" | jq -r '.type // "startup"')
+if [ "$EVENT" = "compact" ] || [ "$EVENT" = "resume" ]; then
+  : # Preserve flag file on compaction/resume — don't re-lock mid-session
+else
+  rm -f "/tmp/driver-context-loaded-${SESSION}" "/tmp/driver-unavailable-${SESSION}"
+fi
 
 DRIVER_FOUND=false
 for MCP_PATH in "${CWD}/.mcp.json" "${HOME}/.claude/.mcp.json"; do
@@ -230,7 +241,7 @@ if [ "$DRIVER_FOUND" = true ]; then
   POLICY=$(cat <<'POLICY_EOF'
 ## Driver MCP Routing Policy
 
-This project uses Driver MCP for codebase intelligence. Native exploration tools (Grep, Glob, search Bash commands, Explore/Plan/general-purpose agents) are blocked by project hooks until Driver context is loaded.
+This project uses Driver MCP for codebase intelligence. **Start with Driver tools** for codebase exploration. After calling any Driver MCP tool, native tools (Grep, Glob, Bash search, Explore/Plan agents) become available for follow-up.
 
 **Decision tree — pick the Driver tool that fits your need:**
 
@@ -244,7 +255,7 @@ This project uses Driver MCP for codebase intelligence. Native exploration tools
 | Recent changes, development history | `get_changelog` / `get_detailed_changelog` |
 | Onboarding, conventions, navigation tips | `get_llm_onboarding_guide` |
 
-**After Driver returns context**, use native Read/Edit/Write for surgical file modifications.
+**After calling any Driver MCP tool**, use native tools for follow-up work — Read, Edit, Write, Grep, Glob, Bash, and Explore/Plan agents are all available.
 POLICY_EOF
 )
 
@@ -273,7 +284,7 @@ STDIN=$(cat)
 PROMPT=$(echo "$STDIN" | jq -r '.prompt')
 
 if echo "$PROMPT" | tr '[:upper:]' '[:lower:]' | grep -qE 'where is|how does|what does|trace the|explore the|find the file|find the function|find the class|search the code|search for the|architecture of|navigate to|callers of|usage of|references to|who calls|defined in|implemented in|grep for|locate the'; then
-  RULE="Reminder: Use Driver MCP tools for codebase exploration. Start with gather_task_context for broad context, get_code_map for structure, or get_file_documentation for symbol-level detail. Native search tools are blocked by project hooks until Driver context is loaded."
+  RULE="Reminder: Start with Driver MCP tools for codebase exploration. Native tools are available after loading Driver context. Use gather_task_context for broad context, get_code_map for structure, or get_file_documentation for symbol-level detail."
   RULE_JSON=$(printf '%s' "$RULE" | jq -Rs .)
   printf '{"continue": true, "additionalContext": %s}' "$RULE_JSON"
 fi
@@ -288,7 +299,7 @@ exit 0
 name: Explore
 description: "Search and explore the codebase using Driver MCP tools. Use for: finding files, tracing code paths, locating symbols, understanding architecture, navigating structure."
 model: sonnet
-tools: mcp____MCP_SERVER_NAME____*, Read
+tools: mcp____MCP_SERVER_NAME____*, Read, Grep, Glob
 ---
 <!-- driverize:v__DRIVERIZE_VERSION__ -->
 
@@ -303,7 +314,7 @@ Use Driver MCP tools to explore the codebase. Pick the tool that fits:
 | Read source code | `get_source_file` or `Read` |
 | Recent changes | `get_changelog` |
 
-Use `Read` for targeted file access after Driver identifies the file. Do not attempt Grep, Glob, or Bash search commands — they are blocked by project hooks.
+Start by calling a Driver MCP tool (e.g. `get_code_map` or `gather_task_context`). Then use Grep and Glob for targeted follow-up. Prefer Driver tools for initial exploration.
 ```
 
 ### 3.5: Shadow Agent — `.claude/agents/Plan.md`
@@ -313,7 +324,7 @@ Use `Read` for targeted file access after Driver identifies the file. Do not att
 name: Plan
 description: "Plan implementation strategy using Driver MCP for codebase context. Use for: designing features, planning implementations, evaluating trade-offs, architectural decisions."
 model: sonnet
-tools: mcp____MCP_SERVER_NAME____*, Read
+tools: mcp____MCP_SERVER_NAME____*, Read, Grep, Glob
 ---
 <!-- driverize:v__DRIVERIZE_VERSION__ -->
 
@@ -324,7 +335,7 @@ Before planning, gather codebase context using Driver MCP:
 3. Use `get_code_map` to understand directory structure
 4. Use `get_file_documentation` for symbol-level detail on key files
 
-Use `Read` for targeted file access after Driver identifies relevant files. Do not attempt Grep, Glob, or Bash search commands — they are blocked by project hooks.
+Start by calling a Driver MCP tool (e.g. `get_code_map` or `gather_task_context`). Then use Grep and Glob for targeted follow-up. Prefer Driver tools for initial exploration.
 ```
 
 ### 3.6: Shadow Agent — `.claude/agents/general-purpose.md`
@@ -334,7 +345,7 @@ Use `Read` for targeted file access after Driver identifies relevant files. Do n
 name: general-purpose
 description: "General-purpose agent with Driver MCP for codebase context and full implementation capability. Use for: complex tasks, multi-step operations, code changes requiring broad context."
 model: sonnet
-tools: mcp____MCP_SERVER_NAME____*, Read, Edit, Write, Bash
+tools: mcp____MCP_SERVER_NAME____*, Read, Edit, Write, Bash, Grep, Glob
 ---
 <!-- driverize:v__DRIVERIZE_VERSION__ -->
 
@@ -344,7 +355,7 @@ Before exploring or searching the codebase, gather context using Driver MCP:
 2. Use `get_code_map` for directory navigation
 3. Use `get_file_documentation` for symbol-level detail
 
-After Driver returns context, use Read/Edit/Write/Bash for implementation. Prefer Driver tools over Bash search commands (grep, find, rg) — search commands are blocked by project hooks until Driver context is loaded.
+Start by calling a Driver MCP tool (e.g. `gather_task_context`). Then use Grep, Glob, and Bash search for targeted follow-up. Prefer Driver tools for initial exploration.
 ```
 
 ### 3.7: Skill — `.claude/skills/explore-codebase/SKILL.md`
@@ -364,7 +375,7 @@ Use Driver MCP to explore and search the codebase:
 3. **Drill into files with `get_file_documentation`** — get symbol-level detail
 4. **Read source with `Read`** — after Driver identifies the relevant file
 
-Native search tools (Grep, Glob, find, grep) are blocked by project hooks. Use Driver MCP instead.
+Start with Driver MCP for exploration. After loading Driver context, native search tools (Grep, Glob, Bash search) are available for targeted follow-up.
 ```
 
 ### 3.8: Settings Template — `.claude/settings.json`
@@ -376,21 +387,12 @@ The following is the Driver settings block. It will be merged with any existing 
   "_driverize": {"version": "__DRIVERIZE_VERSION__", "installed_at": "__TIMESTAMP__"},
   "permissions": {
     "deny": [
-      "Bash(grep:*)",
-      "Bash(rg:*)",
-      "Bash(find:*)",
-      "Bash(ag:*)",
-      "Bash(ack:*)",
-      "Bash(fd:*)",
-      "Bash(tree:*)",
-      "Bash(env grep:*)",
-      "Bash(command grep:*)",
-      "Bash(env rg:*)",
-      "Bash(command rg:*)",
-      "Bash(env find:*)",
-      "Bash(command find:*)",
-      "Bash(touch /tmp/driver:*)",
-      "Bash(rm /tmp/driver:*)"
+      "Bash(touch /tmp/driver-*)",
+      "Bash(rm /tmp/driver-*)",
+      "Bash(echo * > /tmp/driver-*)",
+      "Bash(printf * > /tmp/driver-*)",
+      "Bash(tee /tmp/driver-*)",
+      "Bash(cp * /tmp/driver-*)"
     ],
     "ask": [
       "Edit(.claude/**)",
@@ -446,7 +448,7 @@ Insert this block near the top of CLAUDE.md — after the first heading (project
 <!-- driverize:v__DRIVERIZE_VERSION__ -->
 ## Codebase Intelligence — Driver MCP
 
-This project uses Driver MCP for pre-computed codebase documentation. Native exploration tools (Grep, Glob, search commands, Explore/Plan agents) are blocked by project hooks until Driver context is loaded. Prefer Driver tools over native alternatives.
+**Start with Driver tools** for codebase exploration. After loading Driver context (calling any Driver MCP tool), native tools (Grep, Glob, Bash search, Explore/Plan agents) are available for follow-up.
 
 ### Decision Tree
 
@@ -462,7 +464,7 @@ This project uses Driver MCP for pre-computed codebase documentation. Native exp
 
 ### After Driver Returns
 
-Use native Read/Edit/Write for surgical file modifications. Driver gives you the map; native tools do the surgery.
+Use native tools (Read, Edit, Write, Grep, Glob, Bash, Explore/Plan agents) for follow-up work. Driver gives you the map; native tools do the surgery.
 
 ### Examples
 
@@ -535,13 +537,14 @@ If CLAUDE.md does not exist:
 
 If existing settings.json was parsed successfully in Phase 2:
 1. Load the existing JSON
-2. Append Driver deny rules to `permissions.deny` array — skip any that already exist
-3. Append Driver ask rules to `permissions.ask` array — skip any that already exist
-4. For each hook event (PreToolUse, SessionStart, UserPromptSubmit):
+2. If upgrading from a prior version (existing `_driverize` key with a version less than current): remove these v1.0-specific deny entries from `permissions.deny` before merging: `Bash(grep:*)`, `Bash(rg:*)`, `Bash(find:*)`, `Bash(ag:*)`, `Bash(ack:*)`, `Bash(fd:*)`, `Bash(tree:*)`, `Bash(env grep:*)`, `Bash(command grep:*)`, `Bash(env rg:*)`, `Bash(command rg:*)`, `Bash(env find:*)`, `Bash(command find:*)`. Also remove old colon-pattern entries: `Bash(touch /tmp/driver:*)`, `Bash(rm /tmp/driver:*)`. Then add the v1.1 deny entries.
+3. Append Driver deny rules to `permissions.deny` array — skip any that already exist
+4. Append Driver ask rules to `permissions.ask` array — skip any that already exist
+5. For each hook event (PreToolUse, SessionStart, UserPromptSubmit):
    - If the event key exists, append the Driver matcher entry to the array — skip if an identical matcher already exists
    - If the event key does not exist, create it with the Driver entry
-5. Preserve all other top-level keys (e.g., `allowedTools`, `model`, etc.)
-6. Write the merged JSON
+6. Preserve all other top-level keys (e.g., `allowedTools`, `model`, etc.)
+7. Write the merged JSON
 
 If no existing settings.json (or it failed to parse):
 1. Write the Driver settings template directly
@@ -631,6 +634,7 @@ rm -rf .claude/skills/explore-codebase
 
 ## Changelog
 
+- v1.1: Conditional enforcement — gate native tools behind Driver context instead of blocking permanently. Expand MCP triggers, add Agent unlock, fix deny rule paths, add forgery prevention, event-type-aware SessionStart hook, Grep/Glob in shadow agents.
 - v1.0: Initial defense-in-depth stack (4 tiers, 9 artifacts + CLAUDE.md block)
 
 ---

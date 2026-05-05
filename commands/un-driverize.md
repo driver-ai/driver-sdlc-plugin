@@ -177,11 +177,12 @@ Restore `.pre-driver` backups where they exist.
 
 **If no backup exists — surgical removal:**
 
-Read `.claude/settings.json` and parse it as JSON. Perform these removals (hardcoded for v1.0):
+Read `.claude/settings.json` and parse it as JSON. Perform these removals (handles v1.0 and v1.1 — removing non-existent entries is a no-op):
 
 1. **Remove the `_driverize` metadata key** from the top level
 
 2. **From `permissions.deny` array**, remove these exact entries:
+   Entries from both v1.0 and v1.1 are listed. Removing non-existent entries is a no-op.
    - `Bash(grep:*)`
    - `Bash(rg:*)`
    - `Bash(find:*)`
@@ -197,6 +198,12 @@ Read `.claude/settings.json` and parse it as JSON. Perform these removals (hardc
    - `Bash(command find:*)`
    - `Bash(touch /tmp/driver:*)`
    - `Bash(rm /tmp/driver:*)`
+   - `Bash(touch /tmp/driver-*)`
+   - `Bash(rm /tmp/driver-*)`
+   - `Bash(echo * > /tmp/driver-*)`
+   - `Bash(printf * > /tmp/driver-*)`
+   - `Bash(tee /tmp/driver-*)`
+   - `Bash(cp * /tmp/driver-*)`
 
 3. **From `permissions.ask` array**, remove these exact entries:
    - `Edit(.claude/**)`
