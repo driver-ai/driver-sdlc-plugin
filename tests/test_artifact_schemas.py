@@ -311,7 +311,7 @@ class TestStructuralSections(unittest.TestCase):
 
     def test_research_overview_sections(self):
         """research/00-overview.md has required H2 sections."""
-        required = {"Status", "Problem Statement", "Scope", "Codebases", "Setup Questions"}
+        required = {"Status", "Problem Statement", "Scope", "Codebases"}
         for project in _FEATURE_PROJECTS:
             with self.subTest(project=project.name):
                 overview = project / "research" / "00-overview.md"
@@ -369,7 +369,7 @@ class TestStructuralSections(unittest.TestCase):
 
     def test_plan_overview_sections(self):
         """plans/00-overview.md has required H2 sections and a Progress table."""
-        required = {"Planning Strategy", "Dependency Graph", "Interface Contracts Between Plans"}
+        required = {"Planning Strategy", "Dependency Graph", "Interface Contracts Between Plans", "Feature Dependencies"}
         tested = 0
         active_projects = [p for p in _FEATURE_PROJECTS if is_active_feature(p)]
         for project in active_projects:

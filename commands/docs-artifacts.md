@@ -121,6 +121,12 @@ Updated driver-docs/ in features/oauth-support/:
 - testing-guide.md: No changes needed
 ```
 
+Commit the handoff documentation to the projects repo:
+
+```
+git add driver-docs/ FEATURE_LOG.md && git commit -m "chore: Handoff documentation — <feature name>"
+```
+
 ## Artifact Templates
 
 ### feature-overview.md

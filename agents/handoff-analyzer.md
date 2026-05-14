@@ -81,9 +81,14 @@ ls {process_artifacts_path}/research/ {process_artifacts_path}/plans/
 cd {codebase_path} && git branch --show-current && git rev-parse --is-inside-work-tree
 ```
 
+After `git branch --show-current`, cross-check the result against the Feature Branch from the Codebases table (read from `plans/00-overview.md` `## Implementation Environment` or `research/00-overview.md` `## Codebases`, with `Branch` column as legacy fallback). If mismatch: WARN "Current branch `<actual>` does not match Feature Branch `<expected>` from Codebases table. Proceeding — verify this is intentional."
+
 #### Step 1.2: Determine Base Branch
 
-For each codebase, determine the base branch (usually `main` or `develop`):
+For each codebase, determine the base branch using this fallback chain:
+1. `Base Branch` column in `plans/00-overview.md` `## Implementation Environment` or `research/00-overview.md` `## Codebases`
+2. `Branch` column in Codebases (legacy single-column format)
+3. `git symbolic-ref` auto-detect (fallback):
 
 ```bash
 cd {codebase_path}
@@ -161,11 +166,11 @@ Read every file in `driver-docs/detailed/` to build comprehensive understanding.
 
 #### Step 2.2: Query Driver MCP for Architecture Context
 
-For each codebase, get high-level context:
+For each codebase, get high-level context. Pass the Base Branch (determined in Step 1.2) as `branch_name` to ensure architecture docs describe the correct branch:
 
 ```
-get_architecture_overview(codebase_name)
-get_llm_onboarding_guide(codebase_name)
+get_architecture_overview(codebase_name, branch_name=base_branch)
+get_llm_onboarding_guide(codebase_name, branch_name=base_branch)
 ```
 
 #### Step 2.3: Synthesize Feature Overview

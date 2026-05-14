@@ -142,10 +142,10 @@ Check for required files and fill gaps.
 
 3. **Template version check** — If CLAUDE.md exists, read the first line. Look for `<!-- drvr:template-version:X.Y.Z -->`.
 
-   - **If found and matches current version (1.0.0):** Skip migration. Report: "CLAUDE.md is up to date (template v1.0.0)."
+   - **If found and matches current version (1.1.0):** Skip migration. Report: "CLAUDE.md is up to date (template v1.1.0)."
    - **If found but outdated:** Look up the migration path in the Migration Registry below. Apply each migration in sequence, asking user approval for each.
    - **If not found:** Treat as pre-versioning (version 0). Apply the full migration path from v0 → current.
-   - **If version is higher than current (1.0.0):** Warn: "CLAUDE.md has template version X.Y.Z which is newer than this plugin's current version (1.0.0). Skipping migration." and skip.
+   - **If version is higher than current (1.1.0):** Warn: "CLAUDE.md has template version X.Y.Z which is newer than this plugin's current version (1.1.0). Skipping migration." and skip.
 
    After all migrations are applied, update the version comment on line 1 to the current version. If no version comment exists, add it as the first line. Before adding, scan the file for any existing `<!-- drvr:template-version:` comments and remove them to prevent duplicates.
 
@@ -156,6 +156,7 @@ Each row describes what changed between template versions and how to migrate exi
 | From | To | Changes | Migration Steps |
 |------|----|---------|----------------|
 | (none) | 1.0.0 | Initial versioned template. Commands qualified with `drvr:` prefix. Skills qualified in tables. | 1. Replace 8 unqualified command names with `drvr:`-prefixed versions (see table below). 2. Replace 5 unqualified skill names with `drvr:`-prefixed versions in Skills and Phase-Skill Mapping tables. 3. Add `<!-- drvr:template-version:1.0.0 -->` as first line. |
+| 1.0.0 | 1.1.0 | Intent phase, internal review, open-pr, post-PR lifecycle, expanded agents list. | 1. Add Intent row (`drvr:intent-guidance`) to Phase-Skill Mapping table. 2. Add Internal Review (`/drvr:review`), Open PR (`/drvr:open-pr`), PR Review, Revision, Merge, Verification, Shipped, Retro rows to Phase-Skill Mapping. 3. Add 5 commands to Commands table: `/drvr:context`, `/drvr:review`, `/drvr:driverize`, `/drvr:un-driverize`, `/drvr:open-pr`. 4. Add `drvr:intent-guidance` to Skills table. 5. Add 7 agents to Agents table: commit-log, decisions-log, features-list, security-review, standards-review, test-coverage, dependency-analysis. 6. Update lifecycle diagram to include Intent phase and full post-assess flow. 7. Update version comment to `1.1.0`. |
 
 **Command name replacements** (v0 → v1.0.0):
 
@@ -262,7 +263,7 @@ Print a summary of everything that was done:
 Use this template when creating CLAUDE.md for a new projects directory. Replace `{{TEAM_NAME}}` with the project name and `{{DATE}}` with today's date.
 
 ````markdown
-<!-- drvr:template-version:1.0.0 -->
+<!-- drvr:template-version:1.1.0 -->
 # {{TEAM_NAME}} — SDLC Project Instructions
 
 This repository organizes development work by feature, with each feature containing its own lifecycle of artifacts. It is managed by the [Driver SDLC Plugin (drvr)](https://github.com/driver-ai/driver-sdlc-plugin) for Claude Code.
@@ -339,18 +340,19 @@ updated: "YYYY-MM-DD"
 Features follow a phased development lifecycle. Each phase has a dedicated skill that provides guidance.
 
 ```
-/drvr:feature -> Research -> Planning -> Validation -> Materialization -> Implementation -> Review -> Bookkeeping -> Next Plan -> ...
-                                                                                                                          |
-                                                                                                             All plans complete
-                                                                                                                          |
-                                                                                                                          v
-                                                                                                 /drvr:assess -> /drvr:docs-artifacts -> Handoff
+/drvr:feature -> Intent -> Research -> Planning -> Validation -> Materialization -> Implementation -> Review -> Bookkeeping -> Next Plan -> ...
+                                                                                                                                          |
+                                                                                                                             All plans complete
+                                                                                                                                          |
+                                                                                                                                          v
+                                                                                                /drvr:assess -> [/drvr:review] -> /drvr:docs-artifacts -> /drvr:open-pr -> PR Review <-> Revision -> Merge -> Verification -> Shipped
 ```
 
 ### Phase -> Skill Mapping
 
 | Phase | Skill / Command | What It Does |
 |-------|----------------|-------------|
+| Intent | `drvr:intent-guidance` | Mine the author's tacit knowledge, produce `research/00-intent.md` |
 | Research | `drvr:research-guidance` | Why-What-How methodology, document organization, completion criteria |
 | Planning | `drvr:planning-guidance` | TDD-first task design, test strategy, architecture fit, task breakdown |
 | Validation | `/drvr:dry-run-plan` | Walk through plan as-if implementing, severity-classified gaps |
@@ -359,7 +361,15 @@ Features follow a phased development lifecycle. Each phase has a dedicated skill
 | Review | `drvr:sdlc-orchestration` | Present deviations for user approval before bookkeeping |
 | Bookkeeping | `drvr:implementation-guidance` | Update plan status, overview, cascade check |
 | Assessment | `/drvr:assess` | Curate test suite — categorize, prune scaffolding, promote valuable tests |
+| Internal Review | `/drvr:review` | Review code against standards, auto-fix violations |
 | Handoff | `/drvr:docs-artifacts` | Generate feature-overview, architecture, testing-guide, risk-assessment |
+| Open PR | `/drvr:open-pr` | Create PR from handoff docs via gh CLI |
+| PR Review | `drvr:sdlc-orchestration` | Track review status, suggest next steps |
+| Revision | `drvr:sdlc-orchestration` | Guide revision cycle |
+| Merge | `drvr:sdlc-orchestration` | Track merge, verify CI |
+| Verification | `drvr:sdlc-orchestration` | Advisory post-merge checks |
+| Shipped | `drvr:sdlc-orchestration` | Terminal — suggest retro |
+| Retro | `/drvr:retro` | Evaluate session quality, identify improvements |
 
 ### Key Principles
 
@@ -379,13 +389,19 @@ Features follow a phased development lifecycle. Each phase has a dedicated skill
 | `/drvr:orchestrate <path>` | Resume a feature — read log, report state, suggest next action |
 | `/drvr:dry-run-plan <plan>` | Walk through a plan to identify gaps before implementation |
 | `/drvr:assess` | Curate test suite after implementation — categorize, prune, promote |
+| `/drvr:review` | Run internal standards review — check code against standards, auto-fix violations |
 | `/drvr:docs-artifacts` | Generate handoff documentation for code review |
+| `/drvr:open-pr [feature-path]` | Open a pull request from handoff documentation |
+| `/drvr:context <task>` | Gather codebase context for a specific task via Driver MCP |
 | `/drvr:retro` | Evaluate session quality, patterns, and improvements |
+| `/drvr:driverize` | Install Driver enforcement stack — hooks, shadow agents, context injection |
+| `/drvr:un-driverize` | Remove Driver enforcement stack — restore backups and remove artifacts |
 
 ## Skills
 
 | Skill | Purpose |
 |-------|---------|
+| `drvr:intent-guidance` | Mine author's tacit knowledge at feature start |
 | `drvr:research-guidance` | Why-What-How methodology, document organization |
 | `drvr:planning-guidance` | TDD-first plans, test strategy, task breakdown |
 | `drvr:materialize-tasks` | Materialize approved plan tasks into standalone task docs |
@@ -399,6 +415,13 @@ Features follow a phased development lifecycle. Each phase has a dedicated skill
 | `driver-task-context` | Gather task-specific context from Driver MCP |
 | `cascade-check` | Analyze implementation deviations against downstream plans |
 | `handoff-analyzer` | Synthesize process artifacts + git + Driver context for handoff |
+| `commit-log` | Extract detailed commit history for handoff documentation |
+| `decisions-log` | Extract design decisions from research docs and plans |
+| `features-list` | Catalog all capabilities added in a feature branch |
+| `security-review` | Analyze code changes for security concerns |
+| `standards-review` | Review code against codebase standards and plan criteria |
+| `test-coverage` | Map tests to implementation, identify coverage gaps |
+| `dependency-analysis` | Review dependency changes, license compliance, vulnerabilities |
 
 ---
 

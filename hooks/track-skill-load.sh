@@ -32,6 +32,7 @@ SKILL_SHORT=$(echo "$SKILL_NAME" | sed 's/^[^:]*://')
 
 PHASE=""
 case "$SKILL_SHORT" in
+    intent-guidance)      PHASE="Intent" ;;
     research-guidance)    PHASE="Research" ;;
     planning-guidance)    PHASE="Planning" ;;
     implementation-guidance) PHASE="Implementation" ;;

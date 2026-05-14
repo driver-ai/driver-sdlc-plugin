@@ -5,6 +5,8 @@ description: |
   and completion criteria. Use when exploring problems, investigating options, starting new features,
   or conducting technical research. Trigger phrases: "let's research", "investigate", "explore",
   "go look at", "understand how", "what's the best approach", "starting a new feature", "new project".
+  Do NOT activate for: "capture intent", "intent mining", "start intent" —
+  those activate intent-guidance.
 ---
 
 # Research
@@ -27,7 +29,11 @@ You are guiding technical research against one or more codebases using Driver MC
 
 ## Step 1: Understand the Research Question
 
-Before touching any tools, understand what the user wants to learn.
+Intent mining is now upstream — `research/00-intent.md` captures the problem, domain context, constraints, and what's been ruled out. Read it for context before asking questions.
+
+**If `research/00-intent.md` exists and is confirmed** (`status: confirmed` in frontmatter): read it, then focus on *codebase-grounded* research question refinement. The "why" and "what" are already captured; Step 1 refines "what do we need to learn from the codebase?"
+
+**If `research/00-intent.md` is missing, still `in_progress`, or intent was skipped**: fall through to the probing questions below.
 
 **Ask probing questions:**
 - What are you trying to understand? What decision does this research inform?
@@ -109,13 +115,41 @@ Now explore implementation approaches.
 
 ---
 
+## Step 1.5: Cross-Feature Scan
+
+Before diving into codebase context, scan for other active features that may overlap with this one. This is an **awareness scan** — at this point, this feature's file scope isn't concrete yet (that comes from `gather_task_context` in Step 3). The goal is situational awareness, not precise file-to-file comparison.
+
+**Scan other active features:**
+
+1. Determine the projects directory from the current feature path — navigate up to the `features/` parent directory
+2. List other feature directories (exclude the current feature): `find <projects_path>/features -maxdepth 2 -name "FEATURE_LOG.md" -not -path "<current_feature>/*"`
+3. For each, read the `**Phase**:` field from `FEATURE_LOG.md`. Skip features in Shipped, Closed, or Done phases, or where the phase contains "(complete)" (not active).
+4. For each active feature, read plan files (`plans/[0-9][0-9]-*.md`, excluding `00-overview.md`):
+   - Extract file paths from `**Files**:` entries in Task Breakdown sections — these may be inline (same line as `**Files**:`) or multiline (paths on subsequent `- ` lines). Paths may be backtick-wrapped.
+   - Extract file paths from `Target File` columns in Data Structures & Callables tables
+5. Present findings as **WARN advisory** — which features exist, what files they plan to touch, and what phase they're in:
+
+````
+Active features with planned file modifications:
+- feature/<name> (Phase: <phase>) — files: <file1>, <file2>
+  Risk: <HIGH if in Implementation, MEDIUM if in Planning, LOW if in Research>
+````
+
+The user can identify potential overlaps based on their knowledge of this feature's scope. Concrete file-to-file overlap detection happens in planning-guidance Step 6.
+
+6. If no other features exist, no active features have plans, or no plan files contain parseable file references — skip silently
+
+**This is advisory only.** The user decides whether to coordinate with other features. Do not block research progress.
+
+---
+
 ## Step 2: Resolve Codebase Standards
 
 **Why a separate step**: This step reads the codebase's standards documents directly because `gather_task_context` (Step 3) synthesizes conventions from its pre-computed documentation, which may paraphrase or omit specific rules. The raw CLAUDE.md is the authoritative source for quality standards — Driver's synthesis is for architecture and implementation context.
 
 **Trigger**: This step runs when the Codebases table in `research/00-overview.md` has at least one entry with a Local Path filled in. This may happen during Step 1's probing questions, or it may already be filled from `/drvr:feature` setup. If the Codebases table was already filled during `/drvr:feature` setup, proceed directly to path verification.
 
-**Check setup question answer first**: Read the Setup Questions section in `research/00-overview.md`. If the user already answered the standards question with a specific path, verify it exists and use it as the primary source (still check for subdirectory-level overrides). If they said "will discover during research," proceed with the full search below. If they said "none" or equivalent, do a quick check (CLAUDE.md at repo root only) to confirm, then accept their answer — don't ask again.
+**Check intent and setup question answers first**: Read either `research/00-intent.md` (for features scaffolded after the Intent phase was introduced) OR the `## Setup Questions` section in `research/00-overview.md` (for legacy features scaffolded before Intent). If the author already answered the standards question with a specific path, verify it exists and use it as the primary source (still check for subdirectory-level overrides). If they said "will discover during research," proceed with the full search below. If they said "none" or equivalent, do a quick check (CLAUDE.md at repo root only) to confirm, then accept their answer — don't ask again.
 
 ### Path Verification
 
@@ -200,7 +234,7 @@ Index this artifact in `research/00-overview.md`'s Research Documents table (use
 
 **What it does:** It spawns a specialized context agent on Driver's servers that reads pre-computed, exhaustive codebase documentation — architecture overviews, code maps, file-level documentation, changelogs — and does live runtime analysis. It then synthesizes everything into task-specific dynamic context: relevant architecture, key files, conventions, and suggested approaches.
 
-**How to call it:** Provide a detailed task description and codebase names. The richer your description, the better the context you get back.
+**How to call it:** Provide a detailed task description and codebase names. The richer your description, the better the context you get back. When calling `gather_task_context`, pass the Base Branch from the Codebases table as `branch_name` in the codebases array entry. This ensures Driver MCP returns context from the stable branch, not the default branch. If the Codebases table uses a single `Branch` column (legacy format), use that value as `branch_name`. For multi-codebase features, pass each codebase's Base Branch as its own `branch_name` in its own codebases array entry (e.g., `codebases: [{codebase_name: 'backend', branch_name: 'develop'}, {codebase_name: 'frontend', branch_name: 'main'}]`).
 
 ```
 Example task description:
@@ -246,7 +280,7 @@ This step runs immediately after `gather_task_context` returns. It's a lightweig
 
 For each codebase in the Codebases table, run these commands in the directory specified by its Local Path column:
 
-- **Branch check**: run `git branch --show-current` in the target codebase's Local Path directory. Report the current branch so the user can confirm they're on the right one. If the Codebases table has a Branch column entry, compare against it. If different, note: "Local branch is `<branch>`, Codebases table specifies `<expected>`. You may need to switch branches before implementation." This is a user-awareness check, not a validation failure.
+- **Branch check**: run `git branch --show-current` in the target codebase's Local Path directory. Report the current branch so the user can confirm they're on the right one. Compare against the Feature Branch column from the Codebases table (or the `Branch` column in legacy format). If different, note: "Local branch is `<branch>`, Codebases table specifies Feature Branch `<expected>`." This is a user-awareness check, not a validation failure.
 - **Key file existence**: for files that `gather_task_context` referenced as architecturally important, verify they exist locally at the stated paths using `ls` or `Glob`. Flag any that are missing locally — they may have been renamed or deleted.
 - **Uncommitted changes**: run `git status --short` in the target codebase's Local Path directory. If there are uncommitted changes to files that `gather_task_context` referenced in its response, note them: "Local file `<path>` has uncommitted changes — Driver's documentation may not reflect the current state of this file."
 - **Not a git repo**: if the Local Path is not a git repository (`git rev-parse --git-dir` fails), skip branch check and uncommitted changes. Note: "Codebase at `<path>` is not a git repo — skipping git-based validation."
@@ -337,6 +371,46 @@ When the user indicates research is complete:
    - Remaining open questions
 3. **Confirm with the user** — "Research artifacts are finalized. The overview at `00-overview.md` indexes everything."
 
+### Decision Logging
+
+When research surfaces significant decisions, append an entry to `DECISIONS.md` at the feature root. Log decisions for:
+- Scope decisions: what's in/out of research scope
+- Technology or approach choices: when multiple options exist and one is chosen
+- Significant rejected alternatives: approaches explored and discarded, with reasoning
+- Context shifts: when new information changes the direction
+
+Not every micro-decision needs an entry — trivial choices (variable naming, file ordering) should not be logged.
+
+#### Entry template
+
+```markdown
+---
+
+### DEC-NNN: <Title>
+
+**Date**: YYYY-MM-DD
+**Phase**: Research
+**Trigger**: <what prompted this decision>
+
+**Decision**: <what was decided>
+
+**Alternatives Considered**:
+- <Alt 1>: <why rejected>
+- <Alt 2>: <why rejected>
+
+**Rationale**: <why this choice was made>
+
+**Context**: <links to research docs, plan sections, or external sources>
+```
+
+When appending the first decision entry (replacing the `_No decisions recorded yet._` placeholder), also append a row to `FEATURE_LOG.md`: `| <today> | First decision logged | \`DECISIONS.md\` |`
+
+**Commit the research artifact** to the projects repo after creating or finalizing the document:
+
+```
+git add research/ FEATURE_LOG.md && git commit -m "chore: Research artifact — <doc name>"
+```
+
 ---
 
 ## Anti-Patterns
@@ -378,3 +452,6 @@ Before sending any response during research, verify:
 - [ ] **Feature log?** — Did I update `FEATURE_LOG.md` when creating new research docs?
 - [ ] **Standards resolved?** — Have I searched for CLAUDE.md at each codebase path? If not found, did I ask the user?
 - [ ] **Local state validated?** — After gather_task_context, did I check branch, key file existence, and uncommitted changes locally?
+- [ ] **Decision log?** — Did I append to DECISIONS.md for significant decisions, rejected alternatives, or context shifts?
+- [ ] **Artifacts committed?** — Did I commit new artifacts to the projects repo?
+- [ ] **Cross-feature scan?** — Did I check other active features for overlapping file targets?

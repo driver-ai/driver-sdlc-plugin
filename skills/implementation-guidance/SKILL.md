@@ -62,6 +62,32 @@ After completing each task:
 | **Scope change** | More/less work than expected | Note impact on remaining tasks |
 | **Blocker** | Can't proceed as planned | Stop, explain, ask the user |
 
+For **Approach change** or **Scope change** deviations, also append a decision entry to `DECISIONS.md` capturing the reasoning — what was planned, what changed, what alternatives existed, and why this deviation was the right call.
+
+#### Entry template
+
+```markdown
+---
+
+### DEC-NNN: <Title>
+
+**Date**: YYYY-MM-DD
+**Phase**: Implementation
+**Trigger**: <what prompted this decision>
+
+**Decision**: <what was decided>
+
+**Alternatives Considered**:
+- <Alt 1>: <why rejected>
+- <Alt 2>: <why rejected>
+
+**Rationale**: <why this choice was made>
+
+**Context**: <links to research docs, plan sections, or external sources>
+```
+
+When appending the first decision entry (replacing the `_No decisions recorded yet._` placeholder), also append a row to `FEATURE_LOG.md`: `| <today> | First decision logged | \`DECISIONS.md\` |`
+
 ---
 
 ## Commit Discipline
@@ -131,12 +157,10 @@ Validate the codebase target from task docs' `## Codebase` section.
 
 - **2.1 Codebase root exists** — Read the codebase root path from any task doc. Verify the path exists on disk and is a directory. If not: BLOCK.
 - **2.2 Git repository check** — Verify the codebase root is a git repo: `git -C <root> rev-parse --is-inside-work-tree`. If not: WARN.
-- **2.3 Branch check** — Compare `git -C <root> branch --show-current` against the branch in task docs. Mismatch: WARN. Detached HEAD: WARN.
+- **2.3 Branch check** — Compare `git -C <root> branch --show-current` against the Feature Branch in the task doc's `## Codebase` section. If the task doc uses a single `**Branch**:` field (legacy format), compare against that. Mismatch: WARN. Detached HEAD: WARN.
 - **2.4 Uncommitted changes** — Run `git -C <root> status --short`. Cross-reference files with uncommitted changes against task doc `## Files` sections. Overlapping files: WARN per file. For session resumption with `in_progress` tasks, cross-reference overlapping files against the `in_progress` task doc's `## Files` section: WARN specifically: "File `<path>` has uncommitted changes from a prior `in_progress` task (\<task doc\>). These may be partial implementation artifacts. Review or discard before restarting this task."
-- **2.5 Codebase table consistency** — Read `research/00-overview.md` Codebases table. Parsing rules: ignore rows where Local Path is `_TBD_`, empty, whitespace-only, or contains placeholder text (e.g., `_fill in_`). Two comparisons:
-  1. **Task doc vs table**: Compare the task doc's codebase root path against Local Path entries. If a matching codebase name exists but paths differ: BLOCK. "Task docs point to `<task-doc-root>` but Codebases table says `<table-path>`. Task docs may have been materialized from a different clone. Re-materialize from the correct clone."
-  2. **Working directory vs table**: Run `pwd` in the shell to determine the current working directory. Compare against Local Path entries. If paths differ: BLOCK. "Running from `<cwd>` but Codebases table says `<table-path>`. You may be running from a different clone. Switch to the correct clone or update the Codebases table."
-  If Codebases table is missing, empty, or has no matching entry for either comparison: INFO (not blocking — table may not reference this codebase).
+- **2.5 Codebase table consistency** — Read codebase path info from `plans/00-overview.md` `## Implementation Environment` (or `research/00-overview.md` `## Codebases` if no IE section exists). Compare the task doc's codebase root path against the recorded paths. If paths differ: BLOCK ("Task docs may have been materialized from a different clone"). Also compare the current working directory. If no matching entry found: INFO.
+- **2.6 Worktree readiness** — If the dependency graph has parallelizable tasks (from parallel execution group derivation): (1) **Branch mismatch escalation:** If pre-flight 2.3 detected a branch mismatch (current branch ≠ Feature Branch), escalate from WARN to BLOCK: "Worktree isolation requires the correct Feature Branch. Current branch `<actual>` does not match Feature Branch `<expected>`. Switch to the Feature Branch before running parallel tasks." (2) **Clean working directory:** Verify `git -C <root> status --short --untracked-files=no` shows no uncommitted changes to tracked files. Uncommitted changes: WARN. "Uncommitted changes detected. Worktree isolation requires a clean working directory. Commit or stash changes before parallel execution." (3) **Existing worktrees:** Check `git -C <root> worktree list`. If worktrees other than the main one exist: WARN. "Existing worktrees found. These may conflict with parallel execution."
 
 #### Phase 3: Staleness Detection
 
@@ -153,7 +177,7 @@ Existing checks, adapted to read from task docs.
 
 - **4.1 Required tools** — Scan task docs for tool references (test runners, build tools, linters). Check accessibility. Missing: BLOCK.
 - **4.2 Environment variables** — Scan task docs and plan constraints for env var references. Missing: WARN.
-- **4.3 Test baseline** — Run the test suite from the codebase root. Test command comes from: task doc constraints → plan constraints → codebase CLAUDE.md → common defaults. Tests fail: BLOCK. No test command found: WARN.
+- **4.3 Test baseline** — Run the test suite from the codebase root. Test command comes from: task doc `## Codebase` section (if it includes a test command) → plan overview Implementation Environment → task doc constraints → plan constraints → codebase CLAUDE.md → common defaults. Tests fail: BLOCK. No test command found: WARN.
 - **4.4 Referenced file paths** — For each task doc, verify every file in `## Files` exists (resolved as `<codebase_root>/<relative_path>`). File missing + task says modify: BLOCK. File missing + task says create: OK. File exists + task says create: WARN.
 - **4.5 Interface verification** — For task docs that reference modifying specific functions/classes, read the local file and verify the current signature. Runs unconditionally (not just when stale). Mismatch: WARN. Additionally, if the task doc contains an inline snippet (`#### Snippet:`) for a modified callable, diff the snippet's signature against the local file directly — this catches signature drift that the plan-level check may have missed. Mismatch: WARN.
 
@@ -165,7 +189,7 @@ Existing checks, adapted to read from task docs.
 #### Check Summary
 
 - **Blocking checks** (9 total): 1.1, 1.2 (plan mismatch), 1.3 (circular deps), 2.1, 2.5, 3.4, 4.1, 4.3, 4.4 (modify files)
-- **Warning checks** (10 total): 2.2, 2.3, 2.4, 3.1, 3.2, 3.3, 4.2, 4.5, 5.1, 5.2
+- **Warning checks** (11 total): 2.2, 2.3, 2.4, 2.6, 3.1, 3.2, 3.3, 4.2, 4.5, 5.1, 5.2
 - **Info checks** (1 total): 1.4
 
 #### Pre-Flight Report Format
@@ -176,7 +200,7 @@ Existing checks, adapted to read from task docs.
 **Plan:** <plan-name>
 **Task docs:** N found (M complete, K pending)
 **Codebase:** <name> at <root>
-**Branch:** <branch> (matches task docs / WARN: mismatch)
+**Feature Branch:** <feature-branch> (matches task docs / WARN: mismatch)
 **Materialized:** <timestamp> (<age> — fresh / stale)
 
 ### Checks
@@ -188,7 +212,7 @@ Existing checks, adapted to read from task docs.
 | Integrity | Dependency graph | PASS | No circular deps |
 | Integrity | Completed tasks | INFO | Tasks 1-3 complete |
 | Targeting | Codebase root | PASS | Path exists, is git repo |
-| Targeting | Branch | PASS | On <branch> |
+| Targeting | Feature Branch | PASS | On <feature-branch> |
 | Targeting | Uncommitted changes | WARN | 1 file overlaps |
 | Targeting | Codebase table | PASS | Task doc root and working directory match Codebases entry |
 | Staleness | Age | PASS | < 24 hours |
@@ -265,6 +289,66 @@ Adjacent tasks that are tightly coupled should be batched into a single subagent
 
 Batching reduces subagent overhead and gives the subagent better context. Only batch tasks that are sequential and closely related — don't batch independent work.
 
+#### Parallel Execution Groups
+
+Before executing tasks, analyze the `depends_on` DAG to identify parallelizable work:
+
+1. Build the dependency graph from all task doc frontmatter `depends_on` fields
+2. Identify tasks with no unresolved dependencies (all dependencies either complete or absent)
+3. Among those, identify tasks that are mutually independent (no task depends on another in the group) AND whose `## Files` sections have no overlapping file paths. Tasks with overlapping files must be ordered sequentially even if the DAG allows parallelism — parallel worktree modifications to the same file will always conflict on merge. When multiple tasks overlap, keep the lowest-numbered overlapping task in the parallel group and defer higher-numbered overlapping tasks to subsequent groups (they'll be re-evaluated after the current group completes).
+4. These form a **parallel execution group** (max 4 concurrent worktree agents — split larger groups into sub-groups of up to 4, executed sequentially between sub-groups. The user can override this default.)
+5. Report to user: "Tasks N, M, P have no mutual dependencies — running in parallel with worktree isolation."
+6. After the group completes and merges, re-evaluate: the next set of unblocked tasks forms the next group
+7. Continue until all tasks are complete
+
+**Mandatory worktree isolation:** For tasks in a parallel group, ALWAYS spawn a subagent with `isolation: "worktree"` regardless of task complexity. The existing "do it directly for simple edits" guidance does NOT apply to parallel tasks — main-repo modifications would break isolation for concurrent worktree agents.
+
+**Skip worktrees when:**
+- The plan has only 1 task remaining
+- All remaining tasks form a linear dependency chain (no parallelism possible)
+- The user explicitly requests sequential execution
+- Tasks are candidates for batching (sequential and closely related per the Task Batching subsection) — batching takes precedence over parallelization even if `depends_on` fields allow parallelism
+
+**Dependency-respecting execution order example:**
+```
+Tasks: 1(none), 2(none), 3(deps:1), 4(deps:1,2), 5(deps:3)
+Group 1: [1, 2] — parallel (worktree isolation)
+Group 2: [3, 4] — parallel (both unblocked after Group 1 completes)
+Group 3: [5] — sequential (depends on 3)
+```
+
+**For each task in a parallel group:**
+1. Spawn the subagent with `isolation: "worktree"` — Claude Code creates a temporary git worktree automatically
+2. The subagent's prompt is the same as the standard template, but the worktree may have a different root path. The subagent should use its working directory (the worktree) as the codebase root.
+3. The subagent commits its changes within the worktree before returning
+
+**Items 1-9 mapping for parallel groups:** The standard per-task items are reorganized:
+- **Before spawning:** Set all tasks in the group to `status: in_progress` (item 1) — this happens before agents run, so it doesn't violate the modification guard.
+- **During execution (within each worktree subagent):** Items 2 (read task doc), 3 (execute), 5 (run tests), and 7 (commit) happen inside the subagent.
+- **After merge-back:** Item 4 (review result), 6 (track deviations), and 8 (update log) are processed for all group tasks together. Item 9 (set `status: complete`) is done per-task after each successful merge.
+
+**Merge-Back Procedure:** After all parallel subagents complete, merge worktree branches one at a time:
+
+1. `git merge <worktreeBranch>` — merge into current (Feature) branch
+2. If merge succeeds: clean up with `git worktree remove <worktreePath>` and `git branch -d <worktreeBranch>`. Log task as complete.
+3. If merge conflict: **BLOCK**. Do NOT merge remaining worktrees until resolved. Report: "Merge conflict from parallel task N. Conflicting files: X, Y. Remaining unmerged worktrees: worktree-task-M, worktree-task-P. Resolve conflicts manually, then continue with remaining merges." Store merge state in the implementation log. On re-invocation or after conflict resolution, detect remaining worktrees via `git worktree list` and continue the merge sequence.
+4. If a parallel subagent fails (tests fail, subagent errors, or timeout): skip merge-back for that task — do NOT merge its worktree. Clean up with `git worktree remove --force <worktreePath>` and `git branch -D <worktreeBranch>`. Mark task as failed in the implementation log. Continue merging other successful tasks. WARN: "Task N failed in worktree — skipping merge. Review output and re-run sequentially." If the subagent result does not include worktree fields (crash/timeout), check `git worktree list` for orphaned worktrees and clean up any found.
+5. If worktree creation itself fails: fall back to sequential execution for that task. WARN: "Worktree creation failed for Task N — falling back to sequential execution."
+6. After all merges complete, run the test suite to verify the combined changes work together. If post-merge tests fail: report failing tests and let the user decide how to proceed.
+
+**Worktree subagent prompt overrides:**
+1. **Root path:** Replace `**Root**: <absolute path>` with `**Root**: (worktree — use your current working directory)`
+2. **cd/branch instruction:** Replace instruction 1 with: "Your current working directory IS the codebase root (worktree isolation). Do NOT change to any other directory and do NOT change branches."
+3. **Test command:** Strip any `cd <path> &&` prefix from test commands — the worktree is already at the codebase root.
+4. **Branch annotation:** `**Feature Branch**: <value> (informational — do not run git checkout)`. `**Base Branch**: <value> (informational — merge target and Driver MCP context branch)`.
+5. **Commit instruction:** Add: "Commit your changes within the worktree before reporting."
+6. **Emergent files:** Add: "If you create files not listed in `## Files`, prefer unique names or paths to minimize merge conflicts with other parallel tasks."
+7. Goal, Files, Tests, Constraints, Context, Standards sections are copied unchanged from the task doc.
+
+**Main-repo modification guard:** Do NOT modify any files in the main working directory while worktree agents are running. Defer all bookkeeping, log updates, and task doc status changes until after all merges and post-merge tests complete.
+
+**For sequential tasks (with dependencies):** Continue using the existing subagent spawning without `isolation: "worktree"`. The main working directory is used directly.
+
 ### Step 4: Summarize
 
 After all tasks are complete:
@@ -297,7 +381,7 @@ Write a status header at the TOP of the plan file (before `## Context`):
 ```markdown
 ## Implementation Status: COMPLETE
 
-**Branch:** `<from log>`
+**Feature Branch:** `<from log>`
 **Implementation log:** `implementation/log-<plan>.md`
 **Tests:** <test count> passing
 **Commits:** <count> on branch
@@ -343,8 +427,14 @@ Also stage task doc status changes:
 git add plans/<plan>/tasks/*.md
 ```
 
+Stage implementation log and feature log:
+
 ```
-git commit -m "chore: Update plan status and overview for plan <name>"
+git add implementation/log-<plan>.md FEATURE_LOG.md 2>/dev/null
+```
+
+```
+git commit -m "chore: Bookkeeping complete — plan <name>"
 ```
 
 #### 5.5: Transition Suggestion
@@ -368,7 +458,8 @@ Implement the following task.
 
 ## Codebase
 **Root**: <from task doc ## Codebase section>
-**Branch**: <from task doc ## Codebase section>
+**Base Branch**: <value> (merge target / Driver MCP context branch — for reference only, implementation targets Feature Branch)
+**Feature Branch**: <from task doc ## Codebase section>
 
 All file paths are relative to the codebase root.
 Change directory to the codebase root before starting work.
@@ -451,7 +542,7 @@ Write to `implementation/log-<plan>.md` (e.g., `implementation/log-01a.md`).
 # Implementation Log: <Plan Name>
 
 **Plan:** `plans/<plan>.md`
-**Branch:** `<branch-name>`
+**Feature Branch:** `<branch-name>`
 **Started:** <date>
 
 ---
@@ -460,6 +551,7 @@ Write to `implementation/log-<plan>.md` (e.g., `implementation/log-01a.md`).
 
 **Task doc:** `plans/<plan>/tasks/NN-name.md`
 **Status:** Complete
+**Execution:** parallel group N, worktree isolation | sequential (main working directory)
 **Commit:** `<hash>` — <message>
 
 **Planned:**
@@ -478,9 +570,9 @@ Write to `implementation/log-<plan>.md` (e.g., `implementation/log-01a.md`).
 **Tasks completed:** N/N
 **Total commits:** N
 
-| Commit | Tasks | Description |
-|--------|-------|-------------|
-| `<hash>` | <range> | <message> |
+| Commit | Tasks | Description | Execution |
+|--------|-------|-------------|-----------|
+| `<hash>` | <range> | <message> | parallel group N, worktree | sequential |
 
 **Total deviations:** N
 **Follow-up work identified:** ...
@@ -573,3 +665,5 @@ Task docs are the persistent source of truth for task state. The implementation 
 - [ ] **Bookkeeping done?** — If all tasks complete, did I run Step 5?
 - [ ] **Feature log?** — Did I update `FEATURE_LOG.md` at implementation start and completion?
 - [ ] **Standards in subagent prompt?** — If a codebase standards artifact exists, did I include the Code Quality Standards section in the subagent prompt?
+- [ ] **Decision log?** — For approach-change or scope-change deviations, did I append to DECISIONS.md?
+- [ ] **Artifacts committed?** — Does the bookkeeping commit include FEATURE_LOG.md and implementation log?

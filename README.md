@@ -85,20 +85,21 @@ The drvr plugin generates most artifacts through guided workflows. Your job is t
 ## SDLC Workflow
 
 ```
-/drvr:feature --> Research --> Planning --> Validation --> Materialization --> Implementation --> Review --> Bookkeeping --> Next Plan --> ...
-                                                                                                                                |
-                                                                                                                   All plans complete
-                                                                                                                                |
-                                                                                                                                v
-                                                                                                        /drvr:assess --> /drvr:docs-artifacts --> Ship
+/drvr:feature --> Intent --> Research --> Planning --> Validation --> Materialization --> Implementation --> Review --> Bookkeeping --> Next Plan --> ...
+                                                                                                                                                 |
+                                                                                                                                    All plans complete
+                                                                                                                                                 |
+                                                                                                                                                 v
+                                                                                                                       /drvr:assess --> [/drvr:review] --> /drvr:docs-artifacts --> /drvr:open-pr --> PR Review <--> Revision --> Merge --> Verification --> Shipped
 ```
 
 ### Phase Descriptions
 
 | Phase | What Happens |
 |-------|-------------|
+| **Intent** | Mine the author's tacit knowledge, domain context, and non-negotiables. Produce `research/00-intent.md` before codebase research begins. Phase gate: Intent → Research (BLOCK on missing artifact, explicit "skip intent" opt-out). |
 | **Research** | Explore the problem space using structured Why-What-How questioning. Produce research docs and design decisions. |
-| **Planning** | Write implementation plans with TDD-first task ordering, test strategy, explicit constraints, and concrete code snippets for every added or modified data structure and callable (the `## Data Structures & Callables` rollup). |
+| **Planning** | Write implementation plans with TDD-first task ordering, test strategy, explicit constraints, and concrete code snippets for every added or modified data structure and callable (the `## Data Structures & Callables` rollup). Each plan includes a per-plan `## Environment` section (codebase, branches, test commands) as the primary source for `materialize-tasks`. The `plans/00-overview.md` `## Implementation Environment` supplements this for multi-plan features. |
 | **Validation** | Dry-run each plan to find gaps before writing code. All gaps are reviewed, classified by severity. |
 | **Materialization** | Approved plan tasks are converted into standalone task documents. Each embeds codebase root, file paths, standards, and instructions for sub-agent execution. |
 | **Implementation** | Execute materialized task documents. Track deviations from the plan. Commit after each task. |
@@ -142,6 +143,20 @@ Reflect on what happened in the current session and capture improvements.
 > "write it"
 > (retro saved to retrospectives/ with actionable improvements)
 ```
+
+### Easy: Driverize a Repo
+
+Install the Driver enforcement stack to ensure Claude Code uses Driver MCP for codebase intelligence instead of native exploration tools. The stack includes 4 tiers: permissions & hooks, shadow agents, context injection, and CLAUDE.md routing.
+
+```
+/drvr:driverize
+> (scans repo, backs up existing files, installs 9 artifacts + CLAUDE.md block)
+> (version-stamped for re-run detection and clean reversal)
+/drvr:un-driverize
+> (detects artifacts via provenance markers, confirms removal plan, restores backups)
+```
+
+Both commands work standalone — copy the `.md` file and paste as a prompt, no plugin required.
 
 ### Medium: Single-Plan Feature End-to-End
 
@@ -270,6 +285,10 @@ For high-stakes features, run every plan through validation before writing any c
 | `/drvr:docs-artifacts <path>` | Generate handoff docs (overview, architecture, testing guide, risk assessment) for code review | `/drvr:docs-artifacts features/user-notifications` |
 | `/drvr:context <task>` | Gather codebase context for a specific task via Driver | `/drvr:context How does the billing module work? --codebases backend` |
 | `/drvr:retro` | Analyze the current session -- evaluate work quality, identify improvements, think about what is next | `/drvr:retro --write` |
+| `/drvr:review [feature-path]` | Run internal standards review -- check code against standards, verify acceptance criteria and test coverage, auto-fix violations | `/drvr:review features/user-notifications` |
+| `/drvr:open-pr [feature-path]` | Open a pull request from handoff documentation generated by `/drvr:docs-artifacts` | `/drvr:open-pr features/user-notifications` |
+| `/drvr:driverize` | Install Driver enforcement stack -- hooks, shadow agents, context injection, and CLAUDE.md routing | `/drvr:driverize` |
+| `/drvr:un-driverize` | Remove Driver enforcement stack -- restore backups and remove driverize artifacts | `/drvr:un-driverize` |
 
 ## Skills
 
@@ -277,6 +296,7 @@ Skills activate automatically based on the current SDLC phase or trigger phrases
 
 | Skill | What It Does | When It Activates |
 |-------|-------------|-------------------|
+| **intent-guidance** | Mine the author's tacit knowledge at feature start — produces `research/00-intent.md`. | Trigger phrases: "capture intent", "mine intent" |
 | **research-guidance** | Structured Why-What-How questioning, document organization, and research completion criteria. | Trigger phrases: "let's research", "investigate", "explore", "understand how", "what's the best approach" |
 | **planning-guidance** | TDD-first task design, test strategy, architecture fit, explicit constraints, and task breakdown. Plans are always written to files, never in chat. | Trigger phrases: "let's plan", "ready to plan", "create a plan", "test strategy", "TDD" |
 | **implementation-guidance** | Plan-driven task execution, subagent delegation for context gathering, deviation tracking, and commit discipline. | Trigger phrases: "let's implement", "start implementing", "ready to build", "execute the plan" |
@@ -297,6 +317,7 @@ Agents are specialized workers that run in isolated context. They are spawned by
 | **security-review** | Analyzes code changes for security concerns -- authentication, authorization, input validation, secrets handling, and common vulnerabilities. |
 | **test-coverage** | Maps tests to implementation, identifies coverage gaps, and catalogs test types (unit, integration, end-to-end). |
 | **dependency-analysis** | Reviews dependency changes -- new packages, version changes, license compliance, and known vulnerabilities. |
+| **standards-review** | Reviews code changes against codebase standards and plan criteria. Returns structured findings with proposed fixes. |
 | **cascade-check** | Checks whether implementation deviations need to cascade to downstream plans. Classifies each cascade as informational or design-impact. |
 
 ## Hooks
@@ -311,7 +332,11 @@ Blocks Write and Edit operations that contain lazy code patterns: TODO/FIXME com
 
 Tracks which skills are loaded during a session by appending skill names to a session-scoped temp file. Used for phase tracking and observability during retrospectives.
 
-Both hooks resolve their configuration via the `CLAUDE_PLUGIN_ROOT` environment variable (set by Claude Code) with a fallback to relative path resolution for backward compatibility. They follow a fail-open pattern — errors never block user operations.
+### commit-artifacts (SessionEnd)
+
+Auto-commits uncommitted SDLC artifacts (research docs, plans, implementation logs, feature logs) when a Claude Code session ends. Acts as a safety net to prevent artifact loss from session crashes or forgotten commits. Scans all feature directories for uncommitted `.md` files in artifact directories and commits them with a descriptive message. Follows the fail-open pattern — never blocks session termination.
+
+All hooks resolve their configuration via the `CLAUDE_PLUGIN_ROOT` environment variable (set by Claude Code) with a fallback to relative path resolution for backward compatibility. They follow a fail-open pattern — errors never block user operations.
 
 ## Friction Tracking
 
