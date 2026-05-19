@@ -243,4 +243,4 @@ These rules govern how the plugin operates during all phases.
 - **Run tests and verification before declaring any task complete** -- never mark done without confirmation
 - **When a dry-run identifies gaps, fix ALL of them** -- do not skip any, regardless of severity
 - **Use parallel agents for research; for implementation, independent tasks run in parallel with worktree isolation, dependent tasks run sequentially**
-- **Follow existing codebase patterns** -- ask the user before deviating from established conventions
+- **Evaluate existing patterns -- don't reflexively conform** -- a precedent existing is not the same as a precedent being good. Match patterns that are sound; flag tech debt, anti-patterns, or outgrown approaches for the user rather than silently propagating them. When deviating, name the precedent you're not matching and why.

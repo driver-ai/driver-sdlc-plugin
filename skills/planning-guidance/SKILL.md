@@ -124,6 +124,20 @@ Read the actual source code. Use this to:
 
 **The progression is: `gather_task_context` (broad) → `get_code_map` (navigate) → `get_file_documentation` (interfaces) → `get_source_file` (implementation).** You won't always need all four, but the plan should be specific enough that you've used at least the first three.
 
+### Evaluate, Don't Just Catalog
+
+Driver returns "how this codebase does things" — but that's not the same as "how this codebase **should** do things." Some patterns are good and worth matching. Some are tech debt, anti-patterns, or approaches the codebase has outgrown. Treat every precedent as a candidate, not an authority.
+
+For each pattern you're considering carrying into the plan, ask:
+- Is it sound on its own terms (testability, clarity, error handling, separation of concerns)?
+- Is it well-suited to what THIS plan needs, or merely the nearest analog?
+- Has the codebase outgrown it — recent commits adding workarounds, `TODO: refactor` comments, divergent newer code in adjacent files?
+- Would matching it propagate a known weakness (over-mocked tests, defensive null-guards, leaky abstractions, dead scaffolding)?
+
+If a pattern is worth matching: cite it as a constraint in the plan. If it's not: flag it. Note in the plan that you're deliberately deviating, name the precedent you're not matching, and surface this to the user during Step 4.5 confirmation. **Do not silently propagate tech debt just because it's the closest precedent — and do not reach for a "follow X" constraint when you haven't actually evaluated X.**
+
+If you're unsure whether a pattern is good or bad, that's a question for the user during Step 4.5 — not a reason to default to matching it.
+
 ---
 
 ## Step 4.5: Confirm Approach
@@ -132,7 +146,7 @@ Before writing the plan, present your proposed direction to the user. At this po
 
 **Present a summary covering:**
 
-1. **Architecture approach** — which existing patterns to follow, key files to modify, integration strategy
+1. **Architecture approach** — which existing patterns to match (and why they're worth matching), which to deliberately deviate from (and why — bad fit, tech debt, anti-pattern), key files to modify, integration strategy. Surface any precedents you're unsure about so the user can call them.
 2. **Test strategy** — framework, test types (unit/integration/e2e), coverage approach, fixture sourcing
 3. **Scope adjustments** — anything surfaced during context gathering that wasn't in the original Step 2 scope (additions or exclusions)
 4. **Plan sizing** — estimated task count, single plan vs. split, and rationale
@@ -293,7 +307,11 @@ This catches interface design problems during planning (free to fix) rather than
 _Summary from research — problem statement, scope, key decisions_
 
 ## Architecture Fit
-_Existing patterns to follow, with specific file paths from Driver context_
+_Evaluate existing patterns from Driver context. For each relevant precedent, classify it:_
+_- **Match**: pattern is sound and well-suited — cite the file path and follow it_
+_- **Match with adjustment**: pattern is mostly right but needs a specific change — note the delta_
+_- **Deviate**: pattern is tech debt, anti-pattern, or outgrown — name the precedent, name the reason, propose the alternative_
+_Don't reflexively conform. A precedent existing is not authority._
 _Directories and files this plan touches_
 _Integration points with existing code_
 
@@ -436,10 +454,12 @@ If a codebase standards artifact exists from research, encode each applicable st
 
 | Good Constraint | Bad Constraint |
 |----------------|---------------|
-| "Follow error handling pattern in `src/errors.ts`" | "Write good error handling" |
+| "Follow error handling pattern in `src/errors.ts` (evaluated — current convention, sound)" | "Write good error handling" |
 | "NO TODOs or stubbed functions" | "Write complete code" |
 | "Run `pytest backend/tests/` after every change" | "Run tests" |
 | "All new functions must have type hints" | "Follow best practices" |
+
+**Precedent-citing constraints are only good if you've evaluated the precedent.** "Follow the pattern in X" is not rigorous by itself — it's rigorous when you've read X, decided it's sound, and concluded it's the right thing for this plan to extend. If you haven't done that evaluation, don't write the constraint. And if evaluating reveals the precedent is tech debt, the right constraint is the opposite: "Deviate from the pattern in X (reason: Y); use approach Z instead."
 
 ### Testing Methodology
 
@@ -517,9 +537,10 @@ Call `gather_task_context` with a task description focused on validating the pla
 ```
 Example:
 "Reviewing a plan to add retry logic to the notification delivery system.
-Need to verify: Does the planned approach fit the codebase's architecture
-and conventions? Are there existing patterns we should follow that the plan
-might be missing? Any concerns about the approach?"
+Need to verify: Does the planned approach fit the codebase's architecture?
+Are there relevant existing patterns the plan should evaluate — and for
+each, is matching it the right call, or is it tech debt/anti-pattern worth
+deviating from? Any concerns about the approach?"
 ```
 
 ### Specific Checks
