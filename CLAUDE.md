@@ -18,8 +18,8 @@ Running `/drvr:feature <name>` scaffolds this structure:
 ├── research/                # Problem exploration and design decisions
 │   ├── 00-overview.md       # Research overview and open questions
 │   └── NN-topic.md          # Individual research documents
-├── plans/                   # Implementation plans
-│   ├── 00-overview.md       # Multi-plan overview with dependency graph
+├── plans/                   # Implementation plans (one plan = one PR)
+│   ├── 00-overview.md       # Multi-plan overview, dependency graph, PR stack
 │   ├── NN-plan-name.md      # Individual plans with tasks and acceptance criteria
 │   └── NN-plan-name/        # Directory named after plan file (sans .md)
 │       └── tasks/           # Materialized task documents
@@ -27,11 +27,44 @@ Running `/drvr:feature <name>` scaffolds this structure:
 ├── dry-runs/                # Plan validation results
 ├── implementation/          # Implementation logs per plan
 │   └── log-<plan>.md       # Implementation log (flat file per plan)
-├── assessment/              # Test suite curation results
+├── assessment/              # Per-plan test curation results
+│   └── <plan>-test-curation.md
 ├── tests/                   # Markdown test plans for LLM execution (optional)
 │   └── results/             # Timestamped test results
-└── driver-docs/             # Handoff documentation for code review
+└── driver-docs/             # Handoff documentation — centralized, per-plan
+    ├── 00-feature-overview.md   # Cross-plan rollup (updated as plans ship)
+    └── <plan>/                  # Self-contained PR documentation per plan
+        ├── feature-overview.md  # PR body summary, stack context
+        ├── architecture.md
+        ├── testing-guide.md
+        └── risk-assessment.md
 ```
+
+### One Plan = One PR (DAG of Bases)
+
+Each plan ships as its own pull request. The "stack" of PRs is a **DAG of base relationships**, not a linear chain — each plan's `Base Branch` is derived from that plan's `depends_on`:
+
+- **No upstream dependencies** (`depends_on: []`) → Base Branch is the feature parent (e.g., `main`). The PR targets the feature parent directly.
+- **One upstream dependency** → Base Branch is the upstream plan's Feature Branch. The PR is stacked on that upstream PR.
+- **Multiple upstream dependencies** → User picks one as the branch parent (typically the latest in DAG order); the others are satisfied semantically (interface contracts) without driving the branch.
+
+Independent plans produce **parallel PRs** targeting the feature parent. Dependent plans produce **stacked PRs**, where Plan N's PR targets the branch of the plan it depends on. The PR Stack table in `plans/00-overview.md` records the actual base relationships.
+
+**Example:** Plans 01 and 02 are independent; Plan 03 depends on Plan 01.
+
+| Plan | Base Branch        | Feature Branch       | Relationship |
+|------|--------------------|----------------------|--------------|
+| 01   | `main`             | `<prefix>/01-foo`    | independent — PR targets `main` |
+| 02   | `main`             | `<prefix>/02-bar`    | independent — PR targets `main` (parallel to 01) |
+| 03   | `<prefix>/01-foo`  | `<prefix>/03-baz`    | depends on 01 — PR stacked on 01's PR |
+
+Plans can be implemented in any dependency-respecting order. You can implement Plan 08 before Plan 02 if they're independent; their PRs are parallel and both target the feature parent.
+
+**The feature parent is always a valid fallback target.** If a downstream plan's upstream PR has already merged and the upstream branch was deleted, `/drvr:open-pr` asks the user which branch to target instead (the feature parent is the usual answer). The recorded `Base Branch` in `plans/<plan>.md` `## Environment` is a planning-time intent — if it's gone at PR-open time, the user picks the new target and the plan's Environment is updated to match.
+
+Each PR's body is generated from that plan's `driver-docs/<plan>/` so a reviewer who hasn't seen the rest of the DAG can still understand what changed, why, and how to verify it. The cross-plan narrative lives in `driver-docs/00-feature-overview.md` and is linked from each PR body.
+
+**Default branch naming convention:** `<feature-prefix>/<NN-plan-slug>` (e.g., `amark/oauth/01-token-store`, `amark/oauth/02-refresh-flow`). The feature prefix is captured at `/drvr:feature` time; the per-plan branch is captured during planning and may be overridden.
 
 ---
 
@@ -85,13 +118,26 @@ Plan documents (`01-*.md`, `02-*.md`, etc.) must include these H2 sections: `Env
 
 Features follow a phased development lifecycle. Each phase has a dedicated skill or command that provides guidance.
 
+The per-plan PR gate runs **once per plan**, not once per feature: after each plan's implementation and bookkeeping, that plan must be assessed, documented, and opened as a PR before work begins on the next plan. This keeps every PR self-contained and reviewable in isolation.
+
 ```
-/drvr:feature --> Intent --> Research --> Planning --> Validation --> Materialization --> Implementation --> Review --> Bookkeeping --> Next Plan --> ...
-                                                                                                                                                 |
-                                                                                                                                    All plans complete
-                                                                                                                                                 |
-                                                                                                                                                 v
-                                                                                                                       /drvr:assess --> [/drvr:review] --> /drvr:docs-artifacts --> /drvr:open-pr --> PR Review <--> Revision --> Merge --> Verification --> Shipped
+/drvr:feature --> Intent --> Research --> Planning ┐
+                                                   │
+   ┌───────────────────────────────────────────────┘
+   │
+   ▼
+   For each plan in dependency order:
+     Validation --> Materialization --> Implementation --> Review --> Bookkeeping
+       │
+       ▼
+     Per-plan PR gate (REQUIRED before starting next plan):
+       /drvr:assess <plan> --> [/drvr:review <plan>] --> /drvr:docs-artifacts <plan> --> /drvr:open-pr <plan>
+       │
+       ▼
+     PR Review <--> Revision --> Merge --> Verification --> Next plan
+   │
+   ▼
+   All plans shipped --> Feature shipped
 ```
 
 ### Phase-Skill Mapping
@@ -109,15 +155,16 @@ Features follow a phased development lifecycle. Each phase has a dedicated skill
 | Review | `drvr:sdlc-orchestration` | Present deviations for user review | implementation complete |
 | Bookkeeping | `drvr:implementation-guidance` Step 4 | Update plan status, overview, cascade check | deviations approved |
 | Transition | `drvr:sdlc-orchestration` | Identify next unblocked plan from dependency graph | bookkeeping complete |
-| Assessment | `/drvr:assess` | Curate test suite — categorize, prune scaffolding, promote | all plans complete, "assess tests" |
-| Internal Review | `/drvr:review` | Review code against standards, auto-fix violations | assessment has FAIL violations |
-| Handoff | `/drvr:docs-artifacts` | Generate feature overview, architecture, testing guide, risks | assessment complete |
-| Open PR | `/drvr:open-pr` | Create PR from handoff docs via gh CLI | handoff docs generated |
-| PR Review | `drvr:sdlc-orchestration` | Track review status, suggest next steps | PR created |
-| Revision | `drvr:sdlc-orchestration` | Guide revision cycle | review feedback received |
-| Merge | `drvr:sdlc-orchestration` | Track merge, verify CI | PR approved |
-| Verification | `drvr:sdlc-orchestration` | Advisory post-merge checks | PR merged |
-| Shipped | `drvr:sdlc-orchestration` | Terminal — suggest retro | verification confirmed |
+| Per-plan Assessment | `/drvr:assess <plan>` | Curate this plan's tests — categorize, prune scaffolding, promote | plan bookkeeping complete |
+| Per-plan Internal Review | `/drvr:review <plan>` | Review this plan's code against standards, auto-fix violations | per-plan assessment has FAIL violations |
+| Per-plan Handoff | `/drvr:docs-artifacts <plan>` | Generate self-contained PR docs for this plan (overview, architecture, testing, risks) | per-plan assessment complete |
+| Per-plan Open PR | `/drvr:open-pr <plan>` | Create stacked PR for this plan via gh CLI (base = prior plan's branch or feature parent) | per-plan handoff docs generated |
+| Per-plan PR Review | `drvr:sdlc-orchestration` | Track this plan's PR review status, suggest next steps | plan PR created |
+| Per-plan Revision | `drvr:sdlc-orchestration` | Guide this plan's revision cycle | review feedback received on plan PR |
+| Per-plan Merge | `drvr:sdlc-orchestration` | Track this plan's merge, verify CI | plan PR approved |
+| Per-plan Verification | `drvr:sdlc-orchestration` | Advisory post-merge checks for this plan | plan PR merged |
+| Next Plan | `drvr:sdlc-orchestration` | After current plan PR is open (or merged), transition to next unblocked plan | current plan PR opened |
+| Shipped | `drvr:sdlc-orchestration` | Terminal — suggest retro after all plan PRs merged | all plan PRs merged + verified |
 | Retro | `/drvr:retro` | Evaluate session quality, identify improvements | "retro", end of session |
 
 ---
@@ -126,12 +173,15 @@ Features follow a phased development lifecycle. Each phase has a dedicated skill
 
 Every feature has a `FEATURE_LOG.md` at its root -- the source of truth for lifecycle state. It tracks phase transitions and artifact creation (not individual tasks or research questions).
 
+Because each plan ships as its own PR, post-implementation events (assessment, docs, PR open/merge) are scoped per plan — the log entries should name the plan they apply to.
+
 **Update the log when:**
 - Creating research docs or wireframes
 - Creating plans or the overview
 - Completing a dry-run
-- Starting or completing implementation
-- Completing bookkeeping
+- Starting or completing implementation **for a plan**
+- Completing bookkeeping **for a plan**
+- Per-plan: assessment complete, internal review complete, handoff docs generated, PR opened, PR approved, PR merged
 
 ---
 
@@ -141,6 +191,8 @@ Every feature has a `FEATURE_LOG.md` at its root -- the source of truth for life
 - **Deviations are reviewed** -- after implementation, deviations are presented for user approval before bookkeeping proceeds.
 - **Severity helps prioritize, not skip** -- dry-run gaps are classified LOW/MEDIUM/HIGH but all are presented for review.
 - **Plans are the source of truth** -- implementation builds exactly what the plan specifies, nothing more.
+- **One plan = one PR, stacked** -- each plan ships on its own branch, branched off the prior plan's branch. The per-plan PR gate (assess → docs → open-pr) runs after each plan's bookkeeping, before the next plan starts.
+- **Each PR must stand alone** -- the PR body comes from `driver-docs/<plan>/` and includes feature context, this plan's purpose, architecture, test plan, risks, and stack position. A reviewer who hasn't seen the rest of the stack should be able to evaluate the change.
 - **Skills use Driver MCP tools for codebase context** -- `gather_task_context` for synthesized context, `get_code_map` for navigation, `get_file_documentation` for symbol details -- rather than manual file parsing. Always call `gather_task_context` via a native subagent -- the subagent is a concurrency primitive that keeps the main conversation unblocked and enables parallel calls trivially.
 
 ---

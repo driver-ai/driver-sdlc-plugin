@@ -59,9 +59,9 @@ When a user returns to a feature ("returning to feature/X", "resume feature X", 
    - Plan files without dry-run results → plan needs validation
    - Research docs with open questions → research may be incomplete
    - Plan with `status: approved` in frontmatter but task doc count < plan task count (or no `plans/<plan>/tasks/` directory) → phase is **Materialization**. Suggest: "Plan X is approved but not fully materialized. Activate `drvr:materialize-tasks`."
-   - Phase detection resolves to **Assessment** (all plans COMPLETE, no `assessment/test-curation-*.md`) → suggest `/drvr:assess`
-   - Phase detection resolves to post-PR phase (PR Review, Revision, Merge, Verification, Shipped, Closed) via FEATURE_LOG event scanning → see Phase Detection: Post-PR
-     - If phase is "PR Review" or "Revision", check PR status via `gh pr view <URL>` (extract URL from FEATURE_LOG `pr_created` event). If `gh pr view` fails (network, auth, or missing PR), report the failure and fall back to the FEATURE_LOG phase header — do not change the detected phase based on a failed check. Report current PR state (open, approved, changes requested, merged, closed).
+   - Phase detection resolves to **Per-Plan Assessment** for a specific plan (plan COMPLETE, no `assessment/<plan>-test-curation.md`) → suggest `/drvr:assess <plan>`
+   - Phase detection resolves to a post-PR per-plan phase (PR Review, Revision, Merge, Verification) via FEATURE_LOG `*_<plan>` event scanning → see Phase Detection: Post-PR (Per Plan)
+     - If a plan's most recent event is `pr_created_<plan>` or revision-related, check PR status via `gh pr view <URL>` (extract URL from FEATURE_LOG `pr_created_<plan>` event). If `gh pr view` fails (network, auth, or missing PR), report the failure and fall back to the FEATURE_LOG phase header — do not change the detected phase based on a failed check. Report current PR state per plan (open, approved, changes requested, merged, closed).
 4.5. **Scan for cross-feature dependencies:**
    - Determine the projects directory from the current feature path (navigate up to `features/` parent)
    - Find other active features: `find <projects_path>/features -maxdepth 2 -name "FEATURE_LOG.md" -not -path "<current_feature>/*"` — filter to active (phase not Shipped, Closed, Done, and phase does not contain "(complete)")
@@ -80,7 +80,7 @@ Last activity: <most recent artifact modified>
 Codebase: <name> at <local-path> (base: <base-branch>, feature: <feature-branch>)
 Test command: `<cmd>`
 Cross-feature dependencies: <summary or "none detected">
-Next action: <suggestion based on state — if assessment phase, "Run /drvr:assess to curate the test suite before handoff">
+Next action: <suggestion based on state — if a plan is past bookkeeping but not past `/drvr:open-pr`, suggest the next per-plan gate step for that plan (assess → docs → open-pr)>
 ```
 
 **Graceful degradation**: if `plans/00-overview.md` has no `## Implementation Environment` section (legacy features, or overview not yet created), omit the `Codebase:` and `Test command:` lines. Do NOT emit placeholder values. If the source (IE or Codebases) uses a single `Branch` column (legacy format), display as `(branch: <branch>)` instead of `(base: ..., feature: ...)`. Read branch values from whatever format the Implementation Environment uses — key-value pairs, table columns, or subsections. Do not prescribe a specific parsing format; the IE is free-form and varies across features.
@@ -173,83 +173,99 @@ After the user approves deviations, execute all bookkeeping steps automatically 
 - Present cascade results to user (pause only if design-impact decisions are flagged)
 - Commit bookkeeping: `"chore: Update plan status and overview for plan <name>"`
 
-### Bookkeeping → Next Plan
-After bookkeeping is complete:
-- Read overview dependency graph
-- Identify unblocked plans (all dependencies COMPLETE)
-- Present: "Next unblocked plan is X. It [has a plan document / needs planning]."
-- If multiple unblocked: "Two plans are unblocked: X and Y. Which to start?"
-- If none unblocked: "No plans are currently unblocked."
-- If all complete: "All plans complete. Run `/drvr:assess` to curate the test suite before handoff."
+### Bookkeeping → Per-Plan PR Gate (REQUIRED)
 
-### All Complete → Assessment
+After a plan's bookkeeping is complete, the plan must go through the per-plan PR gate before work begins on the next plan. The gate is sequential — each step depends on the previous, and you must surface the next step explicitly.
 
-When all plans are complete, the next step is test suite assessment — not handoff.
+```
+Plan <name> bookkeeping complete
+  → /drvr:assess <plan>           (per-plan test curation; writes assessment/<plan>-test-curation.md)
+  → [/drvr:review <plan>]         (optional — only if per-plan assessment found FAIL violations)
+  → /drvr:docs-artifacts <plan>   (writes driver-docs/<plan>/* for the PR body)
+  → /drvr:open-pr <plan>          (push Feature Branch, open PR with base = Base Branch from plan Environment)
+  → THEN next unblocked plan
+```
 
-- "All plans complete. Next step: `/drvr:assess` to curate the test suite before handoff."
-- `/drvr:assess` handles the workflow independently and updates the feature log when done
-- After `/drvr:assess` completes, check for standards violations and suggest `/drvr:review` if needed (see Assessment → Internal Review). If no violations, suggest `/drvr:docs-artifacts`
-- Do NOT suggest `/drvr:docs-artifacts` until assessment is complete
+**Surface the gate step-by-step. Never collapse the chain into "all done — move to the next plan."** Each PR is self-contained for reviewers, and that depends on doing the per-plan assess/docs/open-pr work for *this* plan before context shifts.
 
-**Mid-implementation assessment**: Users may invoke `/drvr:assess` before all plans are complete. This is allowed — `/drvr:assess` handles scoping and warnings internally. A partial assessment does not satisfy the mandatory pre-handoff requirement; the final assessment must cover all plans.
+### Per-Plan Assessment → Per-Plan Internal Review
 
-### Assessment → Internal Review
-
-After `/drvr:assess` completes, check whether the assessment found standards violations.
+After `/drvr:assess <plan>` completes:
 
 **Detection:**
-1. Read `assessment/test-curation-*.md`
+1. Read `assessment/<plan>-test-curation.md`
 2. Find the `## Code Quality Review` section
 3. Check for any rows with Status = FAIL
 
 **If FAILs found:**
-- "Assessment found N standards violations. Run `/drvr:review` to fix them before generating handoff docs."
-- This is advisory (WARN) — the user can skip to `/drvr:docs-artifacts` if they choose
+- "Plan `<plan>` assessment found N standards violations. Run `/drvr:review <plan>` to fix them before generating handoff docs."
+- Advisory (WARN) — the user can skip to `/drvr:docs-artifacts <plan>` if they choose
 
 **If no FAILs (or no Code Quality Review section):**
-- Skip directly to suggesting `/drvr:docs-artifacts`: "Assessment clean. Run `/drvr:docs-artifacts` to generate handoff docs."
+- "Plan `<plan>` assessment clean. Run `/drvr:docs-artifacts <plan>` to generate this plan's PR docs."
 
 **If user skips review:**
-- Do not re-suggest within this session. Proceed to Handoff normally.
-- Note: on session resumption, orchestration re-evaluates phase from artifacts. If the user has not advanced past review (no `driver-docs/` directory and no "Internal review complete" in FEATURE_LOG), orchestration will re-suggest `/drvr:review`. This is expected — the user can skip again or proceed directly to `/drvr:docs-artifacts`.
+- Do not re-suggest within this session. Proceed to per-plan handoff normally.
 
-### Handoff → Open PR
+### Per-Plan Handoff → Per-Plan Open PR
 
-After `/drvr:docs-artifacts` completes and handoff documentation is generated.
+After `/drvr:docs-artifacts <plan>` completes:
 
-**Advisory:** "Handoff docs generated. Create PR with `/drvr:open-pr`."
+**Advisory:** "Plan `<plan>` handoff docs generated at `driver-docs/<plan>/`. Open this plan's PR with `/drvr:open-pr <plan>` — its base will be `<Base Branch>` from the plan's Environment."
 
-### Open PR → PR Review
+### Per-Plan Open PR → Per-Plan PR Review
 
-The `/drvr:open-pr` command handles this transition directly — it sets phase to "PR Review" upon successful PR creation. "Open PR" is a transient command phase (like Validation), not a persistent state.
+`/drvr:open-pr <plan>` handles this transition directly — it records a `pr_created_<plan>` event in FEATURE_LOG and sets the plan's status in the PR Stack table. "Open PR" is a transient command phase, not a persistent state.
 
-### PR Review → Revision
+### Per-Plan PR Open → Next Plan
 
-When review comments require code changes.
+After a plan's PR is created:
 
-**Advisory:** "Make changes, push, optionally re-run `/drvr:docs-artifacts` to update handoff docs."
+- Read overview's PR Stack and dependency graph
+- Identify the next unblocked plan (all upstream plans named in its `depends_on` have their PRs open or merged — stacked branches only require the upstream branch to exist remotely; they do not require merge before downstream work starts)
+- Present: "Plan `<plan>` PR opened (#N). Next unblocked plan is `<next>`. Its Base Branch is `<base>` (derived from its `depends_on`: feature parent if independent, or upstream plan's Feature Branch if dependent). It has [a plan document / needs planning]."
+- If multiple unblocked: "Plans X and Y are both unblocked. They are independent of each other (`depends_on` is disjoint) — their PRs will be parallel against `<feature parent>`. Pick whichever to start with; the other can run in parallel or after."
+- If unblocked plans depend on each other: list them in DAG order and note which is the branch-parent
+- If none unblocked: "No plans are currently unblocked."
+- If all plans have PRs open: "All plan PRs are open. Track merge status and ship."
 
-After re-running `/drvr:docs-artifacts`, suggest updating the PR body with `gh pr edit <number> --body <new-body>` to reflect the revised documentation. This is a lightweight loop — no full implementation-guidance workflow.
+**Mental model:** the PR landscape is a DAG of base relationships, not a linear stack. Plans 02 and 08 can be implemented in any order if they're independent — both will open PRs targeting the feature parent.
 
-### PR Review → Merge
+**Upstream-merged-first scenario:** if a downstream plan's upstream PR merges before the downstream PR opens, the upstream branch is usually deleted by GitHub. When `/drvr:open-pr` runs and finds the recorded Base Branch missing, it asks the user which branch to target instead. When suggesting the next plan, surface this proactively: "Plan `<next>`'s recorded Base Branch is `<upstream-branch>`. Upstream plan `<upstream>` has already merged — `/drvr:open-pr` will prompt for a replacement base when you run it (feature parent is the usual answer)."
 
-When PR is approved and ready to merge. User reports approval or `gh pr view` shows approved status.
+### Per-Plan PR Review → Revision
 
-**Advisory:** "PR approved. Merge when ready."
+When review comments on a plan's PR require code changes.
 
-Record `pr_approved` event in FEATURE_LOG. After merge: record `pr_merged` event, set phase to "Verification".
+**Advisory:** "Make changes on `<Feature Branch>`, push, optionally re-run `/drvr:docs-artifacts <plan>` to update the PR docs."
 
-### Merge → Verification
+After re-running `/drvr:docs-artifacts <plan>`, suggest updating the PR body with `gh pr edit <number> --body <new-body>` (read body from `driver-docs/<plan>/*`). This is a lightweight loop — no full implementation-guidance workflow.
 
-After PR is merged.
+**Stacked-PR caveat:** if a revision changes Plan N's interface in a way downstream plans depend on, surface that explicitly — downstream branches may need to be rebased or downstream plans updated. Use the cascade-check agent if the change is non-trivial.
 
-**Advisory:** "PR merged. Verify deployment/integration. When verified, say 'verified' or 'ship it'."
+### Per-Plan PR Review → Merge
 
-Verification is advisory/checklist-based — the plugin can't know what "verified" means for every team.
+When a plan's PR is approved and ready to merge. User reports approval or `gh pr view` shows approved status.
 
-### Verification → Shipped
+**Advisory:** "Plan `<plan>` PR approved. Merge when ready. If downstream plan PRs exist on this branch, merging this PR will update their base — they may rebase automatically on the next push."
 
-After verification confirmed. Set phase to "Shipped". Suggest `/drvr:retro`. Terminal state.
+Record `pr_approved_<plan>` event in FEATURE_LOG. After merge: record `pr_merged_<plan>` event, advance this plan's status in the PR Stack table.
+
+### Per-Plan Merge → Per-Plan Verification
+
+After a plan's PR is merged.
+
+**Advisory:** "Plan `<plan>` PR merged. Verify the change (deployment, integration, smoke test). When verified, record `verification_complete_<plan>`."
+
+Verification is advisory/checklist-based — the plugin can't know what "verified" means for every team. For stacked PRs, verification often only matters for the final/bottom-of-stack plan, but earlier plans may have user-facing changes worth verifying independently.
+
+### All Plan PRs Shipped → Feature Shipped
+
+After every plan's PR is merged (and any verification users care about is done):
+
+- Set feature phase to "Shipped"
+- Suggest `/drvr:retro`
+- Terminal state
 
 ### Any Post-PR → Closed
 
@@ -257,36 +273,45 @@ Alternate terminal state. User can say "close feature" or "abandon" at any post-
 
 This applies only to post-PR phases — pre-PR abandonment is informal (features are simply left inactive).
 
-### Phase Detection: Assessment
+### Phase Detection: Per-Plan PR Gate
 
-- All plans COMPLETE in overview but no `assessment/test-curation-*.md` → phase is **Assessment**
-- Assessment artifact exists with FAIL violations in Code Quality Review, no `Internal review complete` in FEATURE_LOG → suggest **Internal Review** (`/drvr:review`)
-- Assessment artifact exists, `Internal review complete` in FEATURE_LOG (or no FAILs in assessment) → phase is **Handoff**
-- Partial assessment exists but plans remain → phase is still **Implementation**
+For each plan that has reached COMPLETE in the overview's progress table, evaluate the per-plan gate state in this order:
 
-### Phase Detection: Post-PR
+- Plan is COMPLETE, no `assessment/<plan>-test-curation.md` → phase is **Per-Plan Assessment** for `<plan>`. Suggest `/drvr:assess <plan>`.
+- Per-plan assessment exists with FAIL violations in Code Quality Review, no `internal_review_complete_<plan>` in FEATURE_LOG → suggest **Per-Plan Internal Review** (`/drvr:review <plan>`).
+- Per-plan assessment exists (clean, or `internal_review_complete_<plan>` logged), no `driver-docs/<plan>/` → phase is **Per-Plan Handoff** for `<plan>`. Suggest `/drvr:docs-artifacts <plan>`.
+- `driver-docs/<plan>/` exists, no `pr_created_<plan>` in FEATURE_LOG → phase is **Per-Plan Open PR** for `<plan>`. Suggest `/drvr:open-pr <plan>`.
+- `pr_created_<plan>` in FEATURE_LOG, PR still open (no `pr_merged_<plan>`) → phase is **Per-Plan PR Review** for `<plan>`.
+- `pr_merged_<plan>` in FEATURE_LOG, no `verification_complete_<plan>` → phase is **Per-Plan Verification** for `<plan>`.
+
+When evaluating multiple plans, the current focus is the lowest-numbered COMPLETE plan that has not yet reached `pr_created_<plan>` — that's the plan blocking the gate. Surface that one first; downstream plans cannot have PRs opened until upstream PRs are opened (their base branches don't exist remotely yet).
+
+### Phase Detection: Post-PR (Per Plan)
 
 Post-PR phases use **event-driven detection** (scanning FEATURE_LOG for markers), distinct from the artifact-driven pattern used for pre-PR phases. Event-driven detection takes precedence over artifact-based detection when post-PR events exist in FEATURE_LOG. Pre-PR phases continue to use artifact-based detection exclusively.
 
-**Detection rules:**
+**Per-plan event detection:** Each plan has its own event lineage (`pr_created_<plan>`, `pr_merged_<plan>`, etc.). Scan FEATURE_LOG for the most recent event for each plan.
 
-- `driver-docs/` exists, assessment covers all plans, no `pr_created` in FEATURE_LOG → phase is **Handoff** (ready for `/drvr:open-pr`)
-- `pr_created` in FEATURE_LOG, PR still open (no `pr_merged`) → phase is **PR Review**
-- `pr_merged` in FEATURE_LOG, no `verification_complete` → phase is **Verification**
-- `verification_complete` or `feature_shipped` in FEATURE_LOG → phase is **Shipped**
+**Feature-level rollup:**
+- All plans have `pr_merged_<plan>` (and any team-relevant `verification_complete_<plan>` logged) → phase is **Shipped**
 - `feature_closed` in FEATURE_LOG → phase is **Closed**
-- When multiple status events exist (e.g., multiple revision cycles with `pr_approved` events), the most recent takes precedence.
+- When multiple status events exist for the same plan (e.g., multiple revision cycles), the most recent takes precedence.
 
-**Canonical event names for FEATURE_LOG entries:**
+**Canonical event names for FEATURE_LOG entries (per-plan suffix where applicable):**
 
 | Event | Meaning | Source |
 |-------|---------|--------|
-| `pr_created` | PR opened | `/drvr:open-pr` Step 6 |
-| `pr_approved` | PR approved by reviewer | sdlc-orchestration |
-| `pr_merged` | PR merged to base branch | sdlc-orchestration |
-| `verification_complete` | Post-merge verification passed | sdlc-orchestration |
-| `feature_shipped` | Feature considered shipped | sdlc-orchestration |
+| `assessment_complete_<plan>` | Per-plan test curation complete | `/drvr:assess` |
+| `internal_review_complete_<plan>` | Per-plan standards review complete | `/drvr:review` |
+| `handoff_docs_<plan>` | Per-plan PR docs generated | `/drvr:docs-artifacts` |
+| `pr_created_<plan>` | Plan PR opened | `/drvr:open-pr` |
+| `pr_approved_<plan>` | Plan PR approved by reviewer | sdlc-orchestration |
+| `pr_merged_<plan>` | Plan PR merged to its Base Branch | sdlc-orchestration |
+| `verification_complete_<plan>` | Post-merge verification for plan passed | sdlc-orchestration |
+| `feature_shipped` | All plan PRs merged, feature shipped | sdlc-orchestration |
 | `feature_closed` | Feature abandoned/closed | sdlc-orchestration |
+
+`<plan>` is the plan filename without `.md` (e.g., `01-token-store`).
 
 ---
 
@@ -305,10 +330,11 @@ The lifecycle is not linear. These backward transitions are normal:
 | Materialization → Planning | materialize-tasks blocks on gaps or missing codebase | Fix plan, re-approve |
 | Implementation → Materialization | Pre-flight finds stale task docs | Re-materialize affected tasks |
 | Research → Intent | Gap surfaced that requires re-mining intent | Resume `intent-guidance`, update `00-intent.md` |
-| PR Review → Revision | Review comments require code changes | Make changes, push, optionally update docs |
-| Revision → PR Review | Changes pushed, awaiting re-review | Check PR status on next resumption |
-| PR Review → Implementation | Review surfaces significant issue | Return to implementation (or planning). PR remains open — it serves as a discussion thread. On return to PR Review after rework, update the PR body via gh pr edit. |
-| Verification → Implementation | Verification fails | Debug issue, fix in place or create follow-up PR |
+| Per-plan PR Review → Revision | Review comments on plan PR require code changes | Make changes on plan's Feature Branch, push, optionally re-run `/drvr:docs-artifacts <plan>` and update PR body |
+| Per-plan Revision → PR Review | Changes pushed, awaiting re-review | Check PR status on next resumption |
+| Per-plan PR Review → Implementation | Review surfaces significant issue | Return to implementation (or planning) for THIS plan. PR remains open as discussion thread. On return after rework, update PR body via `gh pr edit`. |
+| Per-plan Verification → Implementation | Verification fails | Debug issue, fix in place on plan's Feature Branch or split into a follow-up plan/PR |
+| Plan N PR Review → Plan M Rebase | Upstream PR (Plan N) revised with interface change | Rebase Plan M+ branches on the updated upstream; re-run cascade-check if interfaces changed |
 
 When a loop occurs, note: "Going back to [phase] because [reason]."
 
@@ -331,10 +357,11 @@ Each skill appends to the log at transition moments:
 | `/drvr:dry-run-plan` | Dry-run completed (with gap count and verdict) |
 | `materialize-tasks` | Tasks materialized (with task count and codebase target) |
 | `implementation-guidance` | Implementation started, implementation complete (with test count) |
-| `/drvr:assess` | Assessment complete (with prune/keep/promote counts) |
-| `/drvr:review` | Internal review complete (with violation/fix counts) |
-| `/drvr:open-pr` | PR opened (with URL) |
-| `sdlc-orchestration` | Bookkeeping complete, phase transitions, PR status changes, feature shipped, feature closed |
+| `/drvr:assess` | Per-plan assessment complete (event: `assessment_complete_<plan>`, with prune/keep/promote counts) |
+| `/drvr:review` | Per-plan internal review complete (event: `internal_review_complete_<plan>`, with violation/fix counts) |
+| `/drvr:docs-artifacts` | Per-plan handoff docs generated (event: `handoff_docs_<plan>`) |
+| `/drvr:open-pr` | Per-plan PR opened (event: `pr_created_<plan>`, with URL) |
+| `sdlc-orchestration` | Per-plan bookkeeping complete, per-plan PR status changes (`pr_approved_<plan>`, `pr_merged_<plan>`, `verification_complete_<plan>`), feature shipped, feature closed |
 
 Additionally, all skills that make significant decisions should append to `DECISIONS.md` at the feature root — see individual skill checklists for decision-logging triggers.
 

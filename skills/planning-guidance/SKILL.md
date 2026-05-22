@@ -136,6 +136,7 @@ Before writing the plan, present your proposed direction to the user. At this po
 2. **Test strategy** — framework, test types (unit/integration/e2e), coverage approach, fixture sourcing
 3. **Scope adjustments** — anything surfaced during context gathering that wasn't in the original Step 2 scope (additions or exclusions)
 4. **Plan sizing** — estimated task count, single plan vs. split, and rationale
+5. **Branch & stack position** — proposed Base Branch (derived from `depends_on`: feature parent if independent; upstream plan's Feature Branch if dependent; user picks one for multi-dependency plans) and Feature Branch (default `<prefix>/<NN-plan-slug>`; user may override). State this plan's role in the DAG (parallel/independent PR vs stacked on plan X).
 
 **Format:**
 
@@ -145,6 +146,7 @@ Before writing the plan, present your proposed direction to the user. At this po
 > - **Test strategy**: [framework, coverage approach, test types]
 > - **Scope changes**: [any additions/exclusions discovered during context gathering, or "none"]
 > - **Sizing**: [N tasks, single plan / split rationale]
+> - **Stack position**: Plan N — Base `<base-branch>` → Feature `<feature-branch>` (PR will target `<base-branch>`)
 >
 > Does this look right? (Say "looks good" to proceed, or tell me what to change.)
 
@@ -173,20 +175,46 @@ plans/
 
 ### Plan Sizing
 
-Each plan should produce **one reviewable PR**. Signals a plan is well-sized:
+Each plan **ships as its own pull request**, on its own branch, stacked off the prior plan's branch. Signals a plan is well-sized:
 
 - **5-12 tasks** — fewer means tasks are too broad for subagents; more means the plan should be split
 - **One logical unit of work** — a plan delivers one capability that can be tested independently
 - **Focused scope** — if explaining the plan requires "and also..." it should be two plans
+- **PR-reviewable in isolation** — the diff must be understandable on its own; if a reviewer would need to read other PRs in the stack to understand it, reconsider the split
 
 **Split when:**
 - The PR would be too large to review (>500 lines of real code, not counting tests)
-- Tasks have no dependencies on each other (parallel tracks = separate plans)
+- Tasks have no dependencies on each other (parallel tracks = separate plans — note that stacked PRs are linear; truly independent tracks may warrant separate features, not stacked plans within one)
 - Different codebases are involved (one plan per codebase, unless tightly coupled)
 
 **Don't split when:**
 - Tasks are sequential and tightly coupled (test + implement pairs)
 - The feature only makes sense as a whole (splitting would create a broken intermediate state)
+
+### Branch Bases (DAG, Not Necessarily Linear)
+
+Each plan's `Base Branch` is derived from its `depends_on` field, not its index number. The set of PRs across a feature forms a **DAG of base relationships**, which collapses to a linear stack only when every plan depends on the prior one.
+
+Rule for picking a plan's Base Branch:
+
+- **`depends_on` is empty** → Base Branch is the feature parent (from the research Codebases table). The PR will target the feature parent directly. If two plans are independent, both get parallel PRs to the feature parent.
+- **`depends_on` is one plan** → Base Branch is that upstream plan's `Feature Branch`. The PR is stacked on that upstream PR.
+- **`depends_on` is multiple plans** → User picks one as the branch parent (typically the latest in DAG order). The other dependencies are satisfied semantically (interface contracts in the plan), without dictating the branch. Surface this choice during Step 4.5.
+
+**Default per-plan branch name:** `<branch-prefix>/<NN-plan-slug>` where `<branch-prefix>` comes from the research Codebases table (`/drvr:feature` Step 3) and `<NN-plan-slug>` is the plan filename without `.md`. Example: prefix `amark/oauth` + plan `01-token-store.md` → branch `amark/oauth/01-token-store`.
+
+Confirm Base Branch and Feature Branch during Step 4.5; the user may override per plan. Record the agreed names in the plan's `## Environment` section. Mirror the choices into the PR Stack table in `plans/00-overview.md`.
+
+**Example DAG with mixed dependency:**
+
+| Plan | depends_on | Base Branch | Feature Branch | Stack relationship |
+|------|------------|-------------|----------------|--------------------|
+| 01   | —          | `main`      | `<prefix>/01-foo` | parallel — PR to feature parent |
+| 02   | —          | `main`      | `<prefix>/02-bar` | parallel to 01 — independent PR to feature parent |
+| 03   | [01]       | `<prefix>/01-foo` | `<prefix>/03-baz` | stacked on 01's PR |
+| 04   | [02, 03]   | `<prefix>/03-baz` (user pick) | `<prefix>/04-qux` | stacked on 03; interface contracts satisfy 02 |
+
+**Base Branch is a planning-time intent, not a guarantee.** By the time a downstream plan opens its PR, the upstream branch may have already merged and been deleted by GitHub. If that happens, `/drvr:open-pr` asks the user which branch to target instead (the feature parent is the usual choice) and updates the plan's recorded `Base Branch`. Don't agonize over picking the perfect upstream when multiple parents are options — the merge state at PR-open time may simplify the picture.
 
 ### Multi-Plan Overview
 
@@ -214,15 +242,35 @@ For features that span multiple plans, create `plans/00-overview.md` as the cent
 
 ## Implementation Environment
 
-_Capture the environment information that implementation needs: codebase paths, base/feature branches,
-test commands, and any other environment details relevant to this feature. Materialize-tasks
-reads this section to hydrate task docs so sub-agents arrive pre-loaded._
+_Feature-level environment defaults. Per-plan branches live in the PR Stack table below; per-plan
+Environment sections in each plan file are the authoritative source for sub-agents._
+
+| Field | Value |
+|-------|-------|
+| Codebase | <name> |
+| Path | `<absolute path>` |
+| Feature Parent Branch | `<base — e.g., main>` |
+| Branch Prefix | `<prefix — e.g., amark/oauth>` |
+| Test Command | `<command>` |
+| Standards Doc | `<path to codebase CLAUDE.md>` |
+
+## PR Stack
+
+_Each plan ships as its own PR. Base Branch is derived from the plan's `depends_on`: feature parent
+when independent, upstream plan's Feature Branch when dependent. This is a DAG, not a linear chain —
+independent plans get parallel PRs to the feature parent. Fill in as plans are written; update PR
+column and Status as plans move through the per-plan PR gate._
+
+| Plan | depends_on | Base Branch | Feature Branch | PR | Status |
+|------|------------|-------------|----------------|-----|--------|
+| 01 <name> | — | `<feature parent>` | `<prefix>/01-<slug>` | — | NOT STARTED |
+| 02 <name> | [01] (or empty if independent) | `<prefix>/01-<slug>` (or `<feature parent>` if independent) | `<prefix>/02-<slug>` | — | NOT STARTED |
 
 ## Planning Strategy
 _Why the feature is broken into these plans, what order, what the rationale is_
 
 ## Dependency Graph
-_ASCII diagram showing which plans depend on which_
+_ASCII diagram showing which plans depend on which. For stacked PRs, this also reflects branch dependencies._
 
 ## Interface Contracts Between Plans
 _Key seams between plans — method signatures, data models, API routes, config_
@@ -243,15 +291,24 @@ and updated during planning (Step 6 self-review). Advisory only — user decides
 | _none discovered_ | | | |
 ````
 
-#### Fill In Implementation Environment
+#### Fill In Implementation Environment & PR Stack
 
-When creating `plans/00-overview.md`, populate the Implementation Environment section with
-the environment details sub-agents will need: codebase paths, base branch (for Driver MCP context and merge target), feature branch (for local implementation), test commands, and anything else relevant. Pull from research Codebases and codebase
-CLAUDE.md as starting points, then confirm with the user.
+When creating `plans/00-overview.md`:
 
-#### Populate Environment
+1. **Implementation Environment** — populate with feature-level defaults: codebase paths, **Feature Parent Branch** (where the whole feature ultimately merges — Driver MCP context branch), **Branch Prefix** (default for per-plan branch names), test command, standards doc. Pull from the research Codebases table and codebase CLAUDE.md as starting points; confirm with the user.
+2. **PR Stack table** — one row per plan, in dependency order. Set each plan's `Base Branch` from its `depends_on`: feature parent if independent, upstream plan's `Feature Branch` if dependent. For plans with multiple dependencies, the user picks one as the branch parent; the others are interface-only. Default per-plan `Feature Branch` to `<prefix>/<NN-plan-slug>`; the user may override.
 
-When writing each plan, populate the `## Environment` section. Source values from: the research Codebases table (`research/00-overview.md` `## Codebases`), the codebase's CLAUDE.md, and Driver context gathered in Steps 3–4. Confirm values with the user. For multi-plan features, the per-plan Environment section may duplicate values from the overview's Implementation Environment — this is intentional (each plan is self-contained for materialize-tasks).
+Materialize-tasks reads each plan's own `## Environment` section as the primary source — keep per-plan Environments in sync with the PR Stack table.
+
+#### Populate Per-Plan Environment
+
+When writing each plan, populate the `## Environment` section. The plan is the authoritative source for its branch values — materialize-tasks reads this section first.
+
+- **Base Branch:** derived from this plan's `depends_on`. If empty (independent), use the Feature Parent Branch from the overview's Implementation Environment. If one upstream plan, use that plan's `Feature Branch`. If multiple, surface the choice to the user during Step 4.5 — typically the latest in DAG order.
+- **Feature Branch:** `<branch-prefix>/<NN-plan-slug>` by default. Confirm with the user during Step 4.5; record any override here.
+- **Other fields** (Codebase, Path, Test Command, Key Directories, Standards Doc): copy from the overview's Implementation Environment and the codebase's CLAUDE.md.
+
+The per-plan Environment intentionally duplicates feature-level values — each plan is self-contained for materialize-tasks. Mirror updates to the overview's PR Stack table when a Feature Branch name changes.
 
 #### Interface Contracts Are Critical
 
@@ -283,11 +340,13 @@ This catches interface design problems during planning (free to fix) rather than
 |-------|-------|
 | Codebase | <name> |
 | Path | `<absolute path>` |
-| Base Branch | `<branch>` |
-| Feature Branch | `<branch>` |
+| Base Branch | `<derived from depends_on: feature parent if independent; upstream plan's Feature Branch if dependent>` |
+| Feature Branch | `<this plan's branch — default `<prefix>/<NN-slug>`>` |
 | Test Command | `<command>` |
 | Key Directories | `<dir1>`, `<dir2>` |
 | Standards Doc | `<path to CLAUDE.md or equivalent>` |
+
+_Base Branch is what this plan's PR targets; Feature Branch is the head branch this plan implements on. Keep in sync with the PR Stack table in `plans/00-overview.md`._
 
 ## Context
 _Summary from research — problem statement, scope, key decisions_

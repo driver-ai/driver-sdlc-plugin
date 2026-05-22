@@ -34,12 +34,14 @@ Before creating any files, gather project logistics through conversation.
 Ask these questions **one at a time**, waiting for the user's answer before proceeding:
 
 1. **"Which codebases are involved?"**
-   - For each codebase, ask: name, local path, base branch (where you'll merge back to — also used for Driver MCP context), and feature branch (where you're working)
+   - For each codebase, ask: name, local path, base branch (where you'll ultimately merge back to — also used for Driver MCP context), and branch prefix (default for per-plan branches, e.g., `amark/oauth` will produce `amark/oauth/01-token-store` for Plan 01).
    - Ask for the Driver MCP codebase name if they know it (they can check by running `get_codebase_names` separately)
    - Validate that local paths exist on disk (`ls <path>`)
-   - If the user specifies only one branch, use it as both Base Branch and Feature Branch
+   - Branch prefix: if the user provides only a base branch, suggest a default prefix from the feature name (e.g., feature `oauth-support` → prefix `<user>/oauth-support`). Per-plan branches default to `<prefix>/<NN-plan-slug>` and can be overridden during planning.
    - If the user doesn't know yet: accept "TBD" and move on
    - Store as a list for the Codebases table in `00-overview.md`
+
+   **Why both a base branch and a branch prefix?** Each plan ships as its own PR. Plan 01 branches off the base branch; Plan 02 branches off Plan 01's feature branch, and so on. The branch prefix is the convention used to generate per-plan branch names — there is no single "feature branch" anymore.
 
 2. **"Are there known coding standards or conventions?"**
    - For each codebase: CLAUDE.md path, test framework/commands, key conventions
@@ -61,10 +63,13 @@ Create the following structure at `{projects_path}/features/<project-name>/`:
 ├── plans/
 ├── dry-runs/
 ├── implementation/
-├── assessment/
+├── assessment/           # per-plan: <plan>-test-curation.md
+├── driver-docs/          # centralized; per-plan PR docs created during handoff
 └── tests/
     └── results/
 ```
+
+`driver-docs/` is created here but populated per-plan during the handoff phase: `driver-docs/<plan>/{feature-overview,architecture,testing-guide,risk-assessment}.md` plus a cross-plan `driver-docs/00-feature-overview.md` rollup. See [CLAUDE.md Project Structure](../CLAUDE.md#project-structure) for the full per-plan layout.
 
 **Scaffold `research/00-intent.md`** using this template (skip if file already exists with `status: confirmed`):
 
@@ -217,9 +222,11 @@ _See `research/00-intent.md` for full problem framing and author's domain contex
 
 ## Codebases
 
-| Name | Local Path | Driver Name | Base Branch | Feature Branch |
-|------|------------|-------------|-------------|----------------|
-| <name from Step 3> | <validated path> | <Driver MCP name> | <base branch> | <feature branch> |
+| Name | Local Path | Driver Name | Base Branch | Branch Prefix |
+|------|------------|-------------|-------------|---------------|
+| <name from Step 3> | <validated path> | <Driver MCP name> | <base branch — feature parent> | <branch prefix — e.g., `<user>/<feature>`> |
+
+**Per-plan branches** are generated from the Branch Prefix during planning (default: `<prefix>/<NN-plan-slug>`). Plan 01 branches off Base Branch; Plan N branches off Plan N-1's feature branch. The PR Stack table in `plans/00-overview.md` tracks the actual branch chain once plans are written.
 
 ---
 

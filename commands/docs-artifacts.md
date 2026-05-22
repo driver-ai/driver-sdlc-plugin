@@ -1,43 +1,50 @@
 ---
-description: Generate handoff docs (overview, architecture, testing guide, risks) from your feature's research, plans, and code changes. Use after implementation is complete, before opening a PR or requesting code review.
-argument-hint: <process-artifacts-path> [codebase-paths...]
+description: Generate per-plan handoff docs (overview, architecture, testing guide, risks) for the PR body of a single plan. Runs after `/drvr:assess <plan>` and before `/drvr:open-pr <plan>`.
+argument-hint: <plan-name> [process-artifacts-path] [codebase-paths...]
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash, Agent
 ---
 
 # /drvr:docs-artifacts Command
 
-Generate or update handoff documentation for the Handoff phase of the SDLC workflow.
+Generate or update **per-plan** handoff documentation. Each plan ships as its own PR, with a self-contained PR body sourced from `driver-docs/<plan>/`. A reviewer who hasn't seen the rest of the stack should be able to understand what changed, why, how to verify it, and where this PR sits in the stack — all from this plan's docs.
+
+This is the second step in the per-plan PR gate: `/drvr:assess <plan>` → **`/drvr:docs-artifacts <plan>`** → `/drvr:open-pr <plan>`.
 
 ## Artifacts Generated
 
 | File | Purpose |
 |------|---------|
-| `driver-docs/feature-overview.md` | Entry point - what was built and why |
-| `driver-docs/architecture.md` | Technical design and decisions (ADR-style) |
-| `driver-docs/testing-guide.md` | QA verification steps |
-| `driver-docs/risk-assessment.md` | Dependencies, security, complexity concerns |
+| `driver-docs/<plan>/feature-overview.md` | PR body summary — what was built in THIS plan and why; includes stack context |
+| `driver-docs/<plan>/architecture.md` | Technical design and decisions for this plan (ADR-style) |
+| `driver-docs/<plan>/testing-guide.md` | QA verification steps for this plan |
+| `driver-docs/<plan>/risk-assessment.md` | Dependencies, security, complexity concerns specific to this plan |
+
+Additionally, the cross-plan rollup at `driver-docs/00-feature-overview.md` is updated to reflect this plan's status (created on first run, updated subsequently).
 
 ## Workflow
 
-### Step 1: Parse Arguments
+### Step 1: Parse Arguments and Resolve Plan
 
-Extract from arguments:
-- **Process artifacts path** (required) — Path to feature folder with research/, plans/
-- **Codebase paths** (optional) — Paths to codebases; if not provided, use current directory
+1. **Plan name** (required) — the plan to generate docs for. If not provided, scan `plans/00-overview.md` for the lowest-numbered plan with status COMPLETE that has a per-plan assessment artifact (`assessment/<plan>-test-curation.md`) but no `driver-docs/<plan>/` directory. Tell the user: "No plan specified — defaulting to `<plan>` (next plan needing handoff docs)."
+2. **Process artifacts path** (optional) — Path to feature folder with research/, plans/. Default: cwd or detected feature root.
+3. **Codebase paths** (optional) — Paths to codebases; if not provided, use current directory or codebase paths from research Codebases table.
 
 Example invocations:
 ```
-/drvr:docs-artifacts ./features/oauth-support ~/work/driver/python-backend ~/work/driver/webapp-frontend
-/drvr:docs-artifacts ./features/search-improvements
+/drvr:docs-artifacts 01-token-store
+/drvr:docs-artifacts 02-refresh-flow ./features/oauth-support
+/drvr:docs-artifacts 01-foo ./features/oauth-support ~/work/driver/python-backend
 ```
 
-### Step 2: Check Prerequisites
+### Step 2: Check Prerequisites (Per-Plan Gate)
 
-1. Verify process artifacts path exists and contains research/ or plans/
-2. Verify each codebase path is a git repository
-3. Check that Driver MCP is available (required)
-4. Detect if `driver-docs/` folder exists in the feature folder (determines create vs update mode)
-5. **Assessment check** — Look for `assessment/test-curation-*.md` in the feature folder. If found, read the `Scope` line (format: `**Scope:** plan-name-1, plan-name-2` — comma-separated plan names matching filenames in `plans/`). Verify the scope covers all plans listed as COMPLETE in `plans/00-overview.md`. If `plans/00-overview.md` doesn't exist (single-plan feature), verify the assessment covers the current plan instead. If no assessment artifact exists, or its scope doesn't cover all complete plans: BLOCK. "Assessment has not been completed for all implemented plans. Run `/drvr:assess` first."
+1. Verify process artifacts path exists and contains plans/
+2. Verify the target plan file exists: `plans/<plan>.md` (status: COMPLETE)
+3. Verify each codebase path is a git repository
+4. Check that Driver MCP is available (required)
+5. **Per-plan assessment check** — BLOCK if `assessment/<plan>-test-curation.md` does not exist. "Per-plan assessment for `<plan>` has not been completed. Run `/drvr:assess <plan>` first — handoff docs depend on a curated test suite."
+6. **Plan status check** — Read `plans/<plan>.md` frontmatter. BLOCK if `status` is not `complete` (or the plan's section in `plans/00-overview.md` is not COMPLETE). "Plan `<plan>` is not marked complete. Complete implementation + bookkeeping, then assess, before generating handoff docs."
+7. Detect if `driver-docs/<plan>/` directory exists (determines create vs update mode)
 
 If Driver MCP is unavailable:
 ```
@@ -49,8 +56,8 @@ Please ensure Driver MCP server is running.
 
 | Condition | Mode |
 |-----------|------|
-| No `driver-docs/` folder in feature | **Create** - Generate all artifacts from scratch |
-| `driver-docs/` exists in feature | **Update** - Diff-based update of changed sections |
+| No `driver-docs/<plan>/` folder | **Create** - Generate all per-plan artifacts from scratch |
+| `driver-docs/<plan>/` exists | **Update** - Diff-based update of changed sections (e.g., after PR revision) |
 
 ### Step 3.5: Resolve Driver Codebase Names
 
@@ -60,176 +67,231 @@ Before spawning the analyzer, resolve Driver codebase names so the analyzer can 
 2. Find the Codebases table and extract the "Driver Name" column values
 3. If no Codebases table exists, check `FEATURE_LOG.md` or ask the user for Driver codebase names
 
-### Step 4: Spawn Handoff Analyzer Agent
+### Step 4: Spawn Handoff Analyzer Agent (Per-Plan Scope)
 
-Use the Agent tool to spawn the `handoff-analyzer` agent:
+Use the Agent tool to spawn the `handoff-analyzer` agent, scoped to THIS plan:
 
 ```
-Prepare handoff documentation:
-- Process artifacts: {process_artifacts_path}
+Prepare per-plan handoff documentation:
+- Plan: {plan-name}
+- Plan file: {process_artifacts_path}/plans/{plan-name}.md
+- Implementation log: {process_artifacts_path}/implementation/log-{plan-name}.md
+- Per-plan assessment: {process_artifacts_path}/assessment/{plan-name}-test-curation.md
+- Process artifacts (read-only context): {process_artifacts_path}/research/, plans/00-overview.md, DECISIONS.md
 - Codebases:
   - {codebase_path_1}
   - {codebase_path_2}
 - Driver codebase names: {driver_name_1}, {driver_name_2}
+- Plan Environment (from plans/{plan-name}.md):
+  - Base Branch: {base_branch}
+  - Feature Branch: {feature_branch}
 - Mode: {create|update}
 ```
 
-The analyzer will:
-- Read process artifacts for intent, decisions, scope
-- Gather git context per codebase (branch, commits, changed files)
-- Query Driver MCP for architecture and patterns
-- Return structured content for each artifact
+The analyzer must:
+- Scope all analysis to changes between Base Branch and Feature Branch — `git diff Base Branch...Feature Branch` (or HEAD if Feature Branch checked out)
+- Read this plan's `## Context`, `## Architecture Fit`, `## Data Structures & Callables`, `## Test Strategy` as primary sources
+- Read implementation log for actual deviations/decisions for this plan
+- Read research artifacts and DECISIONS.md for upstream context (cross-plan motivation, prior decisions)
+- Read `plans/00-overview.md` for stack position (this plan's row in PR Stack, prior/next plan names)
+- Query Driver MCP for architecture and patterns relevant to changed files only
+- Return structured content where each artifact's "feature-overview.md" includes a self-contained PR body — feature context, this plan's purpose, stack position, and links to upstream/downstream plans
 
-### Step 5: Write Artifacts
+### Step 5: Write Per-Plan Artifacts
 
-Using the analyzer's output, write each artifact to the feature's `driver-docs/` folder:
+Using the analyzer's output, write each artifact to `driver-docs/<plan>/`:
 
 **For Create mode:**
-- Create `driver-docs/` folder
+- Create `driver-docs/<plan>/` folder
 - Write all 4 artifact files using the structured content
+- Update or create `driver-docs/00-feature-overview.md` cross-plan rollup (add this plan's row to the PR/plan list)
 
 **For Update mode:**
-- Read existing artifacts
+- Read existing per-plan artifacts
 - Compare analyzer output to existing content
 - Update sections that have changed
 - Preserve manually-added content where possible
 - Update "Last Updated" timestamp
+- Update the cross-plan rollup to reflect any status changes
 
-### Step 6: Confirm Completion
+### Step 6: Confirm Completion and Surface Next Gate Step
 
 Report what was created/updated:
 
 ```
-Created driver-docs/ in features/oauth-support/:
-- feature-overview.md
+Created driver-docs/01-token-store/ in features/oauth-support/:
+- feature-overview.md (PR body — self-contained with stack context)
 - architecture.md
 - testing-guide.md
 - risk-assessment.md
+Updated driver-docs/00-feature-overview.md (cross-plan rollup)
 
 Sources:
-- Process artifacts: features/oauth-support/research/, plans/
-- Codebases: python-backend (feature/oauth), webapp-frontend (feature/oauth)
-- Files analyzed: 23 changed files across 8 commits
+- Plan: plans/01-token-store.md
+- Implementation log: implementation/log-01-token-store.md
+- Per-plan assessment: assessment/01-token-store-test-curation.md
+- Diff scope: amark/oauth/01-token-store ← main (Base Branch)
+- Files analyzed: 7 changed files across 4 commits
 ```
 
 Or for updates:
 ```
-Updated driver-docs/ in features/oauth-support/:
+Updated driver-docs/01-token-store/ in features/oauth-support/:
 - architecture.md: Updated Components, Design Decisions sections
 - risk-assessment.md: Added new dependency (zod)
 - feature-overview.md: No changes needed
 - testing-guide.md: No changes needed
 ```
 
-Commit the handoff documentation to the projects repo:
+Update `FEATURE_LOG.md` with the per-plan event:
+`| <date> | Handoff docs generated for plan <plan> (handoff_docs_<plan>) | driver-docs/<plan>/ |`
+
+Commit the handoff documentation:
 
 ```
-git add driver-docs/ FEATURE_LOG.md && git commit -m "chore: Handoff documentation — <feature name>"
+git add driver-docs/<plan>/ driver-docs/00-feature-overview.md FEATURE_LOG.md && git commit -m "chore: Handoff docs for plan <plan>"
 ```
 
-## Artifact Templates
+**Surface the next gate step explicitly:**
 
-### feature-overview.md
+> "Plan `<plan>` handoff docs ready at `driver-docs/<plan>/`. Final gate step: `/drvr:open-pr <plan>` — this will push Feature Branch `<feature_branch>` and open a PR targeting `<base_branch>`."
+
+## Artifact Templates (Per-Plan)
+
+Each plan's docs must be **self-contained** — a reviewer who hasn't read other PRs in the feature should be able to evaluate this PR. Include feature context, plan purpose, and stack position in every per-plan `feature-overview.md`.
+
+### `driver-docs/<plan>/feature-overview.md` (becomes the PR body)
 
 ```markdown
-# Feature: {Feature Name}
+# {Plan Name} — Part of {Feature Name}
 
-> Last Updated: {date}
+> Plan: `{plan}` · Last Updated: {date}
 
-## Summary
+## Stack Position
 
-{2-3 sentence description}
+- **Base branch**: `{base_branch}` (this PR targets `{base_branch}`)
+- **Feature branch**: `{feature_branch}` (this PR's head)
+- **Depends on**: {list of upstream plans by name + PR link if known, or "none — this PR is independent against the feature parent"}
+- **Enables**: {list of downstream plans by name that will stack on this PR, or "—"}
+- **Cross-plan rollup**: [driver-docs/00-feature-overview.md](../00-feature-overview.md)
 
-## Problem
+## Feature Context (1–2 paragraphs)
 
-{What problem this solves, for whom}
+_What the overall {Feature Name} feature is solving. Why it exists. Carry just enough context that a reviewer who's never seen this feature can evaluate this PR. Pulled from research/00-intent.md and DECISIONS.md, summarized._
 
-## What Changed
+## What This Plan Delivers
 
-- {User-facing change 1}
-- {User-facing change 2}
+{2–3 sentence description scoped to THIS plan — not the whole feature}
 
-## Key Files
+## What Changed in This PR
+
+- {User-facing or system-facing change 1 — specific to this plan}
+- {Change 2}
+
+## Key Files in This PR
 
 | File | Purpose |
 |------|---------|
 | `{path}` | {description} |
+
+_Only files modified by this plan's commits (`git diff {base_branch}...{feature_branch}`). Files touched by upstream plans appear in their PR, not this one._
+
+## How to Verify
+
+- See [Testing Guide](./testing-guide.md)
+- Plan acceptance criteria: {N criteria, all met — see `plans/{plan}.md` `## Acceptance Criteria`}
 
 ## Related
 
 - [Architecture](./architecture.md)
 - [Testing Guide](./testing-guide.md)
 - [Risk Assessment](./risk-assessment.md)
-- [PR #{number}]({link})
+- [Cross-plan overview](../00-feature-overview.md)
+- Upstream PRs: {list with #N links, or "—"}
+- Downstream plans (not yet PR'd): {list of plan names, or "—"}
 ```
 
-### architecture.md
+### `driver-docs/<plan>/architecture.md`
 
 ```markdown
-# Architecture: {Feature Name}
+# Architecture: {Plan Name}
 
-> Last Updated: {date}
+> Plan: `{plan}` · Last Updated: {date}
 
 ## Overview
 
-{Brief technical summary}
+{Brief technical summary scoped to this plan's changes}
 
-## Components
+## Components Touched
 
 ### {Component Name}
 
 - **Location**: `{path}`
 - **Responsibility**: {what it does}
+- **Change in this plan**: {added/modified/removed}
 - **Key Files**: {list}
 
-## Design Decisions
+## Design Decisions (This Plan)
 
 ### Decision: {Topic}
 
-- **Context**: {What prompted this decision}
-- **Decision**: {What we chose}
+- **Context**: {What prompted this decision in the scope of this plan}
+- **Decision**: {What was chosen}
 - **Rationale**: {Why}
-- **Alternatives**: {What we didn't choose and why}
+- **Alternatives**: {What was rejected and why}
+
+_Pull from `plans/{plan}.md` and `DECISIONS.md` entries with `**Phase**: Planning` or `**Phase**: Implementation` referencing this plan._
 
 ## Data Flow
 
-{Description or diagram of how data moves}
+{Description of how data moves through the changes in this PR}
 
 ## Patterns
 
-- **Follows**: {existing patterns used}
-- **Introduced**: {new patterns, if any}
+- **Follows**: {existing patterns matched in this plan}
+- **Introduces**: {new patterns added in this plan, if any}
+- **Deviates from**: {precedents intentionally not followed; cite reason}
 
 ## Integration Points
 
-- {System}: {how it connects}
+- {System}: {how the changes in this PR interact}
+
+## Interfaces Affecting Downstream Plans
+
+_For features with downstream plans that depend on this one — what interfaces does this PR expose that the next plans build against? Pull from `plans/00-overview.md` `## Interface Contracts Between Plans`._
 ```
 
-### testing-guide.md
+### `driver-docs/<plan>/testing-guide.md`
 
 ```markdown
-# Testing Guide: {Feature Name}
+# Testing Guide: {Plan Name}
 
-> Last Updated: {date}
+> Plan: `{plan}` · Last Updated: {date}
 
 ## Prerequisites
 
 - [ ] {Environment requirement}
 - [ ] {Test data requirement}
 - [ ] {Account/role requirement}
+- [ ] Checked out branch `{feature_branch}` (this PR's head)
 
-## Test Scenarios
+## Automated Tests
 
-### Scenario: {Happy Path Name}
+- Test command: `{test_command from plan Environment}`
+- Tests added in this plan: {N tests across M files — link to per-plan assessment artifact for curation details}
+- Run: `{test_command}` — all should pass
+
+## Manual Test Scenarios
+
+### Scenario: {Happy Path}
 
 **Steps**:
 1. {Step 1}
 2. {Step 2}
-3. {Step 3}
 
 **Expected Result**: {What should happen}
 
-### Scenario: {Error Case Name}
+### Scenario: {Error Case}
 
 **Steps**:
 1. {Step 1}
@@ -240,17 +302,21 @@ git add driver-docs/ FEATURE_LOG.md && git commit -m "chore: Handoff documentati
 
 - [ ] **{Edge case}**: {How to test} → {Expected result}
 
+## What This Guide Does NOT Cover
+
+_Scenarios that belong to upstream PRs (already verified there) or downstream plans (not yet shipped). Naming them helps the reviewer know where verification responsibility lies._
+
 ## Known Limitations
 
-- **{Limitation}**: {Reason, planned fix if any}
+- **{Limitation}**: {Reason, follow-up plan if any}
 ```
 
-### risk-assessment.md
+### `driver-docs/<plan>/risk-assessment.md`
 
 ```markdown
-# Risk Assessment: {Feature Name}
+# Risk Assessment: {Plan Name}
 
-> Last Updated: {date}
+> Plan: `{plan}` · Last Updated: {date}
 
 ## Summary
 
@@ -260,12 +326,15 @@ git add driver-docs/ FEATURE_LOG.md && git commit -m "chore: Handoff documentati
 | Security | {Low/Medium/High} | {note} |
 | Performance | {Low/Medium/High} | {note} |
 | Breaking Changes | {Low/Medium/High} | {note} |
+| Stack Risk | {Low/Medium/High} | {risk of merging out of order, rebase cost if upstream changes} |
 
-## New Dependencies
+## New Dependencies (Introduced by THIS Plan)
 
 | Package | Purpose | License | Weekly Downloads | Notes |
 |---------|---------|---------|------------------|-------|
 | `{package}` | {why} | {license} | {downloads} | {concerns} |
+
+_Dependencies introduced by upstream PRs are documented in their risk-assessment.md — not duplicated here._
 
 ## Security Considerations
 
@@ -277,7 +346,7 @@ git add driver-docs/ FEATURE_LOG.md && git commit -m "chore: Handoff documentati
 
 ## Breaking Changes
 
-- **{Change}**: {Migration path, timeline}
+- **{Change}**: {Migration path, timeline, blast radius}
 
 ## Complexity Hotspots
 
@@ -285,15 +354,56 @@ git add driver-docs/ FEATURE_LOG.md && git commit -m "chore: Handoff documentati
 |------|---------|-------|
 | `{path}` | +{lines} | {why notable} |
 
-## Downstream Impacts
+## Downstream Impacts (Within This Feature)
+
+- **{Plan Y}**: {How a change here would ripple — if Plan Y is stacked on this PR}
+
+## Downstream Impacts (Outside This Feature)
 
 - **{System/Feature}**: {How affected}
 ```
 
+### `driver-docs/00-feature-overview.md` (Cross-Plan Rollup)
+
+```markdown
+# Feature: {Feature Name} — Cross-Plan Overview
+
+> Last Updated: {date}
+
+## Summary
+
+{2–3 sentence description of the feature as a whole}
+
+## PR Stack
+
+| Plan | depends_on | Base Branch | PR | Status |
+|------|------------|-------------|-----|--------|
+| 01 <name> | — | `<feature parent>` | #N | Merged |
+| 02 <name> | [01] | `<prefix>/01-<slug>` | #M | Open |
+| 03 <name> | — | `<feature parent>` | — | Pending |
+
+## Per-Plan Docs
+
+- [Plan 01 — {name}](./01-{slug}/feature-overview.md)
+- [Plan 02 — {name}](./02-{slug}/feature-overview.md)
+- ...
+
+## Why This Feature
+
+_Pulled from `research/00-intent.md`. The single source for "why are we building this" that all plan PRs link back to._
+
+## Decisions Log
+
+_Pointer to `DECISIONS.md` — append-only decisions made across the feature._
+```
+
 ## Notes
 
-- All artifacts include "Last Updated" timestamp
-- Feature Overview links to other artifacts for navigation
-- Risk Assessment uses Low/Medium/High levels for quick scanning
+- All artifacts include "Last Updated" timestamp and `Plan: {plan}` so they're attributable
+- Per-plan `feature-overview.md` becomes the PR body — it MUST be self-contained for a reviewer who hasn't read other PRs
+- Stack Position section is mandatory in every per-plan `feature-overview.md`
+- Diff scope is always per-plan: `{base_branch}...{feature_branch}`. Don't include files touched only by upstream PRs.
+- Risk Assessment levels (Low/Medium/High) are for quick scanning
 - Architecture uses ADR (Architecture Decision Record) format for decisions
-- Testing Guide is QA-focused with step-by-step verification
+- Testing Guide is QA-focused, step-by-step, and names which scenarios belong to upstream/downstream PRs
+- The cross-plan rollup `driver-docs/00-feature-overview.md` is the single feature-wide narrative, linked from every PR body

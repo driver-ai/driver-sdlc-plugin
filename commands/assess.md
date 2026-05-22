@@ -1,50 +1,52 @@
 ---
-description: Curate the test suite after implementation — categorize, prune scaffolding, promote valuable tests, keep durable ones
-argument-hint: [feature-path]
+description: Per-plan test suite curation — runs after a plan's bookkeeping completes and before that plan's PR. Categorize, prune scaffolding, promote valuable tests, keep durable ones for the named plan.
+argument-hint: <plan-name> [feature-path]
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep, Agent
 ---
 
 # /drvr:assess Command
 
-Curate the test suite after all plans are implemented. TDD naturally produces scaffolding tests that are valuable during construction but become maintenance burden afterward. This command evaluates every test, prunes what's no longer needed, promotes scaffolding that covers important behavior, and documents the decisions.
+Curate the test suite **for a single plan**, after that plan's bookkeeping completes and before that plan's PR opens. TDD naturally produces scaffolding tests that are valuable during construction but become maintenance burden afterward. This command evaluates the plan's tests, prunes what's no longer needed, promotes scaffolding that covers important behavior, and documents the decisions — so the PR ships with a curated, reviewable test suite.
 
 **When uncertain, KEEP. This is a pruning pass, not a purge.**
 
+This is the first step in the per-plan PR gate: `/drvr:assess <plan>` → `/drvr:docs-artifacts <plan>` → `/drvr:open-pr <plan>`. Do not skip steps.
+
 ---
 
-## Step 1: Locate Feature and Check Readiness
+## Step 1: Locate Feature, Resolve Plan, and Check Readiness
 
 1. **Resolve feature path** — from argument, cwd, or parent directories (same as `/drvr:orchestrate`)
-2. **Read `plans/00-overview.md`** — check the progress table for plan statuses
+2. **Resolve target plan**:
+   - If a plan name is provided as the first argument, use it (strip `.md` if present).
+   - If no plan name is provided, scan `plans/00-overview.md` progress table for the lowest-numbered plan with status COMPLETE that does not yet have a per-plan assessment artifact (`assessment/<plan>-test-curation.md`) — that's the next plan in the gate. Tell the user: "No plan specified — defaulting to `<plan>` (next plan needing assessment)."
+   - If no eligible plan is found: BLOCK. "No plans are awaiting per-plan assessment. Either all complete plans are already assessed, or no plan has reached COMPLETE. Run implementation first."
+3. **Read `plans/00-overview.md`** — verify the target plan's status
 
-### Readiness Check
+### Readiness Check (Per-Plan)
 
-- **All plans COMPLETE** → proceed normally (standard case)
-- **Some plans incomplete** → warn:
-
-> "Plans X, Y are still in progress. Scaffolding from completed plans may still be load-bearing for remaining work. Proceeding will scope assessment to tests from completed plans only."
-
-  User confirms or declines. If partial: scope analysis to tests from completed plans only. Note scope in report: `"Scope: Plans 01a, 01b (plans 02, 03 pending)"`
-
-- The mandatory pre-handoff assessment still requires all plans complete — a partial mid-implementation assessment doesn't satisfy it
+- **Target plan status = COMPLETE** → proceed
+- **Target plan status ≠ COMPLETE** → BLOCK. "Plan `<plan>` is not COMPLETE yet (current status: `<status>`). Per-plan assessment runs after bookkeeping. Complete implementation and bookkeeping first."
+- **Other plans incomplete** → INFO only — that's expected in the stacked model. Earlier plans are assessed and PR'd before later plans are implemented.
+- **Per-plan assessment artifact already exists for `<plan>`** → ask: "An assessment already exists at `assessment/<plan>-test-curation.md`. Overwrite, or update in place?"
 
 ---
 
-## Step 2: Inventory the Test Suite
+## Step 2: Inventory the Plan's Test Suite
 
-Identify all test files across the feature:
+Identify test files **introduced or modified by THIS plan only**. Earlier plans were assessed in their own pass; later plans haven't been implemented.
 
-1. **Implementation logs** (primary) — read `implementation/log-*.md` for each completed plan. Logs track every file touched per task with commit hashes. Extract test files from the "Files" and "Actual" sections.
-2. **Plan documents** (supplement) — read each plan's `## Test Strategy` section for the full list of planned test files. Cross-reference with logs to catch any tests added during implementation that weren't in the original plan.
-3. **Git diff** (verification) — if a feature branch exists, `git diff --name-only <base-branch>...HEAD -- '*.test.*' '*.spec.*' '*_test.*' '**/test_*' '**/tests/**'` to catch anything the logs missed.
+1. **Implementation log** (primary) — read `implementation/log-<plan>.md`. Extract test files from "Files" and "Actual" sections of each task.
+2. **Plan document** (supplement) — read the plan's `## Test Strategy` section for the full list of planned test files. Cross-reference with the log to catch any tests added during implementation that weren't in the original plan.
+3. **Git diff** (verification) — read the plan's `## Environment` for Base Branch and Feature Branch, then run `git diff --name-only <Base Branch>...<Feature Branch> -- '*.test.*' '*.spec.*' '*_test.*' '**/test_*' '**/tests/**'` (or against HEAD if the Feature Branch is currently checked out) to catch anything the log missed. The Base Branch is the prior plan's Feature Branch (or feature parent for Plan 01), which scopes the diff to THIS plan's changes only.
 4. **Read each test file** alongside its corresponding implementation file
 
 Build an inventory:
 ```
-| Test File | Test Count | Implementation File | From Plan |
+| Test File | Test Count | Implementation File | From Task |
 ```
 
-If scoped to specific plans (partial assessment), only include tests from those plans.
+If you discover tests from earlier plans in the diff (because the Feature Branch contains commits from prior plans you haven't filtered out), exclude them — those were assessed previously.
 
 ---
 
@@ -112,14 +114,15 @@ This review is **advisory** — present violations organized by severity. The us
 
 ## Step 5: Write Assessment Report
 
-Write to `assessment/test-curation-<YYYY-MM-DD>.md`:
+Write to `assessment/<plan>-test-curation.md` (per-plan filename — one assessment artifact per plan):
 
 ```markdown
-# Test Suite Assessment
+# Test Suite Assessment — Plan `<plan>`
 
 **Feature**: <name>
+**Plan**: `<plan>`
 **Date**: <YYYY-MM-DD>
-**Scope**: All plans | Plans 01a, 01b (plans 02, 03 pending)
+**Scope**: Tests introduced or modified by plan `<plan>`
 
 ## Summary
 
@@ -231,32 +234,37 @@ This makes the report the permanent record of decisions, not just proposals.
 
 ## Step 9: Update Overview
 
-If `plans/00-overview.md` exists, add an Assessment row to the progress table:
+If `plans/00-overview.md` exists, update the target plan's row in the progress table with assessment results (or add a notes column):
 
 ```
-| Assessment | COMPLETE | pruned <X>, promoted <Y>, kept <Z> | assessment/test-curation-<date>.md |
+| 01-foo | COMPLETE | <N> tests (pruned <X>, promoted <Y>, kept <Z>) | <key artifact> |
 ```
+
+Also update the PR Stack table row for this plan to reflect "ASSESSED" status (the next step is `/drvr:docs-artifacts <plan>`).
 
 ---
 
-## Step 10: Update Feature Log and Commit
+## Step 10: Update Feature Log, Commit, and Surface Next Gate Step
 
 1. Update `FEATURE_LOG.md`:
-   - Set phase → Handoff
    - Append event row (with standards):
-     `| <date> | Assessment complete — pruned <X>, promoted <Y>, kept <Z>, standards: <N pass, M fail> | assessment/test-curation-<date>.md |`
+     `| <date> | Assessment complete for plan <plan> — pruned <X>, promoted <Y>, kept <Z>, standards: <N pass, M fail> (assessment_complete_<plan>) | assessment/<plan>-test-curation.md |`
    - Append event row (without standards — use when no standards artifact exists):
-     `| <date> | Assessment complete — pruned <X>, promoted <Y>, kept <Z> | assessment/test-curation-<date>.md |`
-2. Commit bookkeeping: `"chore: Assessment complete — pruned <X>, promoted <Y>, kept <Z>"`
+     `| <date> | Assessment complete for plan <plan> — pruned <X>, promoted <Y>, kept <Z> (assessment_complete_<plan>) | assessment/<plan>-test-curation.md |`
+2. Commit bookkeeping: `"chore: Assessment complete for plan <plan> — pruned <X>, promoted <Y>, kept <Z>"`
 
-After completion, suggest: "Assessment complete. Run `/drvr:docs-artifacts` for handoff documentation."
+After completion, surface the next gate step explicitly:
+
+- **If standards FAIL violations found**: "Plan `<plan>` assessment found N standards violations. Run `/drvr:review <plan>` to fix them, then `/drvr:docs-artifacts <plan>`, then `/drvr:open-pr <plan>`."
+- **If clean**: "Plan `<plan>` assessment complete. Next gate step: `/drvr:docs-artifacts <plan>` to generate this plan's PR docs. After that: `/drvr:open-pr <plan>` to open the PR (base: `<Base Branch>` from the plan's Environment)."
 
 ---
 
 ## Notes
 
-- This command is mandatory before `/drvr:docs-artifacts` — the orchestrator enforces this
-- Users can run `/drvr:assess` mid-implementation, but a partial assessment doesn't satisfy the pre-handoff requirement
+- This command is mandatory before `/drvr:docs-artifacts <plan>` — the per-plan PR gate enforces it
+- One assessment artifact per plan: `assessment/<plan>-test-curation.md`
+- Scope is per-plan — assess only tests introduced or modified by THIS plan
 - When uncertain about a test, default to KEEP — false positives (keeping unnecessary tests) are cheaper than false negatives (losing important coverage)
-- The assessment report persists as documentation of test curation decisions
+- The assessment report persists as documentation of test curation decisions for that plan
 - For phase detection rules, see [/drvr:orchestrate](orchestrate.md) and [sdlc-orchestration](../skills/sdlc-orchestration/SKILL.md)
