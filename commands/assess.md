@@ -8,7 +8,7 @@ allowed-tools: Read, Write, Edit, Bash, Glob, Grep, Agent
 
 Curate the test suite **for a single plan**, after that plan's bookkeeping completes and before that plan's PR opens. TDD naturally produces scaffolding tests that are valuable during construction but become maintenance burden afterward. This command evaluates the plan's tests, prunes what's no longer needed, promotes scaffolding that covers important behavior, and documents the decisions — so the PR ships with a curated, reviewable test suite.
 
-**When uncertain, KEEP. This is a pruning pass, not a purge.**
+**When uncertain, judge by shape — don't default.** If the test asserts **structure** (counts, enum membership, types, mock call sequences, internal state) → PRUNE. If it asserts **behavior** (inputs → outputs, error modes, contract boundaries) → KEEP. This is a pruning pass, not a purge — but tests that only mirror the implementation are exactly what it exists to remove. A blanket "when uncertain, KEEP" default lets scaffolding ship by inertia; the shape of the assertion is the signal.
 
 This is the first step in the per-plan PR gate: `/drvr:assess <plan>` → `/drvr:docs-artifacts <plan>` → `/drvr:open-pr <plan>`. Do not skip steps.
 
@@ -63,6 +63,7 @@ Signals:
 - Setup is longer than the test itself
 - Duplicates coverage from a behavioral test
 - Tests implementation details (private method calls, internal state)
+- **Tautological structural assertions** — the assertion mirrors the implementation by construction. Example: a test that asserts an enum has exactly three variants when the enum itself lists those three variants; a test that asserts a class exposes N methods when those methods are the class definition; a test that asserts a config dict has K keys when those keys are the dict literal. These tests pass iff the implementation is unchanged and catch no real bug — they only re-state the implementation in a different syntax.
 
 ### KEEP — Valuable long-term
 
@@ -80,7 +81,7 @@ Signals:
 - Scaffolding that validates something worth keeping, but the wrong way
 - Could be rewritten to assert the same behavior through the public interface
 
-**Key constraint**: A mock-heavy test that is the only coverage for an important edge case stays (KEEP, not PRUNE). The goal is removing tests that cost more to maintain than the bugs they'd catch.
+**Key constraint**: A test that is the only coverage for an important **behavior** — even if implemented through mocks or with awkward setup — stays (KEEP, or PROMOTE if it tests behavior through implementation details). What does *not* qualify: tests whose only "coverage" is structural (the enum still has these three variants, the class still has these methods, the config still has these keys). Structural-only coverage is tautology, not coverage. The goal is removing tests that mirror the implementation, while preserving tests that catch real bugs.
 
 ---
 
@@ -265,6 +266,7 @@ After completion, surface the next gate step explicitly:
 - This command is mandatory before `/drvr:docs-artifacts <plan>` — the per-plan PR gate enforces it
 - One assessment artifact per plan: `assessment/<plan>-test-curation.md`
 - Scope is per-plan — assess only tests introduced or modified by THIS plan
-- When uncertain about a test, default to KEEP — false positives (keeping unnecessary tests) are cheaper than false negatives (losing important coverage)
+- When uncertain about a test, judge by what it asserts: structural / implementation-mirroring (enum membership, method counts, mock call shapes, internal state) → PRUNE; behavioral (inputs → outputs, error modes, contract boundaries) → KEEP. A blanket "default to KEEP" lets scaffolding ship by inertia, which defeats the assess phase's purpose.
+- Tautological structural assertions (e.g., "the enum has three variants" against a three-variant enum literal) are the canonical PRUNE case — they pass iff the implementation is unchanged and catch no real bug.
 - The assessment report persists as documentation of test curation decisions for that plan
 - For phase detection rules, see [/drvr:orchestrate](orchestrate.md) and [sdlc-orchestration](../skills/sdlc-orchestration/SKILL.md)
