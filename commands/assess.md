@@ -211,9 +211,12 @@ For approved changes:
 4. **Commit** — `"refactor: Curate test suite — pruned <X>, promoted <Y>"`
 
 If tests fail after changes, investigate:
-- A pruned test was the only coverage for a real behavior → restore it as KEEP
-- A promoted test needs adjustment → fix the rewrite
-- Unrelated failure → address separately
+- A **promoted** test was rewritten incorrectly and now fails → fix the rewrite (the common case)
+- A test that wasn't pruned now fails because it depended on a pruned test's setup, fixtures, or shared state → extract the shared setup into an explicit fixture; do not restore the pruned test (the dependency was the bug)
+- Unrelated regression slipped in via the curation commit → revert and redo the curation in a clean tree
+- Pre-existing failure unrelated to assess → address separately
+
+Note: a deleted test cannot fail. "Tests fail after pruning" is never a signal that the pruned test should be restored — it's a signal about the surviving tests or the rewrite. If you suspect a real behavior is now uncovered, that's a code-review/coverage concern, not a test-suite signal, and the fix is a new behavioral test rather than restoring the scaffolding.
 
 ---
 
