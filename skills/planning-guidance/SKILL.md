@@ -140,9 +140,9 @@ Before writing the plan, present your proposed direction to the user. At this po
 
 **Present a summary covering:**
 
-1. **Core/shell decomposition** — what's the pure logical core for this feature (no I/O, no time, no randomness), and what's the imperative shell that performs I/O and calls into it? Name the candidate pure functions/types and the shell entry points. If the surrounding code makes a clean extraction hard, say so explicitly and propose the extraction anyway — the plugin steers toward purity, it doesn't accommodate entanglement.
+1. **Core/shell decomposition** — what's the pure logical core for this feature (no I/O, no time, no randomness), and what's the imperative shell that performs I/O and calls into it? Name the candidate pure functions/types and the shell entry points. If the surrounding code makes a clean extraction hard, say so explicitly and propose the extraction anyway — the plugin steers toward purity, it doesn't accommodate entanglement. **If the feature is genuinely shell-only by nature** (thin CRUD, webhook forwarder, glue code, integration wrapper with no decision logic), say so and propose the shell-only declaration with a specific rationale; this requires the user to confirm the feature really has no meaningful pure logic to extract.
 2. **Architecture approach** — which existing patterns to follow, key files to modify, integration strategy. Note where the core/shell boundary lands relative to existing files.
-3. **Derived test strategy** — testing follows from the architecture, not the other way around. Pure-core functions get unit tests (values in, values out, no mocks). Shell functions get integration tests against real I/O. Name the framework and fixture-sourcing approach. If you find yourself proposing a mock for anything other than a system boundary (external API, DB at unit level, time, randomness), stop — that's a signal the core/shell boundary needs to move.
+3. **Derived test strategy** — testing follows from the architecture, not the other way around. Pure-core functions get unit tests (values in, values out, no mocks). Shell functions get integration tests against real I/O. For shell-only features, integration tests only. Name the framework and fixture-sourcing approach. If you find yourself proposing a mock for pure-core logic, stop — that's a signal the core/shell boundary needs to move. Mocks in integration tests are acceptable when the real collaborator is external, expensive, non-deterministic, or absent in test (see Mocking Rules) — each one named with its justification.
 4. **Scope adjustments** — anything surfaced during context gathering that wasn't in the original Step 2 scope (additions or exclusions)
 5. **Plan sizing** — estimated task count, single plan vs. split, and rationale
 
@@ -309,17 +309,23 @@ _Integration points with existing code_
 
 ### Core/Shell Decomposition
 
-_This subsection is required. The plan must explicitly name what's pure-core and what's shell._
+_This subsection is required. The plan must explicitly name what's pure-core and what's shell, OR explicitly declare the feature shell-only with a rationale._
 
 **Pure core** (no I/O, no time, no randomness, no mutable shared state — functions taking values in, returning values out):
 - `<function or type name>` at `<file>` — <one-line purpose>
 - ...
 
+**OR** — if the feature is genuinely shell-only by nature (thin CRUD endpoint with no business logic, webhook forwarder, glue code wiring two services, integration wrapper with no decision logic):
+
+> **Pure core: (none — shell-only feature)**
+>
+> **Rationale**: <Why there's no meaningful pure logic to extract. Be specific: "Endpoint just validates the JSON schema and writes a row" or "Glue between Stripe webhook and our queue, no business logic." This rationale is reviewed at dry-run; vague rationales like "doesn't fit" get pushed back.>
+
 **Imperative shell** (performs I/O, calls into the core):
 - `<function or entry point>` at `<file>` — <I/O performed: HTTP / DB / filesystem / time / random / etc.>
 - ...
 
-**Boundary notes:** <Where does the seam land relative to existing files? Is the surrounding code already in core/shell shape, partially, or not at all? If the boundary cuts through an existing entangled module, name the extraction explicitly.>
+**Boundary notes:** <Where does the seam land relative to existing files? Is the surrounding code already in core/shell shape, partially, or not at all? If the boundary cuts through an existing entangled module, name the extraction explicitly. For shell-only features, note what would have to change in the feature's scope before extraction would pay off.>
 
 ## Data Structures & Callables
 
@@ -369,18 +375,23 @@ defines idioms; when absent, use the language's most natural form._
 
 ## Test Strategy
 
-_The test strategy is derived from the Core/Shell Decomposition above, not designed independently. Pure-core functions get unit tests (values in, values out, no mocks). Shell functions get integration tests against real I/O. If any test below would need a mock to exercise the unit, the core/shell boundary is wrong — return to Architecture Fit and re-extract._
+_The test strategy is derived from the Core/Shell Decomposition above, not designed independently. Pure-core functions get unit tests (values in, values out, no mocks). Shell functions get integration tests against real I/O. If any test below would need a mock to exercise pure-core logic, the boundary is wrong — return to Architecture Fit and re-extract._
+
+_For shell-only features (Pure core: none), the Unit Tests subsection is omitted; the test strategy is integration-only against real I/O._
 
 ### Testing Patterns
 _Testing framework, file organization, and conventions discovered via Driver_
 
 ### Unit Tests (pure-core)
+
+_Omit this subsection entirely if the feature is shell-only._
+
 _One test per pure-core function listed above. Each test takes values in, asserts on the returned value. No mocks, no I/O, no time, no randomness — if you reach for any of those, the function isn't pure, fix it._
 
 - [ ] Test: `<test_name>` — `<pure-core function>` with `<input>` returns `<output>`
 
 ### Integration Tests (shell)
-_One test per shell entry point. Exercises real I/O against a real dependency (real test DB, real HTTP fake-backed by recorded fixtures from real calls, real filesystem in a tmpdir, etc.). Mocks only at hard external system boundaries that cannot be exercised in test (third-party APIs without sandboxes; cost-bearing services)._
+_One test per shell entry point. Exercises real I/O against a real dependency (real test DB, real HTTP fake-backed by recorded fixtures from real calls, real filesystem in a tmpdir, etc.). Mocks only at justified boundaries (see Mocking Rules in Testing Methodology); each mock must be named with its justification._
 
 - [ ] Test: `<test_name>` — `<shell entry point>` against `<real dependency>`, verifies `<observable outcome>`
 
@@ -393,7 +404,7 @@ _High-level approach, key design decisions, rationale_
 **Out of scope (deferred):** ...
 
 ## Constraints
-- **Functional core, imperative shell** (always present, sourced from plugin CLAUDE.md): Pure-core functions take values in and return values out — no I/O, no time, no randomness, no mutable shared state, no internal mocks. Shell functions perform I/O and call into the core. If a test would require a mock to exercise the "unit," the architecture is wrong — extract a pure core. Mocks are permitted only at hard external boundaries (third-party APIs without sandboxes, cost-bearing services, hardware that doesn't exist in test).
+- **Functional core, imperative shell** (always present, sourced from plugin CLAUDE.md): When the feature has meaningful logic, pure-core functions take values in and return values out — no I/O, no time, no randomness, no mutable shared state. Shell functions perform I/O and call into the core. Tests must not mock to exercise pure-core logic. Mocks are permitted in shell integration tests when the real collaborator is external, expensive (costs money per invocation), non-deterministic in ways you can't control, or absent in the test environment — each mock must be named with its justification. Shell-only features (where Pure core is declared as "none" with rationale) are permitted; their test strategy is integration-only.
 - <additional constraints from codebase standards artifact, with source citations — omit if no standards artifact>
 - <specific, actionable constraints — not generic advice>
 
@@ -483,11 +494,11 @@ Testing is a planning concern, but it is **derivative of the architecture**, not
 | Kind | What it covers | How it's written |
 |------|---------------|------------------|
 | **Pure-core unit test** | A function in the pure core | Values in, asserted value out. No mocks. No I/O. No time. No randomness. |
-| **Shell integration test** | A shell entry point | Real I/O against a real dependency (test DB, tmpdir, fake-backed HTTP, etc.). Mocks only at hard external boundaries that cannot be exercised in test. |
+| **Shell integration test** | A shell entry point | Real I/O against a real dependency (test DB, tmpdir, fake-backed HTTP, etc.). Mocks permitted at justified boundaries per Mocking Rules below; each mock is named with its justification. |
 
-There is no "unit test with a mock." If a test needs a mock to test a "unit," the code being tested is shell code mislabeled as core, or the core has been written with I/O entangled in it. Fix the architecture; do not add the mock.
+There is no "unit test with a mock for pure-core logic." If a test needs a mock to exercise pure logic, the code being tested has I/O entangled in it. Fix the architecture; do not add the mock.
 
-There is no test-pyramid ratio to tune. The ratio of unit to integration tests is dictated by where the core/shell boundary lands in the code — it is not a knob.
+There is no test-pyramid ratio to tune. The ratio of unit to integration tests is dictated by where the core/shell boundary lands in the code — it is not a knob. Shell-only features (Pure core: none) will have integration tests only; that's expected and acceptable when the feature genuinely has no pure logic to extract.
 
 #### No Coverage Quotas
 
@@ -499,18 +510,23 @@ This plugin does not set numeric coverage targets. Coverage quotas reliably prod
 
 #### Mocking Rules
 
-**Mock only at hard external boundaries that cannot be exercised in test:**
-- Third-party APIs without a sandbox or recording mechanism
-- Cost-bearing services (paid APIs, send-real-money endpoints)
-- Hardware that doesn't exist in the test environment
+A mock is permitted only when the real collaborator is one of:
 
-**Do not mock:**
-- Internal modules of any kind — if you'd need to mock them, the core/shell boundary is in the wrong place
-- The database — use a real test DB
-- Time, randomness, environment — pure-core code shouldn't reach for these; shell code can take them as injected values, and integration tests pass fixed values
-- HTTP to services you control — use a real local instance or recorded fixtures from real calls
+- **External** — third-party APIs without a sandbox, services owned by another team you can't run locally in test
+- **Expensive** — real LLM calls, real billing endpoints, real outbound SMS/email, anything that costs money per invocation
+- **Non-deterministic in a way you can't control** — real wall-clock for retry-timing tests, real network jitter, real distributed system event ordering. Injecting a fake clock or seed counts as "controlling it" — prefer that over mocking the wrapper around it.
+- **Absent in the test environment** — hardware, GPUs, a service the test runner can't reach
 
-**If you find yourself proposing a mock and it doesn't fit the "hard external boundary" rule, stop. The plan is wrong, not the test. Return to Architecture Fit, find the missing seam, extract the pure core, and re-derive the tests.**
+**Every mock in a plan must be named with its justification.** "Mock `BillingClient` — real client charges the credit card on file" is acceptable. "Mock `UserRepository`" with no justification is not — that's the case the principle is built to reject.
+
+**Never mock to test pure-core logic.** Pure-core functions take values in and return values out; if you need to mock to exercise them, they aren't pure, and the function should be split.
+
+**Heuristic for catching boundary failures**: if the test's setup is mostly mocks, you're testing the wiring of the mocks rather than the behavior of the code. Return to Architecture Fit and look for the pure-core extraction that would let you assert on values instead.
+
+**Do not mock just because it's easier:**
+- The database — use a real test DB or in-memory equivalent. "Real DB is slow" doesn't justify mocking; slow tests are still real tests, and the speed cost is usually small.
+- HTTP to services you control — use a real local instance or recorded fixtures from real calls.
+- The filesystem — use a tmpdir.
 
 #### Test Lifecycle — No "Scaffolding" Category
 
@@ -598,13 +614,14 @@ Update the plan to address any discrepancies before the user reviews it.
 
 Before any other self-review check, verify the plan's core/shell decomposition holds:
 
-1. **Pure-core items are actually pure** — for every function/type listed under "Pure core" in Architecture Fit, walk through what its body would need to do. If the body would need to read from disk, hit a network, read the clock, read randomness, mutate shared state, or call a shell function, it isn't pure. Either move it to the shell or split out the pure piece.
-2. **Shell items don't carry hidden logic** — for every function/type listed under "Imperative shell," check that the substantive logic has been pulled into the core. The shell should be thin: receive I/O input → call into core → write I/O output. If the shell function has branching, calculation, or state machinery, extract it.
-3. **Every Unit Test in Test Strategy maps to a pure-core item** — and asserts values-in/values-out with no mocks. If any unit test would need a mock, the architecture is wrong.
-4. **Every Integration Test in Test Strategy maps to a shell item** — and exercises real I/O against a real dependency (or a hard-external-boundary mock per the rules above).
-5. **No test in the plan uses mocks for internal modules** — internal mocks are a boundary failure, not a testing choice.
+1. **Shell-only declaration is justified, if used** — if the plan declares "Pure core: (none — shell-only feature)", verify the Rationale is specific (names the type of work: thin CRUD, webhook forwarder, glue, integration wrapper) and not a hand-wave. Vague rationales like "doesn't fit" or "everything is I/O" get pushed back — look harder. If the rationale is solid, skip checks 2, 3, and 5 below; only check 4 applies.
+2. **Pure-core items are actually pure** — for every function/type listed under "Pure core" in Architecture Fit, walk through what its body would need to do. If the body would need to read from disk, hit a network, read the clock, read randomness, mutate shared state, or call a shell function, it isn't pure. Either move it to the shell or split out the pure piece.
+3. **Shell items don't carry hidden logic** — for every function/type listed under "Imperative shell," check that the substantive logic has been pulled into the core. The shell should be thin: receive I/O input → call into core → write I/O output. If the shell function has branching, calculation, or state machinery, extract it. (For shell-only features, branching that IS the routing/dispatch is acceptable — it's the feature's nature, not hidden logic.)
+4. **Every Integration Test in Test Strategy maps to a shell item** — and exercises real I/O against a real dependency (or a justified-boundary mock per the Mocking Rules).
+5. **Every Unit Test in Test Strategy maps to a pure-core item** — and asserts values-in/values-out with no mocks. If any unit test would need a mock, the architecture is wrong. (Skipped for shell-only features.)
+6. **Every mock in the plan is named with a justification** — and the justification fits one of the Mocking Rules categories (external / expensive / non-deterministic / absent). Unjustified mocks of internal modules are a boundary failure.
 
-If any of these checks fail, **update the plan**, not the check. Return to Architecture Fit, re-extract the core, and re-derive the Test Strategy. Report the change in the self-review summary.
+If any of these checks fail, **update the plan**, not the check. Return to Architecture Fit, re-extract the core (or document the shell-only rationale), and re-derive the Test Strategy. Report the change in the self-review summary.
 
 ### Data Structures & Callables Self-Review
 
@@ -707,12 +724,14 @@ When appending the first decision entry (replacing the `_No decisions recorded y
 ## Anti-Patterns
 
 **Do NOT:**
-- Propose tests that need mocks for internal modules — that's a boundary failure, fix the architecture
-- Treat the core/shell decomposition as optional or skip the Architecture Fit subsection
+- Propose tests that mock to exercise pure-core logic — that's a boundary failure, fix the architecture
+- Propose unjustified mocks of internal modules — every mock must be named with its justification (external / expensive / non-deterministic / absent)
+- Treat the core/shell decomposition as optional or skip the Architecture Fit subsection (shell-only declarations are acceptable; absence is not)
+- Declare "shell-only" as an escape hatch when meaningful logic does exist — the rationale must be specific and pass scrutiny at dry-run
 - Design test strategy independently of architecture — the test strategy is *derived* from where the boundary lands
 - Set numeric coverage targets ("80% line coverage") — the plugin doesn't use them, they produce filler tests
 - Use the words "scaffolding test" — that category has been removed; tests are pure-core unit or shell integration, both durable
-- Accommodate entangled neighbor code by tangling the new feature too — extract a pure core anyway
+- Accommodate entangled neighbor code by tangling the new feature too — extract a pure core anyway when one exists
 - Use native Explore agents or subagents as a substitute for `gather_task_context`
 - Abandon `gather_task_context` if it takes 1-3 minutes — this is expected behavior
 - Fall back to `get_architecture_overview` or other tools because `gather_task_context` "seems slow"

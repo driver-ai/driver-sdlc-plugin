@@ -10,7 +10,7 @@ Curate the test suite after all plans are implemented. This command evaluates ev
 
 Under that commitment, every test should fall into one of two shapes:
 - **Pure-core unit test**: a function in the pure core, values in / values out, no mocks, no I/O, no time, no randomness.
-- **Shell integration test**: a shell entry point, exercised against real I/O (test DB, tmpdir, fake-backed HTTP from recorded real calls). Mocks only at hard external boundaries that cannot be exercised in test (third-party APIs without sandboxes, cost-bearing services, hardware absent in test).
+- **Shell integration test**: a shell entry point, exercised against real I/O (test DB, tmpdir, fake-backed HTTP from recorded real calls). Mocks permitted only at justified boundaries — when the real collaborator is external (third-party API with no sandbox), expensive (real money per invocation), non-deterministic in ways you can't control (real wall clock for timing-sensitive tests), or absent in the test environment — and each mock must be named with its justification.
 
 Tests that don't fit either shape — most commonly, "unit tests" that mock internal modules — are signals of a core/shell boundary problem. The default action is to prune them and surface the architecture fix, not to keep them as documentation of a broken seam.
 
@@ -76,7 +76,7 @@ Strong PRUNE signals:
 Strong KEEP signals:
 - **Pure-core unit test, no mocks** — takes values in, asserts on the returned value. Reads as documentation of what the function does.
 - **Shell integration test against real I/O** — exercises a shell entry point against a real test DB, tmpdir, or fake-backed HTTP from recorded real calls. Asserts an observable outcome.
-- **Mock only at a hard external boundary** — third-party API without sandbox, cost-bearing service, hardware not present in test. The mock is at the edge, not inside.
+- **Mock only at a justified boundary, with the justification named** — external (third-party with no sandbox), expensive (real money per invocation), non-deterministic in ways you can't control, or absent in the test environment. The mock is at the edge, not inside, and the test or plan documents which category it fits.
 - **Reads as documentation** — a reader could use this test to understand what the code does without reading the implementation. This is the bar.
 - **Tests a contract boundary** — public API, integration point, error handling, failure mode that the code explicitly handles.
 
@@ -103,16 +103,18 @@ This step always runs the **core/shell boundary check** (independent of any code
 
 Audit the implementation files for violations of the functional-core / imperative-shell commitment. This check runs whether or not the codebase has its own CLAUDE.md — the commitment comes from the plugin, not the codebase's standards.
 
-For each implementation file, classify the code into pure-core and shell sections (using the plan's Architecture Fit > Core/Shell Decomposition as the authoritative classification). Then flag:
+**Verdicts**: each row is PASS, FAIL, or **N/A** (decomposition genuinely doesn't apply — trivial routing, framework-mandated shape, or shell-only feature per the plan). N/A rows are recorded but don't contribute to FAIL counts and don't trigger fix workflows.
+
+For each implementation file, classify the code into pure-core and shell sections (using the plan's Architecture Fit > Core/Shell Decomposition as the authoritative classification — if the plan declared shell-only, apply only the shell rules and mark pure-core checks N/A). Then flag:
 
 - **I/O bleeding into pure-core code** — a function classified as core that reaches for the filesystem, network, database, time, randomness, or mutable shared state. FAIL.
-- **Substantive logic in a shell function** — a function classified as shell that contains branching, calculation, or state machinery that should have been extracted into the core. FAIL.
-- **Internal-module mocking in tests** — already surfaced as PRUNE/PROMOTE in Step 3; mirror those here as architecture findings.
+- **Substantive logic in a shell function** — a function classified as shell that contains branching, calculation, or state machinery that should have been extracted into the core. FAIL. **Exception (N/A)**: routing/dispatch branching that IS the feature in a shell-only plan; framework-mandated shape (e.g., a Django view's required structure) where extraction would produce a single-line wrapper with no behavior of its own.
+- **Internal-module mocking in tests** — already surfaced as PRUNE/PROMOTE in Step 3; mirror those here as architecture findings. **Exception (N/A)**: a mock whose justification fits the Mocking Rules (external / expensive / non-deterministic / absent) and is documented in the test or plan.
 - **Pure-core functions never called from the shell** — dead pure code suggests the boundary was drawn but not wired up. WARN.
 
-Record findings in the compliance table with `Standard: §FCIS Core/shell boundary` and the specific violation.
+Record findings in the compliance table with `Standard: §FCIS Core/shell boundary` and the specific violation or N/A reason.
 
-For each FAIL, suggest a concrete fix: which logic to extract, which I/O to push outward, which test to rewrite.
+For each FAIL, suggest a concrete fix: which logic to extract, which I/O to push outward, which test to rewrite. For each N/A, briefly note why it's N/A (one line — "shell-only plan, routing dispatch", "mock of LLM client — justified as expensive in tests") so reviewers can audit the exceptions.
 
 ### 4b: Codebase Standards Review (only if standards artifact exists)
 
@@ -134,6 +136,8 @@ Build a compliance table (rows from 4a and 4b combined):
 |------|----------|--------|--------|
 | `path/to/core.py` | §FCIS Core/shell boundary | FAIL | `compute_total` is classified as core but reads from DB on line 18 — extract DB read into shell, pass values into compute_total |
 | `path/to/shell.py` | §FCIS Core/shell boundary | FAIL | `handle_request` contains discount calculation logic — extract into core function `apply_discount(items, coupon) -> total` |
+| `path/to/routes.py` | §FCIS Core/shell boundary | N/A | Shell-only plan, routing dispatch — branching IS the feature |
+| `tests/test_llm.py` | §FCIS Core/shell boundary | N/A | Mock of `LLMClient` — justified as expensive (real calls cost money per invocation) |
 | `path/to/file.py` | §6 Error handling | PASS | Narrow try/except used |
 | `path/to/file.py` | §4 Data structures | FAIL | Uses raw dict on line 42, should be Pydantic model |
 

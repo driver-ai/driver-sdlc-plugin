@@ -74,17 +74,19 @@ If multiple files match, select the one whose Standards Source path is within th
 
 ## Step 3.5: Resolve Core/Shell Classification
 
-Read the plan's `## Architecture Fit` section, specifically the `### Core/Shell Decomposition` subsection. This lists the pure-core items and shell items by name.
+Read the plan's `## Architecture Fit` section, specifically the `### Core/Shell Decomposition` subsection. This lists the pure-core items and shell items by name, OR declares the feature shell-only with a rationale.
 
-For each task in the plan's `## Task Breakdown`, classify it by walking the task's `**Files**:` and `**Goal**:` entries:
+**If the plan declares shell-only** (Pure core: (none — shell-only feature) with a Rationale): classify every task as `shell`. Skip the pure-core checks in subsequent steps; only the shell rules apply.
+
+**Otherwise**, for each task in the plan's `## Task Breakdown`, classify it by walking the task's `**Files**:` and `**Goal**:` entries:
 
 - **`core`** — the task introduces, modifies, or tests a pure-core item (function/type listed under "Pure core") and does not touch shell entry points.
 - **`shell`** — the task introduces, modifies, or tests a shell item (entry point listed under "Imperative shell") and does not touch pure-core items.
 - **`both`** — the task spans both sides (e.g., wires a shell entry point through to a pure-core function it also defines). Both sets of rules apply.
 
-If the plan has no Core/Shell Decomposition subsection (older plan written before this requirement, or a plan whose author skipped it), BLOCK: "Plan has no Core/Shell Decomposition. Return to planning-guidance to add it before materializing." Do not guess — the classification is the contract that flows through implementation.
+If the plan has no Core/Shell Decomposition subsection at all (neither pure-core items nor a shell-only declaration — typically an older plan written before this requirement, or a plan whose author skipped it), BLOCK: "Plan has no Core/Shell Decomposition. Return to planning-guidance to add it (either list pure-core/shell items, or declare shell-only with rationale) before materializing." Do not guess — the classification is the contract that flows through implementation.
 
-Record the classification per task — it goes into the task doc's `## Core/Shell` section in Step 4.
+Record the classification per task — it goes into the task doc's `## Core/Shell` section in Step 4. For shell-only plans, the `## Core/Shell` section includes a note about the shell-only nature so sub-agents apply the right rules.
 
 ---
 
@@ -133,17 +135,19 @@ Do NOT navigate to or modify files outside this directory.
 
 ## Core/Shell
 **Classification**: <core | shell | both>
+**Plan type**: <standard | shell-only>
 
 **Pure-core items in this task** (no I/O, no time, no randomness, no mutable shared state):
-- <from plan's Core/Shell Decomposition, filtered to this task's scope>
+- <from plan's Core/Shell Decomposition, filtered to this task's scope. Omit this subsection entirely if the plan is shell-only.>
 
 **Shell items in this task** (perform I/O, call into core):
 - <from plan's Core/Shell Decomposition, filtered to this task's scope>
 
 **Rules for this task** (always present):
-- Pure-core items MUST NOT introduce I/O, time, randomness, or mutable shared state. If the task requires any of these, stop and report — the plan's boundary is wrong.
-- Shell items MUST keep substantive logic in the core they call. Branching, calculation, or state machinery in the shell is a violation; extract into the core first.
-- Tests MUST NOT mock internal modules. Mocks are permitted only at hard external boundaries (third-party APIs without sandboxes, cost-bearing services, hardware absent in test). A "unit test" that needs an internal mock is a signal the boundary is wrong — stop and report.
+- Pure-core items MUST NOT introduce I/O, time, randomness, or mutable shared state. If the task requires any of these, stop and report — the plan's boundary is wrong. (Skipped for shell-only plans — there are no pure-core items.)
+- Shell items MUST keep substantive logic in the core they call. Branching, calculation, or state machinery in the shell is a violation; extract into the core first. **Exception for shell-only plans**: routing/dispatch branching IS the feature, not a violation.
+- Tests MUST NOT mock to exercise pure-core logic — that's a boundary failure.
+- Mocks of internal modules in shell integration tests are acceptable ONLY when the real collaborator is external (third-party with no sandbox), expensive (real money per invocation), non-deterministic in ways you can't control (real wall-clock for timing-sensitive tests), or absent in the test environment. Each such mock must be named with its justification — a comment on the mock or a note in the test docstring. "The real thing is slow" or "I don't want to set up the DB" are not acceptable justifications.
 
 ## Goal
 <copied from plan — verbatim>
