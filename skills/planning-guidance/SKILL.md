@@ -1,27 +1,35 @@
 ---
 name: planning-guidance
 description: |
-  Guide planning methodology with TDD-first task design, test strategy, architecture fit, explicit
-  constraints, and task breakdown. Use when transitioning from research to planning phase.
+  Guide planning methodology with functional-core / imperative-shell architecture, TDD-first task
+  design, test strategy derived from architecture, explicit constraints, and task breakdown. Use
+  when transitioning from research to planning phase.
   Trigger phrases: "let's plan", "ready to plan", "move to planning", "create a plan",
-  "how should we implement", "test strategy", "what should I test", "TDD", "tests first".
+  "how should we implement", "test strategy", "what should I test", "TDD", "tests first",
+  "core and shell", "pure functions".
 ---
 
 # Planning
 
 You are creating an implementation plan for a software engineering task. You work from research output, gather deep codebase context via Driver MCP, and produce a plan specific enough that an engineer or agent can implement it mechanically — down to the level of specific files, functions, and code changes.
 
+## Architectural Commitment: Functional Core, Imperative Shell
+
+**This is the load-bearing principle that shapes every plan.** See [`CLAUDE.md`](../../CLAUDE.md) Key Principles. Software produced through this plugin separates a **pure logical core** (functions taking values in and returning values out — no I/O, no time, no randomness, no mutable shared state) from a **thin imperative shell** that performs I/O and calls into the core.
+
+The plan's job is to design code that has this shape. The test strategy is *derived* from the architecture — pure-core functions get unit tests with values in / values out (no mocks); shell functions get integration tests against real I/O. **If the plan would require a mock to test a "unit," the architecture is wrong and the plan must be re-shaped to extract a pure core.** When the surrounding code isn't in core/shell shape, the plan steers the feature toward extracting a pure core anyway — local mess from a clean extraction is preferred to a clean fit with an entangled neighbor.
+
 ---
 
 ## How This Skill Works
 
-1. **Ingest research** — read the research output to understand findings and decisions
+1. **Ingest research** — read the research output to understand findings and decisions (including any core/shell decomposition surfaced during research)
 2. **Clarify scope** — ask the user what exactly to build, push back on vagueness
 3. **Gather broad codebase context** — use `gather_task_context` for architecture and conventions
 4. **Detail with primitive tools** — use `get_code_map`, `get_file_documentation`, `get_source_file` for specific file-level understanding
-4.5. **Confirm approach** — present architecture, test strategy, scope, and sizing for user confirmation
-5. **Write the plan** — environment, approach, TDD-ordered task breakdown, acceptance criteria
-6. **Self-review** — validate the plan against the actual codebase using Driver tools
+4.5. **Confirm approach** — present the core/shell decomposition, architecture, derived test strategy, scope, and sizing for user confirmation
+5. **Write the plan** — environment, core/shell architecture, TDD-ordered task breakdown, acceptance criteria
+6. **Self-review** — validate the plan against the actual codebase using Driver tools, including the core/shell boundary
 7. **Approve** — user reviews, approves plan for implementation
 
 ---
@@ -132,17 +140,19 @@ Before writing the plan, present your proposed direction to the user. At this po
 
 **Present a summary covering:**
 
-1. **Architecture approach** — which existing patterns to follow, key files to modify, integration strategy
-2. **Test strategy** — framework, test types (unit/integration/e2e), coverage approach, fixture sourcing
-3. **Scope adjustments** — anything surfaced during context gathering that wasn't in the original Step 2 scope (additions or exclusions)
-4. **Plan sizing** — estimated task count, single plan vs. split, and rationale
+1. **Core/shell decomposition** — what's the pure logical core for this feature (no I/O, no time, no randomness), and what's the imperative shell that performs I/O and calls into it? Name the candidate pure functions/types and the shell entry points. If the surrounding code makes a clean extraction hard, say so explicitly and propose the extraction anyway — the plugin steers toward purity, it doesn't accommodate entanglement.
+2. **Architecture approach** — which existing patterns to follow, key files to modify, integration strategy. Note where the core/shell boundary lands relative to existing files.
+3. **Derived test strategy** — testing follows from the architecture, not the other way around. Pure-core functions get unit tests (values in, values out, no mocks). Shell functions get integration tests against real I/O. Name the framework and fixture-sourcing approach. If you find yourself proposing a mock for anything other than a system boundary (external API, DB at unit level, time, randomness), stop — that's a signal the core/shell boundary needs to move.
+4. **Scope adjustments** — anything surfaced during context gathering that wasn't in the original Step 2 scope (additions or exclusions)
+5. **Plan sizing** — estimated task count, single plan vs. split, and rationale
 
 **Format:**
 
 > Here's my planning direction:
 >
-> - **Architecture**: [summary of approach, key patterns, files]
-> - **Test strategy**: [framework, coverage approach, test types]
+> - **Core/shell decomposition**: [pure core: <functions/types>; shell: <I/O entry points>]
+> - **Architecture**: [summary of approach, key patterns, files, where the boundary lands]
+> - **Test strategy** (derived): [unit tests for pure-core values-in/values-out; integration tests for shell against real I/O; framework; fixture sourcing]
 > - **Scope changes**: [any additions/exclusions discovered during context gathering, or "none"]
 > - **Sizing**: [N tasks, single plan / split rationale]
 >
@@ -297,6 +307,20 @@ _Existing patterns to follow, with specific file paths from Driver context_
 _Directories and files this plan touches_
 _Integration points with existing code_
 
+### Core/Shell Decomposition
+
+_This subsection is required. The plan must explicitly name what's pure-core and what's shell._
+
+**Pure core** (no I/O, no time, no randomness, no mutable shared state — functions taking values in, returning values out):
+- `<function or type name>` at `<file>` — <one-line purpose>
+- ...
+
+**Imperative shell** (performs I/O, calls into the core):
+- `<function or entry point>` at `<file>` — <I/O performed: HTTP / DB / filesystem / time / random / etc.>
+- ...
+
+**Boundary notes:** <Where does the seam land relative to existing files? Is the surrounding code already in core/shell shape, partially, or not at all? If the boundary cuts through an existing entangled module, name the extraction explicitly.>
+
 ## Data Structures & Callables
 
 _Interface-level design decisions: the data structures (with their typed fields) and
@@ -345,14 +369,20 @@ defines idioms; when absent, use the language's most natural form._
 
 ## Test Strategy
 
+_The test strategy is derived from the Core/Shell Decomposition above, not designed independently. Pure-core functions get unit tests (values in, values out, no mocks). Shell functions get integration tests against real I/O. If any test below would need a mock to exercise the unit, the core/shell boundary is wrong — return to Architecture Fit and re-extract._
+
 ### Testing Patterns
 _Testing framework, file organization, and conventions discovered via Driver_
 
-### Unit Tests
-- [ ] Test: `<test_name>` — verifies <specific behavior>
+### Unit Tests (pure-core)
+_One test per pure-core function listed above. Each test takes values in, asserts on the returned value. No mocks, no I/O, no time, no randomness — if you reach for any of those, the function isn't pure, fix it._
 
-### Integration Tests
-- [ ] Test: `<test_name>` — verifies <specific behavior>
+- [ ] Test: `<test_name>` — `<pure-core function>` with `<input>` returns `<output>`
+
+### Integration Tests (shell)
+_One test per shell entry point. Exercises real I/O against a real dependency (real test DB, real HTTP fake-backed by recorded fixtures from real calls, real filesystem in a tmpdir, etc.). Mocks only at hard external system boundaries that cannot be exercised in test (third-party APIs without sandboxes; cost-bearing services)._
+
+- [ ] Test: `<test_name>` — `<shell entry point>` against `<real dependency>`, verifies `<observable outcome>`
 
 ## Implementation Approach
 _High-level approach, key design decisions, rationale_
@@ -363,7 +393,8 @@ _High-level approach, key design decisions, rationale_
 **Out of scope (deferred):** ...
 
 ## Constraints
-- <constraints from codebase standards artifact, with source citations — omit if no standards artifact>
+- **Functional core, imperative shell** (always present, sourced from plugin CLAUDE.md): Pure-core functions take values in and return values out — no I/O, no time, no randomness, no mutable shared state, no internal mocks. Shell functions perform I/O and call into the core. If a test would require a mock to exercise the "unit," the architecture is wrong — extract a pure core. Mocks are permitted only at hard external boundaries (third-party APIs without sandboxes, cost-bearing services, hardware that doesn't exist in test).
+- <additional constraints from codebase standards artifact, with source citations — omit if no standards artifact>
 - <specific, actionable constraints — not generic advice>
 
 ## Task Breakdown
@@ -425,6 +456,8 @@ This level of detail comes from Step 4 — using Driver's primitive tools to und
 
 Be specific. Generic advice is not a constraint.
 
+**Always-present constraint:** The functional core / imperative shell rule (see CLAUDE.md Key Principles) is encoded as the first constraint in every plan, with the canonical wording shown in the Plan Document Template above. This is not optional — it appears even when the plan's surrounding code isn't in core/shell shape today, because the plan steers toward extraction.
+
 **Encode codebase standards as constraints:**
 If a codebase standards artifact exists from research, encode each applicable standard as a plan constraint. Standards-derived constraints follow the same format as other constraints — the source citation is the only difference. Use the standard's own language and cite the source:
 
@@ -443,59 +476,71 @@ If a codebase standards artifact exists from research, encode each applicable st
 
 ### Testing Methodology
 
-Testing is a planning concern. The test strategy shapes task ordering and acceptance criteria.
+Testing is a planning concern, but it is **derivative of the architecture**, not an independent design exercise. The Core/Shell Decomposition determines what tests exist and how they're written. This subsection codifies the rules.
 
-#### Test Pyramid
+#### Two Test Kinds, Determined by Code Location
 
-| Type | Typical Ratio | Purpose |
-|------|---------------|---------|
-| **Unit** | 70% | Business logic, pure functions |
-| **Integration** | 20% | Component interactions, API contracts |
-| **E2E** | 10% | Critical user journeys |
+| Kind | What it covers | How it's written |
+|------|---------------|------------------|
+| **Pure-core unit test** | A function in the pure core | Values in, asserted value out. No mocks. No I/O. No time. No randomness. |
+| **Shell integration test** | A shell entry point | Real I/O against a real dependency (test DB, tmpdir, fake-backed HTTP, etc.). Mocks only at hard external boundaries that cannot be exercised in test. |
 
-Adjust per project: API-heavy → more integration; UI-heavy → more e2e; library → more unit.
+There is no "unit test with a mock." If a test needs a mock to test a "unit," the code being tested is shell code mislabeled as core, or the core has been written with I/O entangled in it. Fix the architecture; do not add the mock.
 
-#### Coverage Targets
+There is no test-pyramid ratio to tune. The ratio of unit to integration tests is dictated by where the core/shell boundary lands in the code — it is not a knob.
 
-| Code Type | Target |
-|-----------|--------|
-| Business logic | 100% |
-| API contracts | 100% |
-| Edge cases / error handling | 90%+ |
-| Critical user paths | E2E covered |
-| Utilities / helpers | 80%+ |
-| Glue code / wiring | Lower priority |
+#### No Coverage Quotas
 
-#### Mocking Boundaries
+This plugin does not set numeric coverage targets. Coverage quotas reliably produce filler tests written to hit a number rather than to document behavior. Instead:
 
-**Mock:** External APIs, database (in unit tests), time/date, random values.
-**Don't mock:** The code under test, internal modules, simple data structures.
-**Over-mocking signal:** Test setup is longer than the test itself.
+- **Every pure-core function gets at least one test** that documents its input/output contract. More tests for branches, edge cases, and error returns as the function's behavior warrants.
+- **Every shell entry point gets at least one happy-path integration test** and additional tests for failure modes that the code handles explicitly.
+- **A test is worth keeping only if a reader can use it to understand what the code does.** If the test reads as noise — long mock setup, opaque assertions, brittle to refactors — it should not be written in the first place.
 
-#### Test Lifecycle
+#### Mocking Rules
 
-Not all TDD tests are permanent. Some are **scaffolding** — they help you build (verify wiring, assert mock call sequences, confirm implementation details). Others are **durable** — they help you maintain (assert observable behavior, test contracts, cover edge cases).
+**Mock only at hard external boundaries that cannot be exercised in test:**
+- Third-party APIs without a sandbox or recording mechanism
+- Cost-bearing services (paid APIs, send-real-money endpoints)
+- Hardware that doesn't exist in the test environment
 
-During planning, design both kinds deliberately:
-- Scaffolding tests validate that components are wired correctly during construction
-- Durable tests validate behavior that should survive refactoring
-- Coverage targets (above) apply to durable tests — scaffolding tests don't count toward long-term coverage
+**Do not mock:**
+- Internal modules of any kind — if you'd need to mock them, the core/shell boundary is in the wrong place
+- The database — use a real test DB
+- Time, randomness, environment — pure-core code shouldn't reach for these; shell code can take them as injected values, and integration tests pass fixed values
+- HTTP to services you control — use a real local instance or recorded fixtures from real calls
 
-After all plans are implemented, `/drvr:assess` curates the test suite by categorizing each test as **PRUNE** (scaffolding that's served its purpose), **KEEP** (durable tests covering observable behavior), or **PROMOTE** (tests worth keeping but needing refactoring to assert behavior instead of implementation details). Plan accordingly: write scaffolding tests freely during TDD, knowing they'll be categorized and acted on during assessment.
+**If you find yourself proposing a mock and it doesn't fit the "hard external boundary" rule, stop. The plan is wrong, not the test. Return to Architecture Fit, find the missing seam, extract the pure core, and re-derive the tests.**
+
+#### Test Lifecycle — No "Scaffolding" Category
+
+Earlier versions of this plugin distinguished "scaffolding" tests (write freely, prune later) from "durable" tests. That framing is removed. Under functional core / imperative shell, every test should be durable by construction:
+
+- A pure-core unit test asserts an input/output contract that should survive any internal refactor. It is durable.
+- A shell integration test asserts an observable I/O outcome that should survive shell refactors. It is durable.
+- A test that's "just scaffolding" — asserts internal call sequences, mock interactions, or implementation details — should not be written. Its existence is a signal the boundary is wrong.
+
+`/drvr:assess` still runs, but its job is not "prune the scaffolding you wrote freely." Its job is to catch tests that slipped through with mocks or implementation-detail assertions and either prune them (architecture failure to fix in a follow-up) or rewrite them to assert behavior through the boundary.
 
 #### Fixture Sourcing
 
-Test fixtures for external API responses must come from **real API calls**, not reconstructed from documentation. Documentation-sourced fixtures can encode incorrect assumptions about response structure.
+Test fixtures for external API responses must come from **real API calls**, not reconstructed from documentation. Documentation-sourced fixtures encode incorrect assumptions about response structure.
 
 If the API isn't available, document: "fixture sourced from docs — verify against real response during integration testing."
 
+Fixtures for shell integration tests against your own services (DB, internal HTTP, filesystem) should use the real dependency directly — no fixtures needed.
+
 #### Test Specificity in Plans
 
-Each test case must have enough detail for a subagent to write it:
+Each test case must have enough detail for a subagent to write it, AND must read as documentation of what the code does:
 
 **Too vague:** "Test: user authentication works"
 
-**Good:** "Test: `login_with_valid_credentials_returns_token` — POST `/auth/login` with valid credentials returns 200 with JWT containing `user_id` claim"
+**Vague + mock-heavy (rejected — also a sign of a boundary problem):** "Test: `LoginService.login` with mocked `UserRepository` and mocked `TokenIssuer` and mocked `Clock` calls them in the right order"
+
+**Good (pure-core):** "Test: `verify_credentials(stored_hash, candidate_password)` returns `True` when bcrypt matches, `False` otherwise"
+
+**Good (shell integration):** "Test: `POST /auth/login` with valid credentials against a real test DB and a real `TokenIssuer` returns 200 with a JWT whose `user_id` claim matches the DB user"
 
 ### Commit After Writing
 
@@ -548,6 +593,18 @@ Tell the user what you found:
 - Suggestions: adjustments to the plan based on what you discovered
 
 Update the plan to address any discrepancies before the user reviews it.
+
+### Core/Shell Boundary Self-Review
+
+Before any other self-review check, verify the plan's core/shell decomposition holds:
+
+1. **Pure-core items are actually pure** — for every function/type listed under "Pure core" in Architecture Fit, walk through what its body would need to do. If the body would need to read from disk, hit a network, read the clock, read randomness, mutate shared state, or call a shell function, it isn't pure. Either move it to the shell or split out the pure piece.
+2. **Shell items don't carry hidden logic** — for every function/type listed under "Imperative shell," check that the substantive logic has been pulled into the core. The shell should be thin: receive I/O input → call into core → write I/O output. If the shell function has branching, calculation, or state machinery, extract it.
+3. **Every Unit Test in Test Strategy maps to a pure-core item** — and asserts values-in/values-out with no mocks. If any unit test would need a mock, the architecture is wrong.
+4. **Every Integration Test in Test Strategy maps to a shell item** — and exercises real I/O against a real dependency (or a hard-external-boundary mock per the rules above).
+5. **No test in the plan uses mocks for internal modules** — internal mocks are a boundary failure, not a testing choice.
+
+If any of these checks fail, **update the plan**, not the check. Return to Architecture Fit, re-extract the core, and re-derive the Test Strategy. Report the change in the self-review summary.
 
 ### Data Structures & Callables Self-Review
 
@@ -650,6 +707,12 @@ When appending the first decision entry (replacing the `_No decisions recorded y
 ## Anti-Patterns
 
 **Do NOT:**
+- Propose tests that need mocks for internal modules — that's a boundary failure, fix the architecture
+- Treat the core/shell decomposition as optional or skip the Architecture Fit subsection
+- Design test strategy independently of architecture — the test strategy is *derived* from where the boundary lands
+- Set numeric coverage targets ("80% line coverage") — the plugin doesn't use them, they produce filler tests
+- Use the words "scaffolding test" — that category has been removed; tests are pure-core unit or shell integration, both durable
+- Accommodate entangled neighbor code by tangling the new feature too — extract a pure core anyway
 - Use native Explore agents or subagents as a substitute for `gather_task_context`
 - Abandon `gather_task_context` if it takes 1-3 minutes — this is expected behavior
 - Fall back to `get_architecture_overview` or other tools because `gather_task_context` "seems slow"
@@ -661,6 +724,10 @@ When appending the first decision entry (replacing the `_No decisions recorded y
 - Suggest moving to implementation — the user controls phase transitions
 
 **DO:**
+- Name the pure core and the imperative shell explicitly in Architecture Fit before designing tests
+- Push back on plans where the natural shape would require mocks — that means the seam isn't right yet
+- Extract a pure core even when the surrounding code is tangled — local mess from clean extraction beats clean fit with entangled neighbor
+- Derive the Test Strategy from the Core/Shell Decomposition — unit tests for pure core (values in, values out, no mocks), integration tests for shell (real I/O)
 - Call `gather_task_context` with detailed, planning-focused task descriptions
 - Wait for the full response — it is doing compressed expert-level codebase analysis
 - Use primitive tools (`get_code_map`, `get_file_documentation`, `get_source_file`) to reach code-level specificity
@@ -673,19 +740,23 @@ When appending the first decision entry (replacing the `_No decisions recorded y
 
 ## Before Responding Checklist
 
-- [ ] **Read research first?** — Have I checked `research/*.md`?
+- [ ] **Core/shell named?** — Does Architecture Fit have a Core/Shell Decomposition subsection listing pure-core items and shell items by name?
+- [ ] **Test strategy derived?** — Does every unit test map to a pure-core item with no mocks, and every integration test map to a shell item against real I/O?
+- [ ] **No internal mocks?** — Did I check that no test in the plan mocks an internal module? (If yes, the boundary is wrong — fix before presenting.)
+- [ ] **Core/shell constraint encoded?** — Is the functional-core / imperative-shell constraint the first item in `## Constraints`?
+- [ ] **Read research first?** — Have I checked `research/*.md`, including any core/shell decomposition surfaced during research?
 - [ ] **Driver context?** — Have I called `gather_task_context` for architecture AND testing patterns?
 - [ ] **Writing to file?** — Plan content goes in `plans/*.md`, not chat
 - [ ] **Overview needed?** — Multi-plan feature? Create `plans/00-overview.md`
-- [ ] **All sections covered?** — Environment, Context, Architecture, Acceptance, Tests, Approach, Scope, Constraints, Tasks
+- [ ] **All sections covered?** — Environment, Context, Architecture (with Core/Shell Decomposition), Acceptance, Tests, Approach, Scope, Constraints, Tasks
 - [ ] **Consumer validation?** — Do downstream plans match this plan's interface?
 - [ ] **TDD task ordering?** — Test tasks before implementation tasks
 - [ ] **Constraints explicit?** — Specific rules, not generic advice
 - [ ] **Plan sized right?** — 5-12 tasks, one PR, one logical unit
 - [ ] **Feature log?** — Did I update `FEATURE_LOG.md` when creating plans or the overview?
-- [ ] **Approach confirmed?** — Did I present architecture, test strategy, scope, and sizing before writing the plan?
+- [ ] **Approach confirmed?** — Did I present core/shell decomposition, architecture, derived test strategy, scope, and sizing before writing the plan?
 - [ ] **Environment section?** — Does the plan include `## Environment` with codebase, branches, test commands?
-- [ ] **Standards encoded?** — If a codebase standards artifact exists, are applicable standards included as plan constraints with source citations?
+- [ ] **Standards encoded?** — If a codebase standards artifact exists, are applicable standards included as plan constraints with source citations? (These layer on top of the core/shell constraint; they do not override it.)
 - [ ] **Local state validated?** — Did the self-review include local file checks alongside Driver tool checks?
 - [ ] **Decision log?** — Did I append to DECISIONS.md for significant decisions, rejected alternatives, or scope boundary calls?
 - [ ] **Cross-feature overlap?** — Did I check this plan's files against other active features?

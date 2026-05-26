@@ -6,7 +6,12 @@ allowed-tools: Read, Write, Edit, Bash, Glob, Grep, Agent
 
 # /drvr:review Command
 
-Run an internal standards review after assessment and before opening a PR. This command checks implementation code against codebase standards, verifies acceptance criteria from plans are met, and confirms test coverage. Standards violations can be auto-fixed; unmet criteria and missing tests are presented as manual action items.
+Run an internal standards review after assessment and before opening a PR. This command delegates to the [standards-review](../agents/standards-review.md) agent, which checks two layers of standards:
+
+1. **§FCIS — functional core / imperative shell** (plugin commitment, always runs)
+2. **Codebase-specific standards** (only if a standards artifact exists from research)
+
+It also verifies acceptance criteria from plans are met and confirms test coverage. Standards violations can be auto-fixed; unmet criteria and missing tests are presented as manual action items.
 
 **Gate doctrine**: This command is advisory. Orchestration suggests it after `/drvr:assess`, but the user can skip directly to `/drvr:docs-artifacts`.
 
@@ -38,7 +43,7 @@ Run these checks in order. BLOCK and SKIP gates stop or skip the command; WARN g
      - If SOME were accepted and SOME approved for fixing: proceed with only the approved-for-fixing violations.
 
 3. **Standards artifact** — Scan `research/` for the codebase standards artifact (file containing `## Standards Source` or `## Key Rules`).
-   - If missing: **WARN**: "No standards artifact found. Review will check acceptance criteria and test coverage only."
+   - If missing: **WARN**: "No codebase standards artifact found. The review will still run the §FCIS (functional core / imperative shell) check, plus acceptance criteria and test coverage. Codebase-specific rules will be skipped."
 
 4. **Environment** — Read `plans/00-overview.md` `## Implementation Environment` for codebase path, base branch, feature branch, test command. Fall back to per-plan `## Environment` sections.
 
@@ -77,7 +82,7 @@ Parse agent output into three categories:
 
 | Category | Source | Auto-fixable? |
 |----------|--------|---------------|
-| **Standards Compliance** | Agent checks against standards artifact | Yes (Step 6) |
+| **Standards Compliance** | Agent checks against §FCIS (always) + codebase standards (if artifact present). §FCIS rows are tagged `§FCIS` in the Standard column. | Yes for codebase-standard rows; §FCIS rows usually require architectural extraction and should be presented for user judgment rather than auto-fixed. |
 | **Acceptance Criteria** | Agent checks against plan criteria | No (manual) |
 | **Test Coverage** | Agent checks against plan test strategy | No (manual) |
 

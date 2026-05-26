@@ -64,6 +64,7 @@ updated: "YYYY-MM-DD"
 |------|-------|---------|
 | `task` | `plan` | Parent plan name |
 | `task` | `task_number` | Sequential position (integer) |
+| `task` | `kind` | Core/shell classification: `core`, `shell`, or `both` |
 | `task` | `depends_on` | List of task paths this task depends on |
 | `task` | `materialized_at` | ISO 8601 timestamp of materialization |
 | `decision` | `topic` | What the decision is about |
@@ -77,7 +78,7 @@ updated: "YYYY-MM-DD"
 
 ### Required Plan Sections
 
-Plan documents (`01-*.md`, `02-*.md`, etc.) must include these H2 sections: `Environment`, `Context`, `Architecture Fit`, `Data Structures & Callables`, `Acceptance Criteria`, `Test Strategy`, `Task Breakdown`. Environment is template-enforced; remaining sections enforced by `test_plan_doc_sections`.
+Plan documents (`01-*.md`, `02-*.md`, etc.) must include these H2 sections: `Environment`, `Context`, `Architecture Fit`, `Data Structures & Callables`, `Acceptance Criteria`, `Test Strategy`, `Task Breakdown`. `Architecture Fit` must contain a `### Core/Shell Decomposition` subsection naming pure-core items and shell items by name. Environment is template-enforced; remaining sections enforced by `test_plan_doc_sections`.
 
 ---
 
@@ -137,6 +138,7 @@ Every feature has a `FEATURE_LOG.md` at its root -- the source of truth for life
 
 ## Key Principles
 
+- **Functional core, imperative shell** -- software produced through this plugin separates a pure logical core (functions taking values in and returning values out -- no I/O, no time, no randomness, no mutable shared state) from a thin imperative shell that performs I/O and calls into the core. This is an architectural commitment, not a testing strategy: the testing strategy follows from it. Pure-core code is unit-tested with values in / values out and no mocks. Shell code is integration-tested against real I/O. A "unit test" that needs mocks is a signal the core/shell boundary is broken -- fix the architecture, not the test. When the surrounding code isn't in this shape, the plugin steers each new feature toward extracting a pure core anyway. See the Engineering Practices section for how this commitment flows through each phase.
 - **User controls all decisions** -- skills suggest, the user decides. No auto-fixing, no silent bookkeeping.
 - **Deviations are reviewed** -- after implementation, deviations are presented for user approval before bookkeeping proceeds.
 - **Severity helps prioritize, not skip** -- dry-run gaps are classified LOW/MEDIUM/HIGH but all are presented for review.
@@ -228,9 +230,25 @@ The plugin integrates with Driver MCP to query codebase architecture, implementa
 
 ## Engineering Practices
 
-This plugin discovers and enforces your codebase's coding standards. During research, it searches for CLAUDE.md files relative to the target codebase and captures applicable standards as a research artifact. These standards flow through planning (as constraints), implementation (in subagent prompts), and assessment (as a quality review). If your codebase doesn't have a CLAUDE.md, the plugin asks if you have standards elsewhere or proceeds without quality constraints.
+### Functional Core, Imperative Shell
 
-Add team-specific engineering guidelines to your project's `CLAUDE.md` — the plugin will discover and enforce them automatically.
+This plugin treats the **functional core, imperative shell** decomposition (Bernhardt; also Hexagonal / Ports-and-Adapters) as a load-bearing architectural commitment, not a stylistic preference. It is enforced through every phase:
+
+- **Research** identifies the natural core/shell decomposition for the feature -- what's pure logic, what's I/O -- so planning has the seam in hand. See [`drvr:research-guidance`](skills/research-guidance/SKILL.md).
+- **Planning** designs interfaces that respect the boundary. The Test Strategy is derivative of the architecture: pure-core functions get unit tests with values in / values out (no mocks); shell functions get integration tests against real I/O. Plans that would require mocking to test are rejected and re-shaped. See [`drvr:planning-guidance`](skills/planning-guidance/SKILL.md).
+- **Materialization** carries the core/shell classification into each task document so sub-agents know which side they're working on and which testing rule applies. See [`drvr:materialize-tasks`](skills/materialize-tasks/SKILL.md).
+- **Implementation** treats "needing a mock to test" as a deviation trigger. Sub-agents are instructed to prefer extracting a pure core over adding a mock. See [`drvr:implementation-guidance`](skills/implementation-guidance/SKILL.md).
+- **Validation** (`/drvr:dry-run-plan`) checks the plan respects the boundary and flags any task that would require mocking.
+- **Assessment** (`/drvr:assess`) keys PRUNE/KEEP/PROMOTE off mock presence and core/shell membership. A "unit test" with mocks is, by default, a candidate for relabel-as-integration or extract-the-pure-core.
+- **Standards review** flags I/O bleeding into pure-core code as a violation, independent of whether the codebase's own CLAUDE.md documents this standard.
+
+**Steering when the surrounding code isn't pure.** Existing codebases are usually not in core/shell shape. The plugin does not accommodate this; it pushes against it. Each new feature should extract a pure core wherever possible, even if neighboring code is tangled. Local mess produced by a clean extraction is preferred to a clean fit with an entangled neighbor. The plugin fights architectural entropy actively.
+
+### Codebase Standards Discovery
+
+This plugin also discovers and enforces your codebase's coding standards. During research, it searches for CLAUDE.md files relative to the target codebase and captures applicable standards as a research artifact. These standards flow through planning (as constraints), implementation (in subagent prompts), and assessment (as a quality review). If your codebase doesn't have a CLAUDE.md, the plugin asks if you have standards elsewhere or proceeds without quality constraints.
+
+Add team-specific engineering guidelines to your project's `CLAUDE.md` -- the plugin will discover and enforce them automatically. Team standards layer on top of the core/shell commitment; they do not override it.
 
 ---
 

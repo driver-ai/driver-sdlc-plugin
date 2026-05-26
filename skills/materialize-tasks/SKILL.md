@@ -18,12 +18,13 @@ After plan approval and dry-run gap verification, materialize each task as a sta
 
 ## How This Skill Works
 
-Materialization converts a plan's task breakdown into standalone task documents that sub-agents can execute independently. Each task doc is self-contained — it includes the codebase target, file paths, constraints, standards, and step-by-step instructions. This decoupling means sub-agents never need to parse the plan themselves; the task doc is their complete execution contract.
+Materialization converts a plan's task breakdown into standalone task documents that sub-agents can execute independently. Each task doc is self-contained — it includes the codebase target, file paths, constraints, standards, the task's **core/shell classification**, and step-by-step instructions. This decoupling means sub-agents never need to parse the plan themselves; the task doc is their complete execution contract.
 
 1. **Verify dry-run gaps** — confirm no blocking gaps remain from the latest dry-run
 2. **Resolve codebase target** — determine which codebase this plan targets
 3. **Resolve standards** — find and extract codebase quality standards if available
-4. **Write task documents** — create one `.md` file per task in `plans/<plan>/tasks/`
+3.5. **Resolve core/shell decomposition** — read the plan's Architecture Fit > Core/Shell Decomposition section to classify each task
+4. **Write task documents** — create one `.md` file per task in `plans/<plan>/tasks/`, including the core/shell classification
 5. **Validate** — run post-materialization checks on metadata and paths
 6. **Report** — summarize what was created and hand off to implementation
 
@@ -71,6 +72,22 @@ If multiple files match, select the one whose Standards Source path is within th
 
 ---
 
+## Step 3.5: Resolve Core/Shell Classification
+
+Read the plan's `## Architecture Fit` section, specifically the `### Core/Shell Decomposition` subsection. This lists the pure-core items and shell items by name.
+
+For each task in the plan's `## Task Breakdown`, classify it by walking the task's `**Files**:` and `**Goal**:` entries:
+
+- **`core`** — the task introduces, modifies, or tests a pure-core item (function/type listed under "Pure core") and does not touch shell entry points.
+- **`shell`** — the task introduces, modifies, or tests a shell item (entry point listed under "Imperative shell") and does not touch pure-core items.
+- **`both`** — the task spans both sides (e.g., wires a shell entry point through to a pure-core function it also defines). Both sets of rules apply.
+
+If the plan has no Core/Shell Decomposition subsection (older plan written before this requirement, or a plan whose author skipped it), BLOCK: "Plan has no Core/Shell Decomposition. Return to planning-guidance to add it before materializing." Do not guess — the classification is the contract that flows through implementation.
+
+Record the classification per task — it goes into the task doc's `## Core/Shell` section in Step 4.
+
+---
+
 ## Step 4: Write Task Documents
 
 For each `### Task N` in the plan's `## Task Breakdown`:
@@ -94,6 +111,7 @@ type: task
 status: not_started
 plan: <plan-name>
 task_number: <N>
+kind: <core | shell | both>
 depends_on:
   - <dependency-filename.md>
 created: "YYYY-MM-DD"
@@ -112,6 +130,20 @@ test commands, and any other relevant info. Omit fields not available.>
 All file paths below are relative to the codebase root.
 Execute all commands from the codebase root directory.
 Do NOT navigate to or modify files outside this directory.
+
+## Core/Shell
+**Classification**: <core | shell | both>
+
+**Pure-core items in this task** (no I/O, no time, no randomness, no mutable shared state):
+- <from plan's Core/Shell Decomposition, filtered to this task's scope>
+
+**Shell items in this task** (perform I/O, call into core):
+- <from plan's Core/Shell Decomposition, filtered to this task's scope>
+
+**Rules for this task** (always present):
+- Pure-core items MUST NOT introduce I/O, time, randomness, or mutable shared state. If the task requires any of these, stop and report — the plan's boundary is wrong.
+- Shell items MUST keep substantive logic in the core they call. Branching, calculation, or state machinery in the shell is a violation; extract into the core first.
+- Tests MUST NOT mock internal modules. Mocks are permitted only at hard external boundaries (third-party APIs without sandboxes, cost-bearing services, hardware absent in test). A "unit test" that needs an internal mock is a signal the boundary is wrong — stop and report.
 
 ## Goal
 <copied from plan — verbatim>
@@ -139,20 +171,22 @@ Read the plan for full architectural context if needed.
 
 ## Instructions
 1. Change directory to the codebase root
-2. Read the plan for full context
+2. Read the plan for full context, including its Core/Shell Decomposition in Architecture Fit
 3. Read the code quality standards at the source path above
 4. Implement exactly what's specified — no extras
-5. Verify your code follows the standards
-6. Run tests after implementation (use test command from Codebase section if present, otherwise follow Pre-flight Phase 4.3 discovery)
-7. Report what you built, files touched, any deviations, and standards compliance
+5. Respect the Core/Shell rules above. If your code would violate them, stop and report instead of working around.
+6. Verify your code follows the standards
+7. Run tests after implementation (use test command from Codebase section if present, otherwise follow Pre-flight Phase 4.3 discovery). Tests must not mock internal modules — if they do, the boundary is wrong.
+8. Report what you built, files touched, any deviations (especially core/shell boundary deviations), and standards compliance
 ```
 
-**If no Code Quality Standards section** (no standards artifact found), omit that section and use a 5-step Instructions list:
+**If no Code Quality Standards section** (no standards artifact found), omit that section and use a shorter Instructions list:
 1. Change directory to the codebase root
-2. Read the plan for full context
+2. Read the plan for full context, including its Core/Shell Decomposition in Architecture Fit
 3. Implement exactly what's specified — no extras
-4. Run tests after implementation
-5. Report what you built, files touched, and any deviations
+4. Respect the Core/Shell rules above. If your code would violate them, stop and report instead of working around.
+5. Run tests after implementation. Tests must not mock internal modules — if they do, the boundary is wrong.
+6. Report what you built, files touched, and any deviations (especially core/shell boundary deviations)
 
 **Frontmatter rules:**
 - `created` and `updated` use `YYYY-MM-DD` format (to pass `test_date_format` validation)
@@ -201,10 +235,13 @@ Update the Current State header to reflect the new phase.
 **Do NOT:**
 - Skip materialization after plan approval — task docs are the execution contract
 - Materialize tasks before the plan is approved and dry-run gaps are fixed
+- Materialize when the plan lacks a Core/Shell Decomposition — BLOCK and send back to planning
+- Guess the core/shell classification — read it from the plan's Architecture Fit
 - Skip Checkpoint 1 after materialization
 
 **DO:**
 - Run materialization after plan approval — task docs embed everything sub-agents need for execution
+- Propagate the core/shell classification from plan to each task doc (`kind` frontmatter field + `## Core/Shell` section + rules)
 - Run Checkpoint 1 after materialization — verify codebase paths and task integrity
 
 ---
@@ -215,6 +252,8 @@ Update the Current State header to reflect the new phase.
 - [ ] **Dry-run gaps checked?** — Are all HIGH/MEDIUM gaps fixed?
 - [ ] **Codebase resolved?** — Is the target codebase identified and path valid?
 - [ ] **Standards resolved?** — Has the standards artifact been checked (present or absent)?
+- [ ] **Core/Shell Decomposition present in plan?** — Did I find the Architecture Fit > Core/Shell Decomposition subsection? (BLOCK if missing.)
+- [ ] **Per-task core/shell classification assigned?** — Does every task doc have `kind:` in frontmatter and a `## Core/Shell` section with rules?
 - [ ] **Tasks materialized?** — Are task docs written to `plans/<plan>/tasks/`?
 - [ ] **Post-materialization validated?** — Did Checkpoint 1 pass (codebase root, standards path, task numbering)?
 

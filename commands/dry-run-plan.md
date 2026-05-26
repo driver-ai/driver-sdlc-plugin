@@ -8,6 +8,8 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Agent
 
 Walk through a plan as if implementing it to identify gaps, missing context, and potential issues before actual implementation begins.
 
+The dry-run is also the gate that catches **core/shell boundary failures** before they reach implementation. See [`CLAUDE.md`](../CLAUDE.md) Key Principles. Plans that lack a Core/Shell Decomposition section, propose tests that would mock internal modules, or tangle I/O into pure-core items are flagged as HIGH-severity gaps and must be fixed before materialization.
+
 ## Workflow
 
 ### Step 1: Locate the Plan
@@ -50,6 +52,11 @@ For each task in the plan, walk through it as if implementing:
 11. **Platform**: Are there platform-specific assumptions (e.g., bash version, OS utilities)?
 12. **Standards**: If a codebase standards artifact exists (search the feature's `research/` directory for a file containing `## Standards Source`), do the plan's constraints cover the applicable standards for this task's files? Match the artifact's Applicable Sections against the task's file paths. (Check once per unique file-type group — if multiple tasks touch the same language/framework, check once and reference that finding for the others.)
 13. **Concreteness**: Does the plan have a `## Data Structures & Callables` section? If present, does each rollup row have a corresponding inline snippet in its Owning Task? For modified items, do the snippet signatures match the current codebase (use `get_file_documentation` for verification)? For plans with minimal code surface or that predate this rule (no section at all), downgrade to MEDIUM and note the reason.
+14. **Core/Shell Decomposition present**: Does the plan's `## Architecture Fit` contain a `### Core/Shell Decomposition` subsection naming pure-core items and shell items? If absent: HIGH-severity gap (the plan cannot be materialized without it).
+15. **Pure-core items are actually pure**: For each item listed under "Pure core," walk through what the task's implementation would need to do. If it would need to perform I/O, read time, read randomness, mutate shared state, or call a shell function, the classification is wrong — HIGH-severity gap.
+16. **Shell items don't carry hidden logic**: For each item listed under "Imperative shell," check whether substantive logic (branching, calculation, state machinery) belongs in the core instead. If yes — MEDIUM-severity gap (extract the logic).
+17. **Tests don't mock internal modules**: For each test case in the `## Test Strategy`, check what would be mocked. If any internal module would be mocked (not just hard external boundaries like third-party APIs without sandboxes, cost-bearing services, or absent hardware), the boundary is wrong — HIGH-severity gap.
+18. **Every unit test maps to a pure-core item** and every integration test maps to a shell item. If a unit test references a shell item or vice versa: MEDIUM-severity gap.
 
 Classify each gap found using the severity criteria below.
 
@@ -203,6 +210,11 @@ Default severities are starting points — override based on the specific gap.
 | **Rollup/snippet mismatch** | Rollup lists an item but no inline snippet in Owning Task (or vice versa) | MEDIUM |
 | **Signature drift on modification** | Plan modifies an existing callable; snippet signature doesn't match codebase | HIGH |
 | **Collision on addition** | Plan adds a name that already exists in the target file | HIGH |
+| **Missing Core/Shell Decomposition** | Plan has no `### Core/Shell Decomposition` subsection under Architecture Fit | HIGH |
+| **Pure-core item that isn't pure** | Item classified as core but task would require I/O, time, randomness, or shared state | HIGH |
+| **Shell item carrying logic** | Item classified as shell but contains substantive branching/calculation that belongs in core | MEDIUM |
+| **Internal-module mock in test** | Test would mock an internal module (not a hard external boundary) | HIGH |
+| **Test/item classification mismatch** | A unit test references a shell item, or an integration test references a pure-core item | MEDIUM |
 
 ## Notes
 

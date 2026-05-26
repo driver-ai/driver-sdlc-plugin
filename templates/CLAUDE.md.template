@@ -1,4 +1,4 @@
-<!-- drvr:template-version:1.0.0 -->
+<!-- drvr:template-version:1.1.0 -->
 # {{TEAM_NAME}} — SDLC Project Instructions
 
 This repository organizes development work by feature, with each feature containing its own lifecycle of artifacts. It is managed by the [Driver SDLC Plugin (drvr)](https://github.com/driver-ai/driver-sdlc-plugin) for Claude Code.
@@ -63,7 +63,7 @@ updated: "YYYY-MM-DD"
 **Statuses:** `not_started`, `in_progress`, `complete`, `approved`, `accepted`, `pending_review`, `resolved`, `open`, `confirmed`, `unverified`
 
 **Type-specific fields:**
-- `task`: `plan` (parent plan name), `task_number` (sequential position, integer), `depends_on` (list of task paths), `materialized_at` (ISO 8601 timestamp)
+- `task`: `plan` (parent plan name), `task_number` (sequential position, integer), `kind` (`core`, `shell`, or `both`), `depends_on` (list of task paths), `materialized_at` (ISO 8601 timestamp)
 - `decision`: `topic`, `choice`
 - `deviation`: `severity` (low/medium/high), `task` (source task)
 - `plan`: `depends_on`, `blocks` (for dependency graph resolution)
@@ -89,14 +89,14 @@ Features follow a phased development lifecycle. Each phase has a dedicated skill
 |-------|----------------|-------------|
 | Intent | `drvr:intent-guidance` | Mine the author's tacit knowledge and produce `research/00-intent.md` before codebase research |
 | Research | `drvr:research-guidance` | Why-What-How methodology, document organization, completion criteria |
-| Planning | `drvr:planning-guidance` | TDD-first task design, test strategy, architecture fit, task breakdown |
-| Validation | `/drvr:dry-run-plan` | Walk through plan as-if implementing, severity-classified gaps |
-| Materialization | `drvr:materialize-tasks` | Convert plan tasks into standalone task docs for sub-agent execution |
-| Implementation | `drvr:implementation-guidance` | Plan-driven task execution, deviation tracking, commit discipline |
+| Planning | `drvr:planning-guidance` | Functional-core / imperative-shell architecture, TDD-first task design, test strategy derived from architecture, task breakdown |
+| Validation | `/drvr:dry-run-plan` | Walk through plan as-if implementing, severity-classified gaps including core/shell boundary violations |
+| Materialization | `drvr:materialize-tasks` | Convert plan tasks into standalone task docs carrying core/shell classification for sub-agent execution |
+| Implementation | `drvr:implementation-guidance` | Plan-driven task execution, deviation tracking (including "needs a mock" as boundary trigger), commit discipline |
 | Review | `drvr:sdlc-orchestration` | Present deviations for user approval before bookkeeping |
 | Bookkeeping | `drvr:implementation-guidance` | Update plan status, overview, cascade check |
-| Assessment | `/drvr:assess` | Curate test suite — categorize, prune scaffolding, promote valuable tests |
-| Internal Review | `/drvr:review` | Review code against standards, auto-fix violations |
+| Assessment | `/drvr:assess` | Curate test suite against the core/shell commitment — prune mock-heavy and implementation-detail tests, promote behavior coverage needing pure-core extraction |
+| Internal Review | `/drvr:review` | Review code against §FCIS and codebase standards, auto-fix codebase-standard violations |
 | Handoff | `/drvr:docs-artifacts` | Generate feature-overview, architecture, testing-guide, risk-assessment |
 | Open PR | `/drvr:open-pr` | Create PR from handoff docs via gh CLI |
 | PR Review | `drvr:sdlc-orchestration` | Track review status, suggest next steps |
@@ -107,6 +107,7 @@ Features follow a phased development lifecycle. Each phase has a dedicated skill
 
 ### Key Principles
 
+- **Functional core, imperative shell** — features produced through this plugin separate a pure logical core (functions taking values in and returning values out — no I/O, no time, no randomness, no mutable shared state) from a thin imperative shell that performs I/O and calls into the core. Pure-core code is unit-tested with values in / values out and no mocks; shell code is integration-tested against real I/O. A "unit test" that needs mocks is a signal the boundary is broken — fix the architecture, not the test. The plugin steers each new feature toward extracting a pure core even when the surrounding code isn't in this shape.
 - **User controls all decisions** — skills suggest, the user decides. No auto-fixing, no silent bookkeeping.
 - **Deviations are reviewed** — after implementation, deviations are presented for approval before bookkeeping.
 - **Plans are the source of truth** — implementation builds exactly what the plan specifies, nothing more.
@@ -174,10 +175,16 @@ _Add anti-patterns your team has agreed to avoid. Examples:_
 
 ### Testing Strategy
 
-_Describe your team's testing approach. Examples:_
+The plugin's default testing strategy is **derived from the functional core / imperative shell commitment**, not designed independently:
+
+- **Pure-core unit tests**: values in, values out, no mocks. One per pure-core function.
+- **Shell integration tests**: real I/O against real dependencies (test DB, tmpdir, fake-backed HTTP from recorded real calls). Mocks only at hard external boundaries (third-party APIs without sandboxes, cost-bearing services, hardware absent in test).
+- **No internal-module mocks.** A "unit test" that needs a mock for an internal collaborator means the core/shell boundary is wrong — fix the architecture.
+
+_Add team-specific testing notes below (test framework, commands, real-dependency setup, fixture sourcing for external APIs):_
 - _Test framework and commands_
-- _Unit vs. integration test boundaries_
-- _Coverage expectations_
+- _How to spin up the test DB / tmpdir / local services_
+- _Where recorded fixtures from real external API calls live_
 
 ---
 

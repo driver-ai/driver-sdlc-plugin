@@ -13,6 +13,12 @@ description: |
 
 You are guiding technical research against one or more codebases using Driver MCP. Your job is to help the user deeply understand a technical topic — architecture, patterns, constraints, trade-offs — and produce organized research artifacts they can use for planning and decision-making.
 
+## Architectural Commitment: Functional Core, Imperative Shell
+
+The plugin commits to a **functional core, imperative shell** architecture (see [`CLAUDE.md`](../../CLAUDE.md) Key Principles). Research's job in service of this commitment is to **identify the natural core/shell decomposition for the feature being researched** — what is (or should be) pure logic, and what is (or should be) I/O.
+
+The decomposition lives in a dedicated research deep-dive (typically the "how" research thread). Planning uses it as the foundation for Architecture Fit. If the surrounding code isn't currently in core/shell shape, surface that finding explicitly and propose the boundary anyway — the plan will steer toward extraction.
+
 ---
 
 ## How This Skill Works
@@ -110,8 +116,9 @@ Now explore implementation approaches.
 - What patterns exist in the codebase? (call `gather_task_context` with specific questions)
 - What dependencies or integrations are involved?
 - What risks or unknowns exist?
+- **What's the natural core/shell decomposition for this feature?** Which logic is (or should be) pure — values in, values out, no I/O, no time, no randomness? Which logic is (or should be) shell — I/O at the edges, calling into the core? If the surrounding code is already in core/shell shape, where does this feature's boundary land relative to existing modules? If not, what extraction would be needed?
 
-**Checkpoint:** Technical approach is understood well enough to plan.
+**Checkpoint:** Technical approach is understood well enough to plan, AND the core/shell decomposition for the feature is named (which pure functions/types exist on the core side, which entry points exist on the shell side).
 
 ---
 
@@ -338,6 +345,22 @@ _High-level findings in 3-5 sentences_
 |----------|--------|-----------|
 | <what was decided> | <the choice> | <why> |
 
+## Core/Shell Decomposition
+
+_Required section. Records the natural decomposition the research surfaced. Planning uses this as the foundation for Architecture Fit._
+
+**Pure core** (no I/O, no time, no randomness, no mutable shared state):
+- `<function or type name>` — <one-line purpose> — <new or existing>
+- ...
+
+**Imperative shell** (performs I/O, calls into the core):
+- `<function or entry point>` — <I/O performed> — <new or existing>
+- ...
+
+**Surrounding code shape**: <"already core/shell" | "partially" | "entangled, extraction required">
+
+**Extraction notes** (if surrounding code is partially or fully entangled): <what would need to move where to draw the boundary cleanly for this feature>
+
 ## Open Questions
 - <unresolved questions for planning phase>
 ```
@@ -451,6 +474,7 @@ Before sending any response during research, verify:
 - [ ] **Overview current?** — Does `00-overview.md` reflect the latest findings and decisions?
 - [ ] **Feature log?** — Did I update `FEATURE_LOG.md` when creating new research docs?
 - [ ] **Standards resolved?** — Have I searched for CLAUDE.md at each codebase path? If not found, did I ask the user?
+- [ ] **Core/shell decomposition surfaced?** — Has the "how" research named the pure-core functions/types and shell entry points for this feature, with a note on whether the surrounding code is already in core/shell shape?
 - [ ] **Local state validated?** — After gather_task_context, did I check branch, key file existence, and uncommitted changes locally?
 - [ ] **Decision log?** — Did I append to DECISIONS.md for significant decisions, rejected alternatives, or context shifts?
 - [ ] **Artifacts committed?** — Did I commit new artifacts to the projects repo?
