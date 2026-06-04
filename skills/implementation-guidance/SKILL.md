@@ -11,6 +11,16 @@ description: |
 
 You are guiding the implementation phase of a feature development lifecycle. Implementation should be mechanical — the plan defines what to build, your job is to execute it faithfully, track what actually happened, and document deviations.
 
+## Architectural Commitment: Functional Core, Imperative Shell
+
+The plugin commits to a **functional core, imperative shell** architecture for all features (see [`CLAUDE.md`](../../CLAUDE.md) Key Principles). Pure-core code takes values in and returns values out — no I/O, no time, no randomness, no mutable shared state. Shell code performs I/O and calls into the core. Some features are genuinely shell-only by nature (thin CRUD, glue, integration wrappers) — those declare so in the plan with a rationale, and the rules below apply with the shell-only carve-outs noted.
+
+Implementation enforces this commitment three ways:
+
+1. **Tasks carry a core/shell classification** (set during materialization). Pure-core tasks must not introduce I/O. Shell tasks must keep substantive logic in the core they call. Tasks in shell-only plans only have shell rules to enforce.
+2. **"Needing a mock to test pure-core logic" is a deviation trigger.** It signals the plan's core/shell boundary is wrong. Do not add the mock — log the deviation and surface it. Mocks of internal modules in shell integration tests are acceptable when the real collaborator is external, expensive (real money per invocation), non-deterministic in ways you can't control, or absent in test — each such mock must be named with its justification.
+3. **Sub-agent prompts carry the rules** so any code-writing agent knows to prefer extracting a pure core over adding a mock when the mock would cover pure logic, and knows which mocks are acceptable in shell tests.
+
 ---
 
 ## CRITICAL: Execute From Plan
@@ -37,6 +47,7 @@ Implementation builds only what the plan specifies. Nothing more.
 **Core principles** (always apply):
 - **Only what's in the plan** — No bonus features, no "while I'm here" improvements
 - **No hypothetical futures** — Build for now, not for imagined requirements
+- **No mocks of pure-core logic** — If a test needs to mock to exercise pure-core logic, stop. The boundary in the plan is wrong. Log a deviation and surface it; do not paper over the architectural problem with a mock. Mocks of internal modules in shell integration tests are acceptable only when the real collaborator is external, expensive, non-deterministic, or absent in test — and each must be named with its justification (typically a comment on the mock or a note in the test docstring).
 
 **Default practices** (override via plan constraints, codebase standards, or project CLAUDE.md):
 - **Three lines over an abstraction** — Prefer inline code over one-time helpers
@@ -60,9 +71,10 @@ After completing each task:
 | **Minor** | Slightly different method signature | Note it, continue |
 | **Approach change** | Different pattern than planned | Explain why |
 | **Scope change** | More/less work than expected | Note impact on remaining tasks |
+| **Core/shell boundary** | Test would need a mock to exercise pure-core logic; pure-core code needs to perform I/O; shell entry point grew substantive logic that belongs in the core. Does NOT include justified mocks (external / expensive / non-deterministic / absent) in shell integration tests. | Stop, log the boundary problem with what would need to move where, surface it as a high-severity deviation. Do NOT add the mock or entangle the core to "make it work." |
 | **Blocker** | Can't proceed as planned | Stop, explain, ask the user |
 
-For **Approach change** or **Scope change** deviations, also append a decision entry to `DECISIONS.md` capturing the reasoning — what was planned, what changed, what alternatives existed, and why this deviation was the right call.
+For **Approach change**, **Scope change**, or **Core/shell boundary** deviations, also append a decision entry to `DECISIONS.md` capturing the reasoning — what was planned, what changed, what alternatives existed, and why this deviation was the right call. Core/shell boundary deviations should always include what would need to move (which logic to extract, which I/O to push outward) so the user has a concrete fix to evaluate.
 
 #### Entry template
 
@@ -465,6 +477,17 @@ All file paths are relative to the codebase root.
 Change directory to the codebase root before starting work.
 Do NOT navigate to or modify files outside this directory.
 
+## Architectural Commitment: Functional Core, Imperative Shell
+This codebase commits to a functional core / imperative shell architecture. Pure-core code takes values in and returns values out — no I/O, no time, no randomness, no mutable shared state. Shell code performs I/O and calls into the core. Some plans are declared shell-only (thin CRUD, glue, integration wrapper); in that case the shell-only rules apply.
+
+**This task is classified as**: <core | shell | both> (from task doc ## Core/Shell section)
+
+**Rules for this task:**
+- If your task is **core**: do not introduce I/O, time, randomness, or mutable shared state. If the task requires any of these, stop and report — the plan's boundary is wrong, not your job to paper over.
+- If your task is **shell**: keep substantive logic out of the shell. The shell should receive I/O input, call into pure-core functions, and emit I/O output. If you find yourself writing branching, calculation, or state machinery in the shell, extract it into the core first. **Exception**: if the plan is declared shell-only, routing/dispatch branching IS the feature — that's expected, not a violation.
+- **Do not mock to test pure-core logic** — that's a boundary failure. Stop and report it.
+- **Mocks of internal modules in shell integration tests are acceptable** only when the real collaborator is external (third-party with no sandbox), expensive (real money per invocation), non-deterministic in ways you can't control (real wall-clock for timing-sensitive tests where you can't inject a fake), or absent in the test environment. Each such mock must be named with its justification — a comment on the mock or a note in the test docstring. Mocking just because "the real thing is slow" or "I don't want to set up the DB" is not acceptable.
+
 ## Task: <name from task doc>
 **Goal**: <from task doc>
 **Files**: <from task doc>
@@ -480,12 +503,13 @@ Do NOT navigate to or modify files outside this directory.
 
 ## Instructions
 1. Change directory to the codebase root above
-2. Read the plan file for full architectural context
+2. Read the plan file for full architectural context, including the Core/Shell Decomposition in Architecture Fit
 3. Read the code quality standards document at the source path above
 4. Implement exactly what's specified in the Goal — no extras
-5. Verify your code follows the listed standards rules
-6. Run tests after implementation
-7. Report: what you built, files touched, any deviations from the spec, and any standards compliance concerns
+5. Respect the core/shell rules above. If your code would violate them, stop and report instead of working around.
+6. Verify your code follows the listed standards rules
+7. Run tests after implementation. Tests must not mock to exercise pure-core logic. Mocks of internal modules in shell integration tests are acceptable only when justified (external / expensive / non-deterministic / absent) — and each must carry a comment naming the justification.
+8. Report: what you built, files touched, any deviations from the spec (especially core/shell boundary deviations), and any standards compliance concerns
 ```
 
 Include the full task spec — don't summarize. Copy constraints verbatim.
@@ -494,12 +518,13 @@ Include the full task spec — don't summarize. Copy constraints verbatim.
 
 **Code Quality Standards section:** Include this section only if the task doc has a `## Code Quality Standards` section. If the task doc has no Code Quality Standards section (because no standards artifact existed during materialization), omit it from the prompt AND use this shorter Instructions list:
 1. Change directory to the codebase root above
-2. Read the plan file for full architectural context
+2. Read the plan file for full architectural context, including the Core/Shell Decomposition in Architecture Fit
 3. Implement exactly what's specified in the Goal — no extras
-4. Run tests after implementation
-5. Report: what you built, files touched, and any deviations from the spec
+4. Respect the core/shell rules above. If your code would violate them, stop and report instead of working around.
+5. Run tests after implementation. Tests must not mock to exercise pure-core logic. Mocks of internal modules in shell integration tests are acceptable only when justified (external / expensive / non-deterministic / absent) — and each must carry a comment naming the justification.
+6. Report: what you built, files touched, and any deviations from the spec (especially core/shell boundary deviations)
 
-The 7-item Instructions list (with items about reading standards and verifying compliance) is only used when the Code Quality Standards section is present.
+The longer Instructions list (with items about reading standards and verifying compliance) is only used when the Code Quality Standards section is present. The core/shell instructions are present in both variants.
 
 **Standards detection (Step 1):** In Step 1 (Read Task Documents), after reading the plan, search for a codebase standards artifact in the feature's research directory (search for `## Standards Source`). If found, extract the absolute path from the Standards Source table's Path column. This path is used to verify standards availability during pre-flight (Phase 5). Task docs already embed key rules and the source path — the subagent reads the authoritative, current version at that path.
 
@@ -607,9 +632,14 @@ Task docs are the persistent source of truth for task state. The implementation 
 ## Anti-Patterns
 
 **Don't:**
-- Start coding without reading the plan and task docs
+- Mock to test pure-core logic — that's a boundary failure, log a core/shell deviation instead
+- Add mocks of internal modules without a justification fitting the Mocking Rules (external / expensive / non-deterministic / absent) — log a deviation
+- Introduce I/O, time, or randomness into a pure-core task — stop and report
+- Let substantive logic accumulate in a shell entry point — extract it into the core (routing/dispatch in shell-only plans is fine)
+- Start coding without reading the plan and task docs (including the Core/Shell Decomposition)
 - Extract tasks from the plan inline — read task docs from `plans/<plan>/tasks/`
 - Spawn sub-agents without the codebase root path from the task doc
+- Spawn sub-agents without the functional-core / imperative-shell instructions in the prompt
 - Skip pre-flight staleness checks when resuming from a prior session
 - Skip deviation tracking
 - Commit broken state
@@ -617,12 +647,13 @@ Task docs are the persistent source of truth for task state. The implementation 
 - Move to the next task with unresolved issues
 - Suggest moving to the next SDLC phase
 - Skip post-implementation bookkeeping
-- Prune or rewrite scaffolding tests during implementation — they're load-bearing until all plans are complete
 - Mix bookkeeping commits with implementation commits
 - Omit the Code Quality Standards section from subagent prompts when a standards artifact exists
 
 **Do:**
-- Read task docs as the execution source of truth
+- Treat "needing a mock for an internal module" as a stop-and-surface signal — that's the plugin's strongest deviation indicator
+- Prefer extracting a pure core over adding a mock, even if extraction is more work
+- Read task docs as the execution source of truth, including the Core/Shell classification
 - Read the plan and task doc before every task
 - Update task doc status (`in_progress`, `complete`) during execution
 - Run the full 5-phase pre-flight before executing any task
@@ -632,9 +663,8 @@ Task docs are the persistent source of truth for task state. The implementation 
 - Do simple tasks directly, spawn subagents for complex ones
 - Write to the implementation log as you go
 - Run Step 5 bookkeeping after all tasks complete
-- Keep scaffolding tests intact — curation happens post-implementation via `/drvr:assess`
 - Suggest next unblocked plan (informational only)
-- Include codebase standards in subagent prompts when available — the subagent is the actor writing code and must know the quality bar
+- Include codebase standards AND the functional-core / imperative-shell instructions in subagent prompts — the subagent is the actor writing code and must know both the quality bar and the architectural commitment
 
 ---
 
@@ -650,7 +680,11 @@ Task docs are the persistent source of truth for task state. The implementation 
 
 ## Before Responding Checklist
 
-- [ ] **Read plan?** — Have I read the specific plan the user specified?
+- [ ] **Core/shell rule in sub-agent prompt?** — Does every sub-agent prompt I construct include the Architectural Commitment block and the task's core/shell classification?
+- [ ] **No internal mocks?** — Did any test added during this task mock an internal module? (If yes, stop and log a core/shell boundary deviation.)
+- [ ] **Pure-core task stayed pure?** — If the task was classified `core`, did the implementation avoid introducing I/O, time, or randomness?
+- [ ] **Shell task stayed thin?** — If the task was classified `shell`, did substantive logic stay in the core?
+- [ ] **Read plan?** — Have I read the specific plan the user specified, including the Core/Shell Decomposition in Architecture Fit?
 - [ ] **Task docs read?** — Am I reading from `plans/<plan>/tasks/`, not extracting from the plan?
 - [ ] **Tasks created?** — Is there a task list tracking progress?
 - [ ] **Pre-flight complete?** — Did all 5 phases run with no unresolved BLOCKs?
