@@ -21,20 +21,29 @@ import argparse
 import hashlib
 import json
 import os
+import socket  # R9: socket.gaierror is a connection-class error to catch in main
+import sys     # R9: warnings/errors go to stderr
 import time
 from datetime import datetime
 
 # Default to local self-hosted Opik unless the caller already configured it.
+# Dep-free (just env defaults) so the module imports without opik installed.
 os.environ.setdefault("OPIK_URL_OVERRIDE", "http://localhost:5173/api")
 os.environ.setdefault("OPIK_WORKSPACE", "default")
 
-import opik  # noqa: E402  (after env defaults)
+# NOTE: `import opik` is deliberately NOT at module top — it's lazy inside
+# register() so this module (and its pure helpers) import with opik absent.
 
 
 # Per-developer ledger in a stable home-cache dir (not the cwd, so it never
 # pollutes the project being captured). Overridable for tests via DRVR_LEDGER.
 LEDGER = os.environ.get(
-    "DRVR_LEDGER", os.path.expanduser("~/.drvr/capture_ledger.json"))
+    "DRVR_LEDGER", os.path.expanduser("~/.driver/capture/ledger.json"))
+
+
+def trace_key(session_id: str | None, task_id: str | None) -> str:
+    """Pure idempotency key for the ledger / trace id derivation."""
+    return f"{session_id or 'unknown-session'}::{task_id or 'no-task'}"
 
 
 def _mint_uuid7(key: str, ms: int) -> str:
@@ -54,16 +63,30 @@ def _mint_uuid7(key: str, ms: int) -> str:
 def trace_id_for(key: str) -> tuple[str, bool]:
     """Return (trace_id, reused). Idempotency ledger: reuse the id for a key so
     re-capture upserts the same Opik trace instead of duplicating (R7). The
-    ledger also serves as the local capture-outcome record (observability NFR)."""
+    ledger also serves as the local capture-outcome record (observability NFR).
+
+    A missing OR corrupt ledger is treated as empty (warn, don't crash) — a
+    truncated/garbled file must never abort a capture. Writes are atomic
+    (temp file in the same dir + os.replace) so a crash mid-write can't corrupt
+    it."""
     ledger = {}
     if os.path.exists(LEDGER):
-        ledger = json.load(open(LEDGER))
+        try:
+            with open(LEDGER) as f:
+                ledger = json.load(f)
+        except (json.JSONDecodeError, ValueError, OSError) as e:
+            print(f"Warning: ledger unreadable ({e.__class__.__name__}); "
+                  f"treating as empty: {LEDGER}", file=sys.stderr)
+            ledger = {}
     if key in ledger:
         return ledger[key]["trace_id"], True
     tid = _mint_uuid7(key, int(time.time() * 1000))
     ledger[key] = {"trace_id": tid, "key": key}
     os.makedirs(os.path.dirname(LEDGER), exist_ok=True)
-    json.dump(ledger, open(LEDGER, "w"), indent=2)
+    tmp = LEDGER + f".tmp.{os.getpid()}"
+    with open(tmp, "w") as f:
+        json.dump(ledger, f, indent=2)
+    os.replace(tmp, LEDGER)  # atomic swap into place
     return tid, False
 
 
@@ -92,11 +115,12 @@ def _span_id(trace_id: str, suffix: str) -> str:
     return _mint_uuid7(f"{trace_id}::{suffix}", trace_ms)
 
 
-def register(traj: dict, *, project: str) -> str:
+def register(traj: dict, *, project: str) -> tuple[str, bool]:
+    import opik  # lazy: keep module importable (and pure helpers testable) without opik
     extra = traj.get("extra") or {}
     session_id = traj.get("session_id") or "unknown-session"
     task_id = extra.get("sdlc_task_id") or "no-task"
-    trace_id, reused = trace_id_for(f"{session_id}::{task_id}")
+    trace_id, reused = trace_id_for(trace_key(session_id, task_id))
 
     steps = traj.get("steps", [])
     fm = traj.get("final_metrics") or {}
@@ -183,14 +207,33 @@ def register(traj: dict, *, project: str) -> str:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("trajectory", nargs="?", default="trajectory.json")
-    ap.add_argument("--project", default="atif-capture-test")
+    ap.add_argument("--project", default="drvr-sessions")
     ap.add_argument("--base-url", help="override OPIK_URL_OVERRIDE")
     args = ap.parse_args()
     if args.base_url:
         os.environ["OPIK_URL_OVERRIDE"] = args.base_url
 
     traj = json.load(open(args.trajectory))
-    trace_id, reused = register(traj, project=args.project)
+    try:
+        trace_id, reused = register(traj, project=args.project)
+    except (ConnectionError, TimeoutError, socket.gaierror, OSError) as e:
+        # Opik server can't be reached — the local artifact is untouched and a
+        # later re-run will succeed. Distinct, retry-able message.
+        print(f"Opik upload failed (unreachable: {e.__class__.__name__}): {e}",
+              file=sys.stderr)
+        print(f"  Local redacted trajectory is intact: {args.trajectory}",
+              file=sys.stderr)
+        print("  Nothing was uploaded. Re-run capture when Opik is reachable.",
+              file=sys.stderr)
+        raise SystemExit(1)
+    except Exception as e:
+        # Auth / bad project / SDK-version mismatch — NOT a connectivity problem,
+        # so don't tell the user to "re-run" (a blind retry won't fix it). The
+        # artifact is still intact; we don't queue a retry.
+        print(f"Opik upload failed ({e.__class__.__name__}): {e}", file=sys.stderr)
+        print(f"  Local redacted trajectory is intact: {args.trajectory}; "
+              f"not retried.", file=sys.stderr)
+        raise SystemExit(1)
     base = os.environ["OPIK_URL_OVERRIDE"].replace("/api", "")
     print(f"OK  {'UPSERTED (reused id)' if reused else 'registered new'} trace {trace_id}")
     print(f"    project={args.project}")
