@@ -201,14 +201,107 @@ pre{{white-space:pre-wrap;word-break:break-word;background:#f3f4f6;padding:8px 1
 """
 
 
+def _build_meta(traj: dict) -> dict:
+    """Pure Contract-A -> summary-meta mapping. Derives counts/tools/peak from steps[]."""
+    steps = traj.get("steps", []) or []
+    fm = traj.get("final_metrics", {}) or {}
+    extra = traj.get("extra", {}) or {}
+    tools = sorted({tc.get("function_name")
+                    for s in steps for tc in (s.get("tool_calls") or [])
+                    if tc.get("function_name")})
+    peak_context = max(
+        (((s.get("metrics") or {}).get("prompt_tokens", 0)
+          + ((s.get("metrics") or {}).get("cached_tokens", 0)))
+         for s in steps), default=0)               # derived downstream, not in final_metrics
+    return {
+        "task_id": extra.get("sdlc_task_id"), "spec_id": extra.get("sdlc_spec_id"),
+        "intent": extra.get("sdlc_intent"), "session_id": traj.get("session_id"),
+        "steps": fm.get("total_steps", len(steps)),
+        "agent_steps": sum(1 for s in steps if s.get("source") == "agent"),
+        "user_steps": sum(1 for s in steps if s.get("source") == "user"),
+        "tools": tools,
+        "completion_tokens": fm.get("total_completion_tokens", 0),
+        "peak_context": peak_context,
+        "cost_usd": fm.get("total_cost_usd", 0.0),
+    }
+
+
+def format_inline_summary(meta: dict, flags: list[dict]) -> str:
+    """Egress-safe in-chat review block. Consumes ONLY metadata + flag counts --
+    never step content -- so the summary cannot leak trajectory text into the
+    conversation. `flags` = [{type, count}] (from redact.redact_trajectory /
+    redact.py --flags-out). Tool NAMES are metadata and are surfaced; tool
+    ARGUMENTS (content) are never read here.
+    """
+    tools = meta.get("tools") or []
+    if flags:
+        flag_line = "Redaction flags: " + ", ".join(
+            f"{f.get('type')}×{f.get('count')}" for f in flags)
+    else:
+        flag_line = "Redaction flags: none (no flags raised)"
+    return "\n".join([
+        f"Session {meta.get('session_id') or '(unknown)'} · "
+        f"task {meta.get('task_id') or '(none)'} · spec {meta.get('spec_id') or '(none)'}",
+        f"Intent: {meta.get('intent') or '(none)'}",
+        f"Steps: {meta.get('steps', 0)} "
+        f"(agent {meta.get('agent_steps', 0)} / user {meta.get('user_steps', 0)})",
+        f"Tools: {', '.join(tools) if tools else '(none)'}",
+        f"Completion tokens: {meta.get('completion_tokens', 0)} · "
+        f"peak context: {meta.get('peak_context', 0)} · cost: ${meta.get('cost_usd', 0.0)}",
+        flag_line,
+    ])
+
+
+def _load_trajectory(path: str) -> dict:
+    """Guarded load: a missing/corrupt trajectory yields a one-line message and a
+    non-zero exit, never a raw traceback (which could echo file content)."""
+    try:
+        with open(path) as fh:
+            return json.load(fh)
+    except (OSError, ValueError) as e:
+        print(f"error: could not read trajectory {path} ({e.__class__.__name__})",
+              file=sys.stderr)
+        raise SystemExit(1)
+
+
+def _load_flags(path: str | None) -> list[dict]:
+    """Guarded load of redact.py --flags-out JSON ([{type, count}]). Missing or
+    malformed -> one-line stderr warning + [] (the summary still renders)."""
+    if not path:
+        return []
+    try:
+        with open(path) as fh:
+            data = json.load(fh)
+    except (OSError, ValueError) as e:
+        print(f"warning: could not read --flags-file {path} "
+              f"({e.__class__.__name__}); continuing with no flags", file=sys.stderr)
+        return []
+    if not isinstance(data, list):
+        print(f"warning: --flags-file {path} is not a JSON array; ignoring", file=sys.stderr)
+        return []
+    return data
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("trajectory")
     ap.add_argument("--out", default=None, help="HTML output path (default: alongside input)")
     ap.add_argument("--no-open", action="store_true", help="do not auto-open in browser")
+    ap.add_argument("--summary", action="store_true",
+                    help="print the egress-safe in-chat block (paths/counts only); "
+                         "writes no HTML and opens no browser")
+    ap.add_argument("--flags-file", default=None,
+                    help="redaction flags JSON ([{type,count}]) from redact.py --flags-out")
     args = ap.parse_args()
 
-    traj = json.load(open(args.trajectory))
+    # --summary is exclusive: metadata + flag counts to stdout, no HTML, no browser.
+    if args.summary:
+        traj = _load_trajectory(args.trajectory)
+        flags = _load_flags(args.flags_file)
+        print(format_inline_summary(_build_meta(traj), flags))
+        return
+
+    traj = _load_trajectory(args.trajectory)
     findings = scan(traj)
     out = args.out or os.path.splitext(args.trajectory)[0] + ".review.html"
     with open(out, "w") as fh:
@@ -216,8 +309,9 @@ def main() -> None:
 
     # IMPORTANT: print only the path + counts, never the content (keeps it out of
     # the agent's context). The human opens the file themselves.
+    total_steps = (traj.get("final_metrics") or {}).get("total_steps", len(traj.get("steps", [])))
     print(f"review report written: {out}")
-    print(f"  {fm if (fm := (traj.get('final_metrics') or {}).get('total_steps')) else '?'} steps · "
+    print(f"  {total_steps} steps · "
           f"{len(findings)} potential sensitive item(s) flagged for visual review")
     if not args.no_open:
         opener = {"darwin": "open", "linux": "xdg-open"}.get(sys.platform, None)
