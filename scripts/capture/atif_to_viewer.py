@@ -33,16 +33,18 @@ import subprocess
 import sys
 from datetime import datetime, timezone
 
+import redact  # the one shared masking core (typed [REDACTED:label] tokens)
+
 DEFAULT_REPO = "https://github.com/Slimshilin/ATIF-trajectory-viewer"
 # Pin so a clone-on-demand stays reproducible. Bump deliberately.
-DEFAULT_PIN = "main"
-DEFAULT_VIEWER_DIR = os.path.expanduser("~/.drvr/viewer")
+DEFAULT_PIN = "6bdcc65904f0926e04670d9fb746c0954b816661"
+DEFAULT_VIEWER_DIR = os.path.expanduser("~/.driver/viewer")
 DEFAULT_PORT = 5273  # 5173 collides with local Opik; use a dedicated port.
 
 # --- step/mutation mapping (ported from the viewer's scripts/ingest.py) ------
 
-STEP_FIELD_CAP = 40_000
-MAX_STEPS = 4000
+STEP_FIELD_CAP = 40_000  # per-field char cap so one huge blob can't swamp the viewer
+MAX_STEPS = 4000         # whole-run step cap (defensive bound on viewer payload size)
 
 WRITE_CMD = re.compile(
     r"(>>?|\btee\b|\bcp\b|\bmv\b|\bmkdir\b|\btouch\b|sed -i|"
@@ -50,43 +52,20 @@ WRITE_CMD = re.compile(
     r"pip install|\brm\b|cargo build|cargo test|pytest|\bdd\b)"
 )
 
-SECRET_PATTERNS = [
-    (re.compile(r"sk-(?:ant-|proj-)?[A-Za-z0-9]{24,}"), "[REDACTED_API_KEY]"),
-    (re.compile(r"AKIA[0-9A-Z]{16}"), "[REDACTED_AWS_KEY]"),
-    (re.compile(r"gh[pousr]_[A-Za-z0-9]{30,}"), "[REDACTED_GH_TOKEN]"),
-    (re.compile(r"AIza[0-9A-Za-z_\-]{30,}"), "[REDACTED_GOOGLE_KEY]"),
-    (re.compile(r"xox[baprs]-[0-9A-Za-z\-]{10,}"), "[REDACTED_SLACK_TOKEN]"),
-    (re.compile(r"glpat-[A-Za-z0-9_\-]{20,}"), "[REDACTED_GITLAB_TOKEN]"),
-    (re.compile(r"\bhf_[A-Za-z0-9]{30,}"), "[REDACTED_HF_TOKEN]"),
-    (re.compile(r"\bAC[0-9a-fA-F]{32}\b"), "[REDACTED_TWILIO_SID]"),
-    (re.compile(r"\bSK[0-9a-fA-F]{32}\b"), "[REDACTED_TWILIO_KEY]"),
-]
-ENV_SECRET = re.compile(
-    r"((?:[A-Za-z0-9_]*)(?:API[_-]?KEY|ACCESS[_-]?KEY|SECRET[_-]?KEY|_SECRET|"
-    r"_TOKEN|ACCESS[_-]?TOKEN|PASSWORD|PASSWD)\s*[=:]\s*[\"']?)([^\s\"',}]{6,})",
-    re.IGNORECASE,
-)
-SECRET_HINT = re.compile(
-    r"sk-|AKIA|gh[pousr]_|AIza|xox[baprs]-|glpat-|\bhf_|"
-    r"\bAC[0-9a-fA-F]{31}|\bSK[0-9a-fA-F]{31}|"
-    r"api[_-]?key|access[_-]?key|secret|_token|access[_-]?token|password|passwd",
-    re.IGNORECASE,
-)
 
-
-def scrub_secrets(v):
-    if not isinstance(v, str) or not v or not SECRET_HINT.search(v):
-        return v
-    s = v
-    for pat, repl in SECRET_PATTERNS:
-        s = pat.sub(repl, s)
-    return ENV_SECRET.sub(lambda m: m.group(1) + "[REDACTED]", s)
+def _scrub(v):
+    # Mask via the shared redaction core; non-str values pass through unchanged.
+    # Counts are discarded here: this is defense-in-depth on an ALREADY-redacted
+    # trajectory — the authoritative flags come from redact.redact_trajectory.
+    return redact.redact_text(v, None)[0] if isinstance(v, str) else v
 
 
 def _cap(v):
     if isinstance(v, str) and len(v) > STEP_FIELD_CAP:
         v = v[:STEP_FIELD_CAP] + f"\n…[truncated, {len(v) - STEP_FIELD_CAP} more chars]"
-    return scrub_secrets(v)
+    # Scrub the already-capped value: the input is already redacted, so capping
+    # first cannot introduce a split-secret evasion here.
+    return _scrub(v)
 
 
 def _parse_tool_calls(raw):
@@ -158,7 +137,7 @@ def step_from_atif(s: dict, idx: int) -> dict:
         if m:
             for k in ("detail", "summary", "target"):
                 if m.get(k):
-                    m[k] = scrub_secrets(m[k])
+                    m[k] = _scrub(m[k])   # second scrub site (mutation fields)
             muts.append(m)
         tcs.append({"name": name, "args": _cap(args)})
     obs = s.get("observation")
@@ -227,7 +206,8 @@ def ensure_viewer(viewer_dir: str, repo: str, pin: str, do_install: bool) -> Non
         subprocess.run(["npm", "install"], cwd=viewer_dir, check=True)
 
 
-def build_dataset(traj: dict, *, task_id: str, spec_id: str, intent: str):
+def build_dataset(traj: dict, *, task_id: str, spec_id: str, intent: str, generated_at: str):
+    """generated_at injected by the shell (no datetime.now() in the core)."""
     extra = traj.get("extra") or {}
     task_id = task_id or extra.get("sdlc_task_id") or "session"
     spec_id = spec_id or extra.get("sdlc_spec_id") or "drvr"
@@ -267,7 +247,7 @@ def build_dataset(traj: dict, *, task_id: str, spec_id: str, intent: str):
         "failureReason": None,
     }
     dataset = {
-        "generatedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "generatedAt": generated_at,
         "vendors": [{"id": vid, "name": "drvr sessions",
                      "coverage": "Claude Code SDLC sessions captured locally"}],
         "agents": [{"id": aid, "harness": "Claude Code", "model": model,
@@ -307,8 +287,10 @@ def main() -> None:
 
     ensure_viewer(args.viewer_dir, args.repo, args.pin, args.install)
 
+    generated_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     dataset, rid, tid, steps = build_dataset(
-        traj, task_id=args.task_id, spec_id=args.spec_id, intent=args.intent)
+        traj, task_id=args.task_id, spec_id=args.spec_id, intent=args.intent,
+        generated_at=generated_at)
 
     public = os.path.join(args.viewer_dir, "public")
     runs_dir = os.path.join(public, "runs")
