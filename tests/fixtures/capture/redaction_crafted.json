@@ -1,0 +1,43 @@
+{
+  "schema_version": "ATIF-v1.7",
+  "session_id": "crafted-redaction-fixture",
+  "agent": {"name": "claude-code", "version": "cc-jsonl-adapter-0.1", "model_name": "claude-opus-4-8"},
+  "steps": [
+    {
+      "step_id": 1,
+      "source": "user",
+      "message": "Here is the aws id AKIAAAAAAAAAAAAAAAAA and a google key AIzaSyA1234567890abcdefghijklmnopqr please use them."
+    },
+    {
+      "step_id": 2,
+      "source": "agent",
+      "model_name": "claude-opus-4-8",
+      "message": "I read a config dump. It had anthropic sk-ant-abcdefghijklmnopqrstuvwxy and an openai sk-abcdefghijklmnopqrstuvwxy in it.",
+      "reasoning_content": "The github token was ghp_abcdefghijklmnopqrstuvwxyz0123 and the slack token xoxb-1234567890-abcdefghij showed up too.",
+      "tool_calls": [
+        {
+          "tool_call_id": "call_1",
+          "function_name": "read_file",
+          "arguments": {
+            "path": "/secrets/keys.txt",
+            "note": "gitlab is glpat-abcdefghijklmnopqrstuv and huggingface is hf_abcdefghijklmnopqrstuvwxyz0123"
+          }
+        }
+      ]
+    },
+    {
+      "step_id": 3,
+      "source": "agent",
+      "model_name": "claude-opus-4-8",
+      "message": "Folding observations.",
+      "observation": {
+        "results": [
+          {
+            "source_call_id": "call_1",
+            "content": "twilio sid AC0123456789abcdef0123456789abcdef and twilio key SK0123456789abcdef0123456789abcdef were present.\nAlso Authorization: Bearer abcdefghijklmnopqrstuvwxyz0\n-----BEGIN RSA PRIVATE KEY-----\nMIIEp= fakebody\n-----END RSA PRIVATE KEY-----\nDB_PASSWORD=supersecretvalue123"
+          }
+        ]
+      }
+    }
+  ]
+}

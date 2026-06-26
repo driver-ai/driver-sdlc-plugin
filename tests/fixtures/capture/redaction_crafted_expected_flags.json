@@ -1,0 +1,54 @@
+[
+  {
+    "type": "aws_access_key_id",
+    "count": 1
+  },
+  {
+    "type": "google_api_key",
+    "count": 1
+  },
+  {
+    "type": "anthropic_key",
+    "count": 1
+  },
+  {
+    "type": "openai_key",
+    "count": 1
+  },
+  {
+    "type": "github_token",
+    "count": 1
+  },
+  {
+    "type": "slack_token",
+    "count": 1
+  },
+  {
+    "type": "gitlab_token",
+    "count": 1
+  },
+  {
+    "type": "huggingface_token",
+    "count": 1
+  },
+  {
+    "type": "twilio_account_sid",
+    "count": 1
+  },
+  {
+    "type": "twilio_api_key",
+    "count": 1
+  },
+  {
+    "type": "private_key_block",
+    "count": 1
+  },
+  {
+    "type": "bearer_token",
+    "count": 1
+  },
+  {
+    "type": "env_secret_assignment",
+    "count": 1
+  }
+]
