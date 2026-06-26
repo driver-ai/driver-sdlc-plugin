@@ -29,6 +29,7 @@ from harbor.models.trajectories import (
     ToolCall, Trajectory,
 )
 import cc_to_atif_core as core
+import environment
 
 
 def _load(path: str) -> list[dict[str, Any]]:
@@ -85,8 +86,34 @@ def main() -> None:
     ap.add_argument("--exclude-marker",
                     help="truncate at the last user turn whose command equals this text "
                          "(e.g. '/drvr:capture-session') to drop the capture cmd's own turns")
+    ap.add_argument("--env-file",
+                    help="JSON file of raw env facts (codebase_url, cwd, branch, "
+                         "commit_start, commit_end, mcp_endpoint, mcp_version) "
+                         "gathered by the caller")
     ap.add_argument("--out", default="trajectory.json")
     args = ap.parse_args()
+
+    # Shell: read the env-file (I/O) and build the env block via the pure core.
+    # build_environment returns {} when no facts are present; core.normalize then
+    # drops an empty environment, so we pass the built dict straight through (M4).
+    env_block = None
+    if args.env_file:
+        try:
+            with open(args.env_file) as fh:
+                facts = json.load(fh)
+        except FileNotFoundError:
+            print(f"error: --env-file not found: {args.env_file}", file=sys.stderr)
+            raise SystemExit(1)
+        except json.JSONDecodeError as e:
+            print(f"error: --env-file is not valid JSON: {e}", file=sys.stderr)
+            raise SystemExit(1)
+        # Extract only the 7 known fact keys; unknown keys are ignored (M5).
+        env_block = environment.build_environment(
+            codebase_url=facts.get("codebase_url"), cwd=facts.get("cwd"),
+            branch=facts.get("branch"), commit_start=facts.get("commit_start"),
+            commit_end=facts.get("commit_end"), mcp_endpoint=facts.get("mcp_endpoint"),
+            mcp_version=facts.get("mcp_version"),
+        )
 
     records = _load(args.transcript)
     session_id = next((r.get("sessionId") for r in records if r.get("sessionId")), None)
@@ -96,6 +123,7 @@ def main() -> None:
             spec_id=args.spec_id, intent=args.intent,
             exclude_session_id=args.exclude_session_id,
             exclude_marker=args.exclude_marker,
+            environment=env_block,
         )
     except core.EmptyTranscriptError as e:
         print(f"error: {e}", file=sys.stderr)
