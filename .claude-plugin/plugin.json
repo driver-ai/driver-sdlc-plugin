@@ -34,6 +34,7 @@
     "./commands/assess.md",
     "./commands/driverize.md",
     "./commands/un-driverize.md",
-    "./commands/review.md"
+    "./commands/review.md",
+    "./commands/capture-session.md"
   ]
 }

@@ -286,7 +286,7 @@ class TestCommandQualification(unittest.TestCase):
     COMMANDS = [
         "feature", "assess", "context", "dry-run-plan",
         "docs-artifacts", "open-pr", "orchestrate", "retro", "setup",
-        "driverize", "un-driverize", "review",
+        "driverize", "un-driverize", "review", "capture-session",
     ]
 
     SCAN_DIRS = ["commands", "skills", "agents", "docs", "hooks", "templates"]
@@ -346,6 +346,99 @@ class TestCommandQualification(unittest.TestCase):
                 f"Found {len(violations)} bare command reference(s):\n"
                 + "\n".join(violations)
             )
+
+
+class TestCaptureSessionGovernance(unittest.TestCase):
+    """Registration + egress-control governance for /drvr:capture-session.
+
+    These tests pin the command's registration (plugin.json + COMMANDS scanner +
+    frontmatter convention) and the load-bearing gate-before-egress ordering of
+    the command body, so an MD regression that moves the approval gate after an
+    upload step — or drops the reject cleanup — fails the suite.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        plugin_json_path = PLUGIN_CONFIG_DIR / "plugin.json"
+        with open(plugin_json_path, encoding="utf-8") as f:
+            cls.plugin_data = json.load(f)
+        cls.command_path = PLUGIN_ROOT / "commands" / "capture-session.md"
+
+    def test_capture_session_registered(self):
+        """capture-session must be registered in plugin.json + COMMANDS, have valid
+        frontmatter (allowed-tools a comma-separated string with >=2 tools), and
+        reference itself fully-qualified as /drvr:capture-session in its body."""
+        # Registered in plugin.json commands array
+        self.assertIn(
+            "./commands/capture-session.md",
+            self.plugin_data.get("commands", []),
+            "capture-session not registered in plugin.json commands array",
+        )
+        # Registered in the qualified-name scanner's COMMANDS list
+        self.assertIn(
+            "capture-session",
+            TestCommandQualification.COMMANDS,
+            "capture-session not added to COMMANDS list",
+        )
+        # Command file exists
+        self.assertTrue(
+            self.command_path.is_file(),
+            f"command file does not exist: {self.command_path}",
+        )
+
+        fm = parse_frontmatter(self.command_path)
+        # Three required frontmatter fields
+        for field in ("description", "argument-hint", "allowed-tools"):
+            self.assertIn(field, fm, f"capture-session missing frontmatter '{field}'")
+
+        # allowed-tools must be a comma-separated STRING (not a YAML list)
+        self.assertEqual(
+            fm.get("allowed-tools-format"), "string",
+            "capture-session allowed-tools must be a comma-separated string, not a YAML list",
+        )
+        tools = fm.get("allowed-tools", [])
+        self.assertGreaterEqual(
+            len(tools), 2,
+            f"capture-session allowed-tools must list >=2 tools, got {tools}",
+        )
+
+        # Body references the command fully-qualified
+        body = get_md_body(self.command_path)
+        self.assertIn(
+            "/drvr:capture-session", body,
+            "capture-session body must reference the command fully-qualified as /drvr:capture-session",
+        )
+
+    def test_command_governance_structure(self):
+        """The AskUserQuestion gate must appear BEFORE any routing/upload step, and the
+        reject branch must contain a guarded rm -rf of the well-known capture dir."""
+        self.assertTrue(
+            self.command_path.is_file(),
+            f"command file does not exist: {self.command_path}",
+        )
+        body = get_md_body(self.command_path)
+
+        # Gate-before-egress: AskUserQuestion must precede the first Opik-upload reference.
+        gate_idx = body.find("AskUserQuestion")
+        self.assertNotEqual(gate_idx, -1, "capture-session body has no AskUserQuestion gate")
+
+        upload_idx = body.find("atif_to_opik")
+        self.assertNotEqual(
+            upload_idx, -1,
+            "capture-session body has no atif_to_opik upload step to order against",
+        )
+        self.assertLess(
+            gate_idx, upload_idx,
+            "AskUserQuestion gate must appear BEFORE the first atif_to_opik / upload step "
+            "(no network egress before the approval gate)",
+        )
+
+        # Reject branch must guard-and-clean the well-known per-run dir.
+        self.assertRegex(
+            body,
+            r'\[\s*-d\s+"\$HOME/\.driver/capture/current"\s*\]\s*&&\s*rm\s+-rf\s+"\$HOME/\.driver/capture/current"',
+            "reject branch must contain a guarded rm -rf \"$HOME/.driver/capture/current\"",
+        )
 
 
 if __name__ == "__main__":
