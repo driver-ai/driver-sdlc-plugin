@@ -31,6 +31,18 @@ def rates_for(model_name: str | None) -> tuple[float, float, float, float]:
     return _FALLBACK
 
 
+def is_priced(model_name: str | None) -> bool:
+    """True iff the model resolves to a real (non-fallback) rate row.
+
+    Derived from the same precedence walk `rates_for` uses — NOT a comparison
+    against _FALLBACK, since the `sonnet` row is byte-identical to _FALLBACK and
+    such a comparison would wrongly report sonnet as unpriced. Single source of
+    truth: the model is priced iff some table key is a substring of its name.
+    """
+    name = (model_name or "").lower()
+    return any(key in name for key, _ in _TABLE)
+
+
 def step_cost_usd(model_name: str | None, *, input_tokens: int,
                   cache_creation: int, cache_read: int, output_tokens: int) -> float:
     rin, rout, rcw, rcr = rates_for(model_name)
