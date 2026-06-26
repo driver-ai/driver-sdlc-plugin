@@ -1,0 +1,338 @@
+"""ATIF trajectory -> ATIF Trajectory Viewer (local React app).
+
+Bridges a (redacted) Harbor ATIF trajectory produced by `cc_to_atif.py` into the
+data layout the ATIF Trajectory Viewer reads from `public/`:
+
+  - public/dataset.json        (one vendor / agent / task / run, no inline steps)
+  - public/runs/<runId>.json   ({"steps": [...]}, lazy-loaded by the viewer)
+
+The viewer is vendored clone-on-demand to ~/.drvr/viewer (override --viewer-dir).
+First run git-clones it and `npm install`s; subsequent runs reuse the checkout.
+
+The viewer natively understands Harbor ATIF — its own scripts/ingest.py has a
+`step_from_atif`. We port the same step/mutation mapping here (rather than import
+its ingest, which is wired to its own benchmark sources) so the file-stage,
+mutations, and tool calls render identically.
+
+Usage:
+    python atif_to_viewer.py <trajectory.json> [--task-id T] [--spec-id S]
+        [--intent "..."] [--viewer-dir DIR] [--repo URL] [--pin SHA]
+        [--port 5273] [--serve|--no-serve] [--install|--no-install]
+
+Egress note: this is a *local* viewer. It writes only to the local viewer
+checkout and serves on localhost. Nothing is uploaded. Feed it the REDACTED
+trajectory — the same one you'd hand to render_trace.py / atif_to_opik.py.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+from datetime import datetime, timezone
+
+DEFAULT_REPO = "https://github.com/Slimshilin/ATIF-trajectory-viewer"
+# Pin so a clone-on-demand stays reproducible. Bump deliberately.
+DEFAULT_PIN = "main"
+DEFAULT_VIEWER_DIR = os.path.expanduser("~/.drvr/viewer")
+DEFAULT_PORT = 5273  # 5173 collides with local Opik; use a dedicated port.
+
+# --- step/mutation mapping (ported from the viewer's scripts/ingest.py) ------
+
+STEP_FIELD_CAP = 40_000
+MAX_STEPS = 4000
+
+WRITE_CMD = re.compile(
+    r"(>>?|\btee\b|\bcp\b|\bmv\b|\bmkdir\b|\btouch\b|sed -i|"
+    r"\bgit (add|commit|checkout|push)\b|\bmake\b|npm (run|install|ci)|"
+    r"pip install|\brm\b|cargo build|cargo test|pytest|\bdd\b)"
+)
+
+SECRET_PATTERNS = [
+    (re.compile(r"sk-(?:ant-|proj-)?[A-Za-z0-9]{24,}"), "[REDACTED_API_KEY]"),
+    (re.compile(r"AKIA[0-9A-Z]{16}"), "[REDACTED_AWS_KEY]"),
+    (re.compile(r"gh[pousr]_[A-Za-z0-9]{30,}"), "[REDACTED_GH_TOKEN]"),
+    (re.compile(r"AIza[0-9A-Za-z_\-]{30,}"), "[REDACTED_GOOGLE_KEY]"),
+    (re.compile(r"xox[baprs]-[0-9A-Za-z\-]{10,}"), "[REDACTED_SLACK_TOKEN]"),
+    (re.compile(r"glpat-[A-Za-z0-9_\-]{20,}"), "[REDACTED_GITLAB_TOKEN]"),
+    (re.compile(r"\bhf_[A-Za-z0-9]{30,}"), "[REDACTED_HF_TOKEN]"),
+    (re.compile(r"\bAC[0-9a-fA-F]{32}\b"), "[REDACTED_TWILIO_SID]"),
+    (re.compile(r"\bSK[0-9a-fA-F]{32}\b"), "[REDACTED_TWILIO_KEY]"),
+]
+ENV_SECRET = re.compile(
+    r"((?:[A-Za-z0-9_]*)(?:API[_-]?KEY|ACCESS[_-]?KEY|SECRET[_-]?KEY|_SECRET|"
+    r"_TOKEN|ACCESS[_-]?TOKEN|PASSWORD|PASSWD)\s*[=:]\s*[\"']?)([^\s\"',}]{6,})",
+    re.IGNORECASE,
+)
+SECRET_HINT = re.compile(
+    r"sk-|AKIA|gh[pousr]_|AIza|xox[baprs]-|glpat-|\bhf_|"
+    r"\bAC[0-9a-fA-F]{31}|\bSK[0-9a-fA-F]{31}|"
+    r"api[_-]?key|access[_-]?key|secret|_token|access[_-]?token|password|passwd",
+    re.IGNORECASE,
+)
+
+
+def scrub_secrets(v):
+    if not isinstance(v, str) or not v or not SECRET_HINT.search(v):
+        return v
+    s = v
+    for pat, repl in SECRET_PATTERNS:
+        s = pat.sub(repl, s)
+    return ENV_SECRET.sub(lambda m: m.group(1) + "[REDACTED]", s)
+
+
+def _cap(v):
+    if isinstance(v, str) and len(v) > STEP_FIELD_CAP:
+        v = v[:STEP_FIELD_CAP] + f"\n…[truncated, {len(v) - STEP_FIELD_CAP} more chars]"
+    return scrub_secrets(v)
+
+
+def _parse_tool_calls(raw):
+    if raw is None:
+        return []
+    if isinstance(raw, list):
+        return raw
+    if isinstance(raw, str):
+        try:
+            return json.loads(raw)
+        except Exception:
+            try:
+                return json.loads(raw.replace("'", '"'))
+            except Exception:
+                return []
+    return []
+
+
+def detect_mutation(name: str, raw_args):
+    if isinstance(raw_args, str):
+        try:
+            args = json.loads(raw_args)
+        except Exception:
+            args = {"_raw": raw_args}
+    elif isinstance(raw_args, dict):
+        args = raw_args
+    else:
+        args = {}
+    n = (name or "").lower()
+    if any(k in n for k in ("write_file", "create_file", "str_replace", "edit_file",
+                            "apply_patch", "replace_file")) or n in ("write", "edit", "replace"):
+        return {"kind": "file", "tool": name,
+                "target": args.get("path") or args.get("filepath") or args.get("file_path"),
+                "summary": "file edit",
+                "detail": (args.get("content") or args.get("new_str") or args.get("new_content")
+                           or args.get("new_string") or "")[:1500]}
+    if "git_commit" in n or n.endswith("git_commit"):
+        return {"kind": "git", "tool": name, "target": args.get("repo_path"),
+                "summary": "commit: " + (args.get("message", "") or "").splitlines()[0][:80]}
+    if any(k in n for k in ("git_add", "git_create_branch", "git_checkout", "git_push")):
+        return {"kind": "git", "tool": name,
+                "target": args.get("repo_path") or args.get("branch_name"),
+                "summary": n.replace("git_", "").replace("_", " ")}
+    if ("bash" in n or "shell" in n or n in ("run_command", "exec", "execute")
+            or n.endswith("_command") or n == "bash_command"):
+        cmd = args.get("command") or args.get("cmd") or args.get("_raw") or ""
+        if cmd and WRITE_CMD.search(str(cmd)):
+            return {"kind": "command", "tool": name, "target": None,
+                    "summary": str(cmd).strip()[:200]}
+    return None
+
+
+def step_from_atif(s: dict, idx: int) -> dict:
+    role = {"user": "user", "agent": "agent", "assistant": "agent",
+            "tool": "tool", "system": "system"}.get((s.get("source") or "agent").lower(), "agent")
+    raw_tcs = _parse_tool_calls(s.get("tool_calls"))
+    tcs, muts = [], []
+    for tc in raw_tcs:
+        if not isinstance(tc, dict):
+            continue
+        name = (tc.get("function_name") or (tc.get("function") or {}).get("name")
+                or tc.get("name") or "tool")
+        args = tc.get("arguments")
+        if args is None and tc.get("function"):
+            args = tc["function"].get("arguments")
+        if not isinstance(args, str):
+            args = json.dumps(args, ensure_ascii=False) if args is not None else None
+        m = detect_mutation(name, args)
+        if m:
+            for k in ("detail", "summary", "target"):
+                if m.get(k):
+                    m[k] = scrub_secrets(m[k])
+            muts.append(m)
+        tcs.append({"name": name, "args": _cap(args)})
+    obs = s.get("observation")
+    if isinstance(obs, dict):
+        results = obs.get("results")
+        if isinstance(results, list):
+            obs = "\n\n".join(str(r.get("content", r)) for r in results)
+        else:
+            obs = json.dumps(obs, ensure_ascii=False)
+    elif isinstance(obs, list):
+        obs = "\n\n".join(str(x) for x in obs)
+    metrics = s.get("metrics") or {}
+    return {
+        "index": idx, "role": role,
+        "text": _cap(s.get("message")) if role != "tool" else None,
+        "reasoning": _cap(s.get("reasoning_content")),
+        "toolCalls": tcs or None,
+        "observation": _cap(obs) if (role == "tool" or obs) else None,
+        "toolName": None,
+        "tokens": {"prompt": metrics.get("prompt_tokens"),
+                   "completion": metrics.get("completion_tokens")} if metrics else None,
+        "timestamp": s.get("timestamp"),
+        "mutations": muts or None,
+        "edits": None,
+    }
+
+
+def run_artifacts(steps: list) -> list:
+    seen = []
+    for s in steps:
+        for m in (s.get("mutations") or []):
+            t = m.get("target")
+            if t and t not in seen:
+                seen.append(t)
+    return seen[:30]
+
+
+def slug(s: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", (s or "").lower()).strip("-") or "x"
+
+
+def _duration_sec(steps: list):
+    ts = [s.get("timestamp") for s in steps if s.get("timestamp")]
+    if len(ts) < 2:
+        return None
+    try:
+        a = datetime.fromisoformat(ts[0].replace("Z", "+00:00"))
+        b = datetime.fromisoformat(ts[-1].replace("Z", "+00:00"))
+        return max(0, int((b - a).total_seconds()))
+    except Exception:
+        return None
+
+
+# --- viewer checkout management ---------------------------------------------
+
+def ensure_viewer(viewer_dir: str, repo: str, pin: str, do_install: bool) -> None:
+    if not os.path.isdir(os.path.join(viewer_dir, ".git")):
+        os.makedirs(os.path.dirname(viewer_dir), exist_ok=True)
+        print(f"Cloning viewer -> {viewer_dir}")
+        subprocess.run(["git", "clone", repo, viewer_dir], check=True)
+    if pin and pin != "main":
+        subprocess.run(["git", "-C", viewer_dir, "fetch", "--depth", "1", "origin", pin], check=True)
+        subprocess.run(["git", "-C", viewer_dir, "checkout", pin], check=True)
+    if do_install and not os.path.isdir(os.path.join(viewer_dir, "node_modules")):
+        print("Installing viewer deps (npm install) — first run only…")
+        subprocess.run(["npm", "install"], cwd=viewer_dir, check=True)
+
+
+def build_dataset(traj: dict, *, task_id: str, spec_id: str, intent: str):
+    extra = traj.get("extra") or {}
+    task_id = task_id or extra.get("sdlc_task_id") or "session"
+    spec_id = spec_id or extra.get("sdlc_spec_id") or "drvr"
+    intent = intent or extra.get("sdlc_intent") or ""
+    session_id = traj.get("session_id") or "session"
+    agent_meta = traj.get("agent") or {}
+    model = agent_meta.get("model_name")
+
+    raw_steps = traj.get("steps") or []
+    steps = [step_from_atif(s, i) for i, s in enumerate(raw_steps[:MAX_STEPS])]
+
+    vid = "drvr"
+    aid = slug(f"claude-code-{model or 'model'}-{vid}")
+    tid = slug(f"{spec_id}-{task_id}")
+    rid = slug(f"{session_id}-{task_id}")
+
+    fm = traj.get("final_metrics") or {}
+    tokens = {
+        "prompt": fm.get("total_prompt_tokens"),
+        "completion": fm.get("total_completion_tokens"),
+        "cached": fm.get("total_cached_tokens"),
+        "costUsd": fm.get("total_cost_usd"),
+    }
+    turns = sum(1 for s in steps if s["role"] == "agent")
+
+    run = {
+        "id": rid, "taskId": tid, "agentId": aid, "vendorId": vid, "format": "atif",
+        "status": "completed", "passed": False, "reward": None,
+        "steps": [],  # externalized
+        "stepCount": len(steps),
+        "multiUser": sum(1 for s in steps if s["role"] == "user") > 1,
+        "artifacts": run_artifacts(steps),
+        "turns": turns,
+        "durationSec": _duration_sec(steps),
+        "tokens": tokens,
+        "grade": None,
+        "failureReason": None,
+    }
+    dataset = {
+        "generatedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "vendors": [{"id": vid, "name": "drvr sessions",
+                     "coverage": "Claude Code SDLC sessions captured locally"}],
+        "agents": [{"id": aid, "harness": "Claude Code", "model": model,
+                    "family": "Anthropic", "vendorId": vid}],
+        "tasks": [{"id": tid, "vendorId": vid, "title": task_id, "source": "atif",
+                   "category": spec_id, "difficulty": "n/a",
+                   "instruction": intent, "files": [],
+                   "metadata": {"spec_id": spec_id, "task_id": task_id,
+                                "session_id": session_id}}],
+        "runs": [run],
+        "showcase": [{"vendorId": vid, "taskId": tid, "runId": rid,
+                      "taskTitle": task_id, "passed": None, "reward": None,
+                      "stepCount": len(steps), "source": "atif",
+                      "why": intent or "Captured Claude Code session"}],
+    }
+    return dataset, rid, tid, steps
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("trajectory")
+    ap.add_argument("--task-id", default="")
+    ap.add_argument("--spec-id", default="")
+    ap.add_argument("--intent", default="")
+    ap.add_argument("--viewer-dir", default=DEFAULT_VIEWER_DIR)
+    ap.add_argument("--repo", default=DEFAULT_REPO)
+    ap.add_argument("--pin", default=DEFAULT_PIN)
+    ap.add_argument("--port", type=int, default=DEFAULT_PORT)
+    ap.add_argument("--serve", dest="serve", action="store_true", default=True)
+    ap.add_argument("--no-serve", dest="serve", action="store_false")
+    ap.add_argument("--install", dest="install", action="store_true", default=True)
+    ap.add_argument("--no-install", dest="install", action="store_false")
+    args = ap.parse_args()
+
+    with open(args.trajectory) as fh:
+        traj = json.load(fh)
+
+    ensure_viewer(args.viewer_dir, args.repo, args.pin, args.install)
+
+    dataset, rid, tid, steps = build_dataset(
+        traj, task_id=args.task_id, spec_id=args.spec_id, intent=args.intent)
+
+    public = os.path.join(args.viewer_dir, "public")
+    runs_dir = os.path.join(public, "runs")
+    os.makedirs(runs_dir, exist_ok=True)
+    with open(os.path.join(public, "dataset.json"), "w", encoding="utf-8") as f:
+        json.dump(dataset, f, ensure_ascii=False)
+    with open(os.path.join(runs_dir, f"{rid}.json"), "w", encoding="utf-8") as f:
+        json.dump({"steps": steps}, f, ensure_ascii=False)
+
+    url = f"http://localhost:{args.port}/tasks/{tid}/runs/{rid}"
+    print(f"OK  wrote dataset.json + runs/{rid}.json ({len(steps)} steps) to {public}")
+    print(f"    deep link: {url}")
+
+    if args.serve:
+        print(f"\nStarting viewer on :{args.port}  (Ctrl-C to stop)…")
+        try:
+            subprocess.run(["npm", "run", "dev", "--", "--port", str(args.port)],
+                           cwd=args.viewer_dir, check=True)
+        except KeyboardInterrupt:
+            print("\nviewer stopped.")
+    else:
+        print(f"\nTo view:  cd {args.viewer_dir} && npm run dev -- --port {args.port}")
+        print(f"Then open: {url}")
+
+
+if __name__ == "__main__":
+    main()
