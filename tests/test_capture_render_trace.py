@@ -222,5 +222,165 @@ class TestFormatInlineSummary(unittest.TestCase):
         self.assertIn("no flags", out.lower())
 
 
+def _subagent(trajectory_id, *, subagent_type=None, steps=None, total_cost_usd=0.0):
+    """A serialized subagent trajectory in the Plan-01 emitted shape: a flat entry
+    under the parent's `subagent_trajectories` with its own `trajectory_id`, `steps`,
+    `final_metrics`, and an optional `extra.subagent_type` (key absent when None)."""
+    sub = {
+        "trajectory_id": trajectory_id,
+        "steps": steps or [],
+        "final_metrics": {"total_steps": len(steps or []),
+                          "total_cost_usd": total_cost_usd},
+    }
+    if subagent_type is not None:
+        sub["extra"] = {"subagent_type": subagent_type}
+    return sub
+
+
+class TestBuildMetaSubagents(unittest.TestCase):
+    """`_build_meta` surfaces metadata-only subagent counts (no step content)."""
+
+    def test_subagent_counts_match_fixture(self):
+        traj = {
+            "session_id": "sess-1",
+            "steps": [_step(1, "agent", message="parent work")],
+            "final_metrics": {"total_steps": 1, "total_completion_tokens": 5,
+                              "total_cost_usd": 1.0},
+            "subagent_trajectories": [
+                _subagent("sess-1/agent-a", subagent_type="explorer",
+                          steps=[_step(1, "agent", message="a1"),
+                                 _step(2, "agent", message="a2")],
+                          total_cost_usd=0.25),
+                _subagent("sess-1/agent-b", subagent_type="reviewer",
+                          steps=[_step(1, "agent", message="b1")],
+                          total_cost_usd=0.125),
+            ],
+        }
+        meta = render_trace._build_meta(traj)
+        self.assertEqual(meta["subagents"], 2)
+        self.assertEqual(meta["subagent_steps"], 3)         # 2 + 1
+        self.assertEqual(meta["subagent_cost_usd"], 0.375)  # 0.25 + 0.125
+
+    def test_zero_subagents(self):
+        traj = {
+            "session_id": "sess-1",
+            "steps": [_step(1, "agent", message="solo")],
+            "final_metrics": {"total_steps": 1, "total_completion_tokens": 0,
+                              "total_cost_usd": 0.0},
+        }
+        meta = render_trace._build_meta(traj)
+        self.assertEqual(meta["subagents"], 0)
+        self.assertEqual(meta["subagent_steps"], 0)
+        self.assertEqual(meta["subagent_cost_usd"], 0.0)
+
+
+class TestFormatInlineSummarySubagents(unittest.TestCase):
+    """The in-chat subagent line is metadata/counts-only.
+
+    The egress sentinel here is NON-VACUOUS: subagent step content and the
+    free-text subagent_type are planted via `_build_meta`'s input, the
+    `Subagents:` metadata line is asserted PRESENT (so the subagent path
+    actually executed), and the planted strings are asserted absent.
+    """
+
+    def _meta(self, subagents=2, subagent_steps=3, subagent_cost_usd=0.375):
+        return {
+            "task_id": "T1", "spec_id": "S1", "intent": "do the thing",
+            "session_id": "sess-1", "steps": 3, "agent_steps": 2, "user_steps": 1,
+            "tools": ["Bash", "Read"], "completion_tokens": 40,
+            "peak_context": 250, "cost_usd": 1.23,
+            "subagents": subagents, "subagent_steps": subagent_steps,
+            "subagent_cost_usd": subagent_cost_usd,
+        }
+
+    def test_subagent_line_present_when_nonzero(self):
+        out = render_trace.format_inline_summary(self._meta(), [])
+        self.assertIn("Subagents:", out)
+        self.assertIn("2", out)      # subagent count
+        self.assertIn("3", out)      # subagent steps
+        self.assertIn("0.375", out)  # subagent cost
+
+    def test_subagent_line_absent_when_zero(self):
+        out = render_trace.format_inline_summary(
+            self._meta(subagents=0, subagent_steps=0, subagent_cost_usd=0.0), [])
+        self.assertNotIn("Subagents:", out)
+        # The metadata-only invariant is unchanged: the rest of the block renders.
+        self.assertIn("Steps:", out)
+        self.assertIn("Redaction flags:", out)
+
+    def test_subagent_line_omitted_when_key_absent(self):
+        # A meta with no subagent keys at all (zero-subagent _build_meta) must not
+        # crash and must not print a Subagents line.
+        meta = {
+            "task_id": "T1", "spec_id": "S1", "intent": "x", "session_id": "s",
+            "steps": 1, "agent_steps": 1, "user_steps": 0, "tools": [],
+            "completion_tokens": 0, "peak_context": 0, "cost_usd": 0.0,
+        }
+        out = render_trace.format_inline_summary(meta, [])
+        self.assertNotIn("Subagents:", out)
+
+    def test_subagent_egress_sentinel_non_vacuous(self):
+        # Plant sentinels in a subagent step message AND extra.subagent_type, then
+        # run _build_meta -> format_inline_summary end to end. The Subagents line
+        # must appear (proves the subagent path ran), and neither sentinel may leak.
+        step_sentinel = "ZZ_SUBAGENT_STEP_SENTINEL_a1b2c3_ZZ"
+        type_sentinel = "ZZ_SUBAGENT_TYPE_SENTINEL_d4e5f6_ZZ"
+        traj = {
+            "session_id": "sess-1",
+            "steps": [_step(1, "agent", message="parent")],
+            "final_metrics": {"total_steps": 1, "total_completion_tokens": 0,
+                              "total_cost_usd": 0.0},
+            "subagent_trajectories": [
+                _subagent("sess-1/agent-a", subagent_type=type_sentinel,
+                          steps=[_step(1, "agent", message=step_sentinel)],
+                          total_cost_usd=0.5),
+            ],
+        }
+        meta = render_trace._build_meta(traj)
+        out = render_trace.format_inline_summary(meta, [])
+        # (2) the subagent path executed -> the metadata line is present.
+        self.assertIn("Subagents:", out)
+        self.assertIn("1", out)     # one subagent, one step
+        # (3) neither planted content string leaks into the in-chat block.
+        self.assertNotIn(step_sentinel, out,
+                         "subagent step message leaked into the summary")
+        self.assertNotIn(type_sentinel, out,
+                         "free-text subagent_type leaked into the summary")
+
+
+class TestScanSubagents(unittest.TestCase):
+    """`scan` walks the parent AND every subagent, with the owning trajectory_id
+    in the dedup key so same-numbered (step 1) parent/subagent secrets stay
+    distinct findings."""
+
+    def test_same_secret_parent_and_subagent_yields_two_findings(self):
+        secret = "AKIAIOSFODNN7EXAMPLE"
+        traj = {
+            "steps": [_step(1, "agent", message=f"parent {secret}")],
+            "subagent_trajectories": [
+                _subagent("sess/agent-a", subagent_type="explorer",
+                          steps=[_step(1, "agent", message=f"subagent {secret}")]),
+            ],
+        }
+        findings = render_trace.scan(traj)
+        aws = [f for f in findings if f["type"] == "AWS access key id"]
+        self.assertEqual(len(aws), 2,
+                         "identical secret in parent step 1 and subagent step 1 "
+                         "must report as two findings")
+
+    def test_subagent_only_secret_is_reported(self):
+        secret = "AKIAIOSFODNN7EXAMPLE"
+        traj = {
+            "steps": [_step(1, "agent", message="nothing sensitive here")],
+            "subagent_trajectories": [
+                _subagent("sess/agent-a", subagent_type="reviewer",
+                          steps=[_step(1, "agent", message=f"hidden {secret}")]),
+            ],
+        }
+        findings = render_trace.scan(traj)
+        aws = [f for f in findings if f["type"] == "AWS access key id"]
+        self.assertEqual(len(aws), 1)
+
+
 if __name__ == "__main__":
     unittest.main()

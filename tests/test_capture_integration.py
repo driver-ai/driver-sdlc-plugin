@@ -33,6 +33,12 @@ CAPTURE_DIR = PLUGIN_ROOT / "scripts" / "capture"
 # egress-safe summary legitimately prints. Planted into every content field.
 SENTINEL = "ZZ_EGRESS_SENTINEL_SECRET_8f3a91c7_ZZ"
 
+# Subagent-specific sentinels: one in a subagent step's content, one in the
+# free-text subagent_type. The in-chat summary surfaces subagent COUNTS only, so
+# neither may ever appear in --summary output.
+SUB_STEP_SENTINEL = "ZZ_SUBAGENT_STEP_SENTINEL_5d2e1a9b_ZZ"
+SUB_TYPE_SENTINEL = "ZZ_SUBAGENT_TYPE_SENTINEL_7c4f3e0d_ZZ"
+
 # Dependency probes -> skipUnless guards (the ONLY permitted skips here).
 _HAS_OPIK = importlib.util.find_spec("opik") is not None
 _HAS_NODE = shutil.which("node") is not None and shutil.which("npm") is not None
@@ -53,11 +59,15 @@ def _run_capture(script, *args, env=None, timeout=120):
 
 
 def _planted_trajectory(session_id="egress-test-session", task_id="T10",
-                        spec_id="S2"):
+                        spec_id="S2", with_subagent=False):
     """A minimal ATIF v1.7 trajectory with SENTINEL planted in all four content
     fields: steps[].message, steps[].reasoning_content,
-    steps[].tool_calls[].arguments, steps[].observation.results[].content."""
-    return {
+    steps[].tool_calls[].arguments, steps[].observation.results[].content.
+
+    When with_subagent is True, attach one subagent (Plan-01 flat shape) whose
+    steps[0].message AND extra.subagent_type carry their own sentinels, so the
+    in-chat summary's metadata-only invariant can be proven non-vacuously."""
+    traj = {
         "schema_version": "ATIF-v1.7",
         "session_id": session_id,
         "extra": {"sdlc_task_id": task_id, "sdlc_spec_id": spec_id,
@@ -79,6 +89,17 @@ def _planted_trajectory(session_id="egress-test-session", task_id="T10",
                  {"source_call_id": "c1", "content": f"file body {SENTINEL}"}]}},
         ],
     }
+    if with_subagent:
+        traj["subagent_trajectories"] = [{
+            "trajectory_id": f"{session_id}/agent-a",
+            "extra": {"subagent_type": SUB_TYPE_SENTINEL},
+            "steps": [{"step_id": 1, "source": "agent",
+                       "model_name": "claude-opus-4-8",
+                       "message": f"subagent body {SUB_STEP_SENTINEL}"}],
+            "final_metrics": {"total_steps": 1, "total_completion_tokens": 2,
+                              "total_cost_usd": 0.005},
+        }]
+    return traj
 
 
 class TestRenderTraceSummaryEgress(unittest.TestCase):
@@ -128,6 +149,36 @@ class TestRenderTraceSummaryEgress(unittest.TestCase):
         self.assertNotIn(SENTINEL, stdout, msg % "steps[].reasoning_content")
         self.assertNotIn(SENTINEL, stdout, msg % "steps[].tool_calls[].arguments")
         self.assertNotIn(SENTINEL, stdout, msg % "steps[].observation.results[].content")
+
+    def test_render_trace_summary_subagent_egress(self):
+        # Same egress NFR, extended to subagents and made non-vacuous: a subagent
+        # whose step message AND free-text subagent_type carry sentinels. The
+        # in-chat summary must show the metadata-only Subagents line (proving the
+        # subagent path executed, not silently skipped) while leaking neither.
+        traj = _planted_trajectory(with_subagent=True)
+        traj_path = Path(self.tmp) / "traj-sub.json"
+        traj_path.write_text(json.dumps(traj))
+
+        rc, stdout, stderr = _run_capture(
+            "render_trace.py", str(traj_path), "--summary",
+            "--flags-file", str(self.flags_path), "--no-open")
+        self.assertEqual(rc, 0, f"non-zero exit; stderr={stderr}")
+
+        # Precondition: the sentinels really ARE in the subagent we wrote, so an
+        # "absent from stdout" pass means the shell omitted them by design.
+        sub = traj["subagent_trajectories"][0]
+        self.assertIn(SUB_STEP_SENTINEL, sub["steps"][0]["message"])
+        self.assertIn(SUB_TYPE_SENTINEL, sub["extra"]["subagent_type"])
+
+        # (2) The subagent path executed -> the metadata-only line is present.
+        self.assertIn("Subagents:", stdout,
+                      "the metadata-only subagent line must appear")
+
+        # (3) Neither subagent content string leaks into the in-chat block.
+        self.assertNotIn(SUB_STEP_SENTINEL, stdout,
+                         "subagent step message leaked into --summary stdout")
+        self.assertNotIn(SUB_TYPE_SENTINEL, stdout,
+                         "free-text subagent_type leaked into --summary stdout")
 
 
 class TestRenderTraceSummaryMissingFlags(unittest.TestCase):

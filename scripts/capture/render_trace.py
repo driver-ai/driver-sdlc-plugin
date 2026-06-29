@@ -64,33 +64,57 @@ def _benign_blob(s: str) -> bool:
     return any(p.match(s) for p in _BENIGN)
 
 
-def _iter_strings(step: dict):
-    """Yield (location_label, text) for every reviewable string in a step."""
+def _walk_labeled(traj: dict):
+    """Yield (trajectory_id, label_prefix, step) for the parent then every subagent.
+
+    `subagent_trajectories` is flat (all depths), so one pass covers the whole tree.
+    Subagent step_ids restart at 1 per trajectory, so the trajectory_id keeps scan's
+    finding-dedup key distinct (an identical secret in parent step 1 and subagent
+    step 1 must report as TWO findings) and the label distinguishes same-numbered
+    steps in the HTML report. Pure: no I/O.
+    """
+    for step in traj.get("steps") or []:
+        yield (None, "", step)
+    for sub in traj.get("subagent_trajectories") or []:
+        stype = (sub.get("extra") or {}).get("subagent_type") or "agent"
+        tid = sub.get("trajectory_id")
+        for step in sub.get("steps") or []:
+            yield (tid, f"subagent {stype} · ", step)
+
+
+def _iter_strings(step: dict, prefix: str = ""):
+    """Yield (location_label, text) for every reviewable string in a step.
+
+    `prefix` (from _walk_labeled, e.g. 'subagent explorer · ') distinguishes
+    subagent step locations so scan's dedup key and render's headers stay distinct
+    across same-numbered parent/subagent steps.
+    """
     sid = step.get("step_id")
     msg = step.get("message")
     if isinstance(msg, str):
-        yield (f"step {sid} message", msg)
+        yield (f"{prefix}step {sid} message", msg)
     if step.get("reasoning_content"):
-        yield (f"step {sid} reasoning", step["reasoning_content"])
+        yield (f"{prefix}step {sid} reasoning", step["reasoning_content"])
     for tc in step.get("tool_calls") or []:
-        yield (f"step {sid} tool:{tc.get('function_name')} args",
+        yield (f"{prefix}step {sid} tool:{tc.get('function_name')} args",
                json.dumps(tc.get("arguments"), ensure_ascii=False))
     for r in (step.get("observation") or {}).get("results", []):
         c = r.get("content")
-        yield (f"step {sid} observation", c if isinstance(c, str) else json.dumps(c, ensure_ascii=False))
+        yield (f"{prefix}step {sid} observation",
+               c if isinstance(c, str) else json.dumps(c, ensure_ascii=False))
 
 
 def scan(traj: dict) -> list[dict]:
     findings: list[dict] = []
     seen: set[tuple] = set()
-    for step in traj.get("steps", []):
-        for loc, text in _iter_strings(step):
+    for tid, prefix, step in _walk_labeled(traj):
+        for loc, text in _iter_strings(step, prefix):
             if not text:
                 continue
             for label, pat in SCAN:
                 for m in pat.finditer(text):
                     val = m.group(0)
-                    key = (label, val, loc)
+                    key = (label, val, tid, loc)
                     if key in seen:
                         continue
                     seen.add(key)
@@ -100,7 +124,7 @@ def scan(traj: dict) -> list[dict]:
                 val = m.group(0)
                 if val.startswith("[REDACTED") or _entropy(val) < 4.0 or _benign_blob(val):
                     continue
-                key = ("High-entropy string", val, loc)
+                key = ("High-entropy string", val, tid, loc)
                 if key in seen:
                     continue
                 seen.add(key)
@@ -138,11 +162,12 @@ def render(traj: dict, findings: list[dict]) -> str:
     fm = traj.get("final_metrics") or {}
     agent = traj.get("agent") or {}
     rows = []
-    for step in traj.get("steps", []):
+    for tid, prefix, step in _walk_labeled(traj):
         src = step.get("source")
         sid = step.get("step_id")
         cls = "agent" if src == "agent" else "user"
-        parts = [f'<div class="step {cls}"><div class="shead">#{sid} · {_esc(src)}'
+        head = f'{_esc(prefix)}#{sid} · {_esc(src)}'   # prefix is "" for parent steps
+        parts = [f'<div class="step {cls}"><div class="shead">{head}'
                  f'{" · " + _esc(step.get("model_name")) if step.get("model_name") else ""}']
         m = step.get("metrics") or {}
         if m:
@@ -213,6 +238,7 @@ def _build_meta(traj: dict) -> dict:
         (((s.get("metrics") or {}).get("prompt_tokens", 0)
           + ((s.get("metrics") or {}).get("cached_tokens", 0)))
          for s in steps), default=0)               # derived downstream, not in final_metrics
+    subs = traj.get("subagent_trajectories") or []  # flat (all depths) -> every subagent once
     return {
         "task_id": extra.get("sdlc_task_id"), "spec_id": extra.get("sdlc_spec_id"),
         "intent": extra.get("sdlc_intent"), "session_id": traj.get("session_id"),
@@ -223,6 +249,10 @@ def _build_meta(traj: dict) -> dict:
         "completion_tokens": fm.get("total_completion_tokens", 0),
         "peak_context": peak_context,
         "cost_usd": fm.get("total_cost_usd", 0.0),
+        "subagents": len(subs),
+        "subagent_steps": sum(len(s.get("steps") or []) for s in subs),
+        "subagent_cost_usd": round(
+            sum((s.get("final_metrics") or {}).get("total_cost_usd", 0.0) for s in subs), 6),
     }
 
 
@@ -239,7 +269,7 @@ def format_inline_summary(meta: dict, flags: list[dict]) -> str:
             f"{f.get('type')}×{f.get('count')}" for f in flags)
     else:
         flag_line = "Redaction flags: none (no flags raised)"
-    return "\n".join([
+    lines = [
         f"Session {meta.get('session_id') or '(unknown)'} · "
         f"task {meta.get('task_id') or '(none)'} · spec {meta.get('spec_id') or '(none)'}",
         f"Intent: {meta.get('intent') or '(none)'}",
@@ -248,8 +278,14 @@ def format_inline_summary(meta: dict, flags: list[dict]) -> str:
         f"Tools: {', '.join(tools) if tools else '(none)'}",
         f"Completion tokens: {meta.get('completion_tokens', 0)} · "
         f"peak context: {meta.get('peak_context', 0)} · cost: ${meta.get('cost_usd', 0.0)}",
-        flag_line,
-    ])
+    ]
+    # Metadata/counts ONLY -- never a subagent step or the free-text subagent_type.
+    if meta.get("subagents"):
+        lines.append(f"Subagents: {meta['subagents']} "
+                     f"({meta.get('subagent_steps', 0)} steps · "
+                     f"${meta.get('subagent_cost_usd', 0.0)})")
+    lines.append(flag_line)
+    return "\n".join(lines)
 
 
 def _load_trajectory(path: str) -> dict:
