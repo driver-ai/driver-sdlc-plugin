@@ -142,9 +142,10 @@ Convert and redact (this path runs under `uv` — skip with a warning if `uv` is
 absent). Outputs stay under `$CUR`, so the working tree is untouched:
 
 ```bash
-uv run --with harbor python "${CLAUDE_PLUGIN_ROOT}/scripts/capture/cc_to_atif.py" \
+uv run --with 'harbor~=0.16' python "${CLAUDE_PLUGIN_ROOT}/scripts/capture/cc_to_atif.py" \
     "$TRANSCRIPT" --task-id "$TASK" --spec-id "$SPEC" --intent "$INTENT" \
     --exclude-marker '/drvr:capture-session' --env-file "$CUR/env.json" \
+    --session-dir "$DIR" \
     --out "$CUR/trajectory.json"
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/capture/redact.py" \
     "$CUR/trajectory.json" --out "$CUR/trajectory.redacted.json" \
@@ -187,8 +188,14 @@ until the developer chooses an egress action here. The default approved action i
     re-ask this question. Recommended review path when node/npm is present.
   - `Open static report` — run `render_trace.py` for a no-dependency HTML scan
     (Step 7), then re-ask this question. Use this when node/npm is unavailable.
-  - `Save locally` — copy the redacted trajectory to `./captured-trajectory.json`.
-    No egress. **This is the default approved action.**
+  - `Save locally` — copy the redacted trajectory to `./captured-trajectory.json`,
+    then remove the unredacted intermediate. No egress. **This is the default
+    approved action.**
+
+    ```bash
+    cp "$CUR/trajectory.redacted.json" ./captured-trajectory.json
+    rm -f "$CUR/trajectory.json"
+    ```
   - `Upload to Opik` — register the **redacted** trajectory to a self-hosted Opik
     store (Step 8). Only offered/honored when the developer explicitly chooses it
     (or `--upload-opik` was passed).
@@ -245,15 +252,22 @@ ledger at `~/.driver/capture/ledger.json`.
 
 > **Security note.** Self-hosted Opik (the OSS deployment) has no authentication.
 > Pointing the upload at a non-local `--base-url` exposes the redacted trajectory
-> to whoever can reach that host — that is the user's security responsibility.
-> Keep the upload local unless you have explicitly secured the target.
+> (including any captured subagents) to whoever can reach that host — that is the
+> user's security responsibility. Keep the upload local unless you have explicitly
+> secured the target. The upload step prints a warning when the resolved target is
+> non-local; relay that warning and reconfirm with the developer before proceeding.
 
 If the upload **fails**, the conversion already succeeded locally: the redacted
 trajectory is intact at `$CUR/trajectory.redacted.json` and nothing was uploaded.
 Tell the user it was saved locally and, if Opik was unreachable, to re-run when it
 is reachable. (There is no retry queue — a failed upload is not data loss.)
 
-On success, report the trace id and the Opik URL it prints.
+On success, report the trace id and the Opik URL it prints, then remove the
+unredacted intermediate (the redacted copy and flags remain):
+
+```bash
+rm -f "$CUR/trajectory.json"
+```
 
 ---
 
@@ -261,7 +275,5 @@ On success, report the trace id and the Opik URL it prints.
 
 - **Viewer is single-session.** The trajectory viewer holds one trajectory at a
   time — each capture overwrites it. The viewer is for inspection, not storage.
-- **Subagent capture is a planned follow-up.** This version captures the main
-  session transcript only; capturing subagent (Task tool) sidechains is deferred.
 - **v1 is Claude Code + internal only.** The converter keeps a per-agent adapter
   boundary so other-agent adapters can plug in later.
