@@ -43,6 +43,8 @@ class NormalizedTrajectory:
     steps: list[StepRecord]
     final_metrics: dict              # {total_prompt_tokens, ..., total_steps}
     extra: dict                      # {sdlc_*, source_client, environment?, unpriced_models?}
+    trajectory_id: str | None = None                                            # set on subagents
+    subagent_trajectories: list["NormalizedTrajectory"] = field(default_factory=list)  # flat
 
 
 def _text_of(content: Any) -> str:
@@ -107,9 +109,14 @@ def _truncate_at_marker(records: list[dict[str, Any]], marker: str) -> list[dict
 def normalize(records: list[dict[str, Any]], *, session_id: str | None,
               task_id: str | None, spec_id: str | None, intent: str | None,
               exclude_session_id: str | None, exclude_marker: str | None = None,
-              environment: dict | None = None) -> NormalizedTrajectory:
+              environment: dict | None = None,
+              skip_sidechain: bool = True) -> NormalizedTrajectory:
     """Pure JSONL-records -> NormalizedTrajectory. Main transcript only (isSidechain
     skipped, DEC-018). Raises EmptyTranscriptError if no steps result.
+
+    skip_sidechain (default True) keeps subagent sidechain records out of the main
+    transcript. Subagent files are all isSidechain:true, so they are normalized with
+    skip_sidechain=False to keep their records.
 
     Ports the spike `convert` onto plain StepRecords + dict metrics:
       - message.id grouping: a run of same-id assistant records is ONE step; usage
@@ -144,8 +151,8 @@ def normalize(records: list[dict[str, Any]], *, session_id: str | None,
         rtype = rec.get("type")
         if rtype not in ("user", "assistant"):
             continue
-        if rec.get("isSidechain"):
-            continue  # subagents deferred to fast-follow (DEC-018): main-transcript only
+        if skip_sidechain and rec.get("isSidechain"):
+            continue  # main transcript keeps subagent sidechains out; subagent files pass False
         if exclude_session_id and rec.get("sessionId") == exclude_session_id:
             continue
         msg = rec.get("message") or {}
@@ -274,3 +281,92 @@ def normalize(records: list[dict[str, Any]], *, session_id: str | None,
         final_metrics=final_metrics,
         extra=extra,
     )
+
+
+def normalize_session(
+    main_records: list[dict[str, Any]],
+    subagents: list[tuple[dict, list[dict[str, Any]]]],   # [(meta, records), ...] flat, any depth
+    *, session_id: str | None, task_id: str | None, spec_id: str | None,
+    intent: str | None, exclude_session_id: str | None,
+    exclude_marker: str | None = None, environment: dict | None = None,
+) -> NormalizedTrajectory:
+    """Assemble a parent trajectory plus its flat subagents (pure).
+
+    The parent is built from the main transcript (sidechains skipped). EACH subagent
+    is built via the same `normalize` with skip_sidechain=False, because subagent
+    records are all isSidechain:true; this keeps the parent and subagent step sets
+    disjoint (no double-count). Subagent normalization is scope-neutral
+    (exclude_session_id/exclude_marker/environment all None) because subagent files are
+    already session-scoped on disk and carry no command turns or env block; task/spec/
+    intent are inherited so each subagent keeps the parent's SDLC linkage. Each subagent
+    is qualified with meta["trajectory_id"], its token/cost rolled into the parent totals
+    (flat union; total_steps parent-only), and spawning subagent calls are linked to their
+    subagents across all levels. A subagent that yields no steps is omitted. With
+    subagents=[] this is exactly normalize(main_records, ...).
+    """
+    parent = normalize(main_records, session_id=session_id, task_id=task_id,
+                       spec_id=spec_id, intent=intent,
+                       exclude_session_id=exclude_session_id,
+                       exclude_marker=exclude_marker, environment=environment)
+    subs: list[NormalizedTrajectory] = []
+    by_tool_use: dict[str, str] = {}
+    for meta, records in subagents:
+        try:
+            sub = normalize(records, session_id=session_id, task_id=task_id,
+                            spec_id=spec_id, intent=intent,
+                            exclude_session_id=None,     # subagent files are already session-scoped;
+                            exclude_marker=None, environment=None,   # no command turns / env block here
+                            skip_sidechain=False)        # subagent records are isSidechain:true
+        except EmptyTranscriptError:
+            continue                                     # 0-step subagent: omit, parent intact
+        sub.trajectory_id = meta.get("trajectory_id")
+        sub.extra = {**sub.extra, **{k: v for k, v in {
+            "subagent_type": meta.get("agentType"),
+            "subagent_description": meta.get("description"),
+        }.items() if v is not None}}
+        subs.append(sub)
+        tuid = meta.get("toolUseId")                     # a meta may omit this (older CC) -> unlinked
+        if tuid and sub.trajectory_id:
+            by_tool_use[tuid] = sub.trajectory_id
+    parent.subagent_trajectories = subs
+    _rollup_subagent_metrics(parent, subs)
+    _link_subagent_refs(parent, subs, by_tool_use)
+    return parent
+
+
+def _link_subagent_refs(parent: NormalizedTrajectory,
+                        subs: list[NormalizedTrajectory],
+                        by_tool_use: dict[str, str]) -> None:
+    """Attach subagent_trajectory_ref across the parent AND every subagent step.
+
+    Claude Code toolUseIds are globally unique, so one flat map resolves a spawning
+    subagent (Agent) call to its subagent regardless of the level that issued it --
+    depth-agnostic by construction. A ref is only ever attached to an observation_result whose
+    source_call_id equals a tool_call in the SAME step, so harbor's within-step
+    tool_call-reference rule holds. Every ref's trajectory_id comes from the map, so it
+    always resolves to an embedded subagent. Mutates observation_results in place.
+    """
+    for traj in [parent, *subs]:
+        for step in traj.steps:
+            for call in step.tool_calls:
+                tid = by_tool_use.get(call.get("tool_call_id"))
+                if tid is None:
+                    continue
+                for result in step.observation_results:
+                    if result.get("source_call_id") == call.get("tool_call_id"):
+                        result.setdefault("subagent_trajectory_ref", []).append(
+                            {"trajectory_id": tid})
+
+
+def _rollup_subagent_metrics(parent: NormalizedTrajectory,
+                             subs: list[NormalizedTrajectory]) -> None:
+    """Add subagent token/cost into the parent totals (flat union -> no double-count;
+    main skips sidechains so the step sets are disjoint). total_steps stays parent-only;
+    each subagent keeps its own normalize()-computed final_metrics."""
+    fm = parent.final_metrics
+    for sub in subs:
+        sfm = sub.final_metrics
+        fm["total_prompt_tokens"] += sfm.get("total_prompt_tokens", 0)
+        fm["total_completion_tokens"] += sfm.get("total_completion_tokens", 0)
+        fm["total_cached_tokens"] += sfm.get("total_cached_tokens", 0)
+        fm["total_cost_usd"] = round(fm["total_cost_usd"] + sfm.get("total_cost_usd", 0.0), 6)

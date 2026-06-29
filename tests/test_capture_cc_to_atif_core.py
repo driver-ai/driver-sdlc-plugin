@@ -350,5 +350,411 @@ class TestFinalMetricsTotals(unittest.TestCase):
         self.assertEqual(n.final_metrics["total_steps"], len(n.steps))
 
 
+# ---------------------------------------------------------------------------
+# Subagent representation: skip_sidechain gate + normalize_session + linker + rollup
+# ---------------------------------------------------------------------------
+#
+# Subagent records on disk are all isSidechain:true and carry their own sessionId.
+# Spawning calls in the parent (or another subagent) are tool_use blocks named
+# "Agent". Meta sidecars come in three shapes, all exercised below:
+#   {agentType, description, toolUseId}              (current real shape)
+#   {agentType, description, spawnDepth, toolUseId}  (current real shape)
+#   {agentType, spawnDepth}                          (forward-compat, no toolUseId)
+# Kernel tests set meta["trajectory_id"] inline (the shell sets it in production).
+
+
+def sub_meta(*, trajectory_id, agent_type="explorer", description="explore the code",
+             tool_use_id=None, spawn_depth=None, include_description=True):
+    """Build a subagent meta sidecar dict.
+
+    Defaults mirror the {agentType, description, toolUseId} real shape. Pass
+    spawn_depth to add the spawnDepth field; pass include_description=False and
+    tool_use_id=None for the forward-compat {agentType, spawnDepth} shape.
+    """
+    meta = {"agentType": agent_type, "trajectory_id": trajectory_id}
+    if include_description:
+        meta["description"] = description
+    if tool_use_id is not None:
+        meta["toolUseId"] = tool_use_id
+    if spawn_depth is not None:
+        meta["spawnDepth"] = spawn_depth
+    return meta
+
+
+def sub_records(*, call_id=None, content="sub step text", spawn=None):
+    """Build a minimal isSidechain:true subagent transcript (one agent step).
+
+    Pass call_id to give the step a tool_use it can be addressed by; pass
+    spawn=(child_call_id) to add a spawning Agent tool_use (so this subagent can
+    itself parent another).
+    """
+    blocks = [text_block(content)]
+    if call_id is not None:
+        blocks.append(tool_use_block(call_id, name="Bash"))
+    if spawn is not None:
+        blocks.append(tool_use_block(spawn, name="Agent"))
+    recs = [asst(blocks, msg_id="sm1", usage=USAGE, sidechain=True)]
+    if call_id is not None:
+        recs.append(user([tool_result_block(call_id, "sub result")], sidechain=True))
+    return recs
+
+
+class TestSkipSidechainGate(unittest.TestCase):
+    def test_skip_sidechain_false_keeps_sidechain_records(self):
+        # skip_sidechain=False normalizes isSidechain:true records into steps.
+        recs = [
+            asst([text_block("sub")], msg_id="m1", usage=USAGE, sidechain=True),
+            user([text_block("sub user")], sidechain=True),
+        ]
+        n = normalize(recs, skip_sidechain=False)
+        self.assertEqual(len(n.steps), 2)
+        self.assertEqual(n.steps[0].source, "agent")
+        self.assertEqual(n.steps[1].source, "user")
+
+    def test_skip_sidechain_true_is_default_and_skips(self):
+        # Default (skip_sidechain=True) drops sidechain records → empty transcript.
+        recs = [
+            asst([text_block("sub")], msg_id="m1", usage=USAGE, sidechain=True),
+            user([text_block("sub user")], sidechain=True),
+        ]
+        with self.assertRaises(core.EmptyTranscriptError):
+            normalize(recs)  # default skip_sidechain=True
+
+    def test_skip_sidechain_false_keeps_main_records_too(self):
+        # Non-sidechain records still normalize when skip_sidechain=False.
+        recs = [asst([text_block("main")], msg_id="m1", usage=USAGE)]
+        n = normalize(recs, skip_sidechain=False)
+        self.assertEqual(len(n.steps), 1)
+
+
+def normalize_session(main_records, subagents, **kw):
+    kw.setdefault("session_id", "sess")
+    kw.setdefault("task_id", None)
+    kw.setdefault("spec_id", None)
+    kw.setdefault("intent", None)
+    kw.setdefault("exclude_session_id", None)
+    return core.normalize_session(main_records, subagents, **kw)
+
+
+class TestNormalizeSessionSingleSubagent(unittest.TestCase):
+    def test_single_subagent_embedded_and_linked(self):
+        # Parent spawns one subagent via an Agent call "spawn-a"; meta carries
+        # toolUseId == "spawn-a" so the ref links to the subagent.
+        main = [
+            asst([text_block("main turn"), tool_use_block("spawn-a", name="Agent")],
+                 msg_id="m1", usage=USAGE),
+            user([tool_result_block("spawn-a", "subagent finished")]),
+        ]
+        meta = sub_meta(trajectory_id="sess/agent-a", tool_use_id="spawn-a")
+        n = normalize_session(main, [(meta, sub_records(call_id="sc1"))])
+        # Exactly one embedded subagent.
+        self.assertEqual(len(n.subagent_trajectories), 1)
+        self.assertEqual(n.subagent_trajectories[0].trajectory_id, "sess/agent-a")
+        # The ref is on the ObservationResult whose source_call_id == the Agent call.
+        spawn_step = next(s for s in n.steps if any(
+            tc["tool_call_id"] == "spawn-a" for tc in s.tool_calls))
+        linked = [r for r in spawn_step.observation_results
+                  if r.get("source_call_id") == "spawn-a"]
+        self.assertEqual(len(linked), 1)
+        self.assertEqual(linked[0]["subagent_trajectory_ref"],
+                         [{"trajectory_id": "sess/agent-a"}])
+
+
+class TestNormalizeSessionDepth2(unittest.TestCase):
+    def test_depth2_linked_on_subagent_A_not_parent(self):
+        # main -> A -> B. A's isSidechain steps contain the Agent call "spawn-b";
+        # B's meta.toolUseId == "spawn-b". B must be flat in subagent_trajectories
+        # AND its ref must land on A's ObservationResult, never the parent's.
+        main = [
+            asst([text_block("main"), tool_use_block("spawn-a", name="Agent")],
+                 msg_id="m1", usage=USAGE),
+            user([tool_result_block("spawn-a", "A done")]),
+        ]
+        # A spawns B: A's step has the Agent call "spawn-b" and folds its result.
+        a_records = [
+            asst([text_block("A turn"), tool_use_block("spawn-b", name="Agent")],
+                 msg_id="am1", usage=USAGE, sidechain=True),
+            user([tool_result_block("spawn-b", "B done")], sidechain=True),
+        ]
+        b_records = sub_records(call_id="bc1", content="B turn")
+        meta_a = sub_meta(trajectory_id="sess/agent-a", tool_use_id="spawn-a")
+        meta_b = sub_meta(trajectory_id="sess/agent-b", tool_use_id="spawn-b")
+        n = normalize_session(main, [(meta_a, a_records), (meta_b, b_records)])
+        # Both subagents are flat (depth-agnostic — no nesting).
+        ids = {s.trajectory_id for s in n.subagent_trajectories}
+        self.assertEqual(ids, {"sess/agent-a", "sess/agent-b"})
+        sub_a = next(s for s in n.subagent_trajectories
+                     if s.trajectory_id == "sess/agent-a")
+        # B's ref is on A's step, not the parent's.
+        a_linked = [r for st in sub_a.steps for r in st.observation_results
+                    if r.get("subagent_trajectory_ref")]
+        self.assertEqual(len(a_linked), 1)
+        self.assertEqual(a_linked[0]["subagent_trajectory_ref"],
+                         [{"trajectory_id": "sess/agent-b"}])
+        # The parent only links A, not B (guards the parent-only dangling bug).
+        parent_refs = [r["subagent_trajectory_ref"] for st in n.steps
+                       for r in st.observation_results
+                       if r.get("subagent_trajectory_ref")]
+        self.assertEqual(parent_refs, [[{"trajectory_id": "sess/agent-a"}]])
+
+
+class TestNormalizeSessionDepth3(unittest.TestCase):
+    def test_depth3_synthetic_linked_on_subagent_B(self):
+        # Synthetic main -> A -> B -> C. C's ref must land on B's step. One flat
+        # toolUseId map handles all depths (no per-depth code path).
+        main = [
+            asst([text_block("main"), tool_use_block("spawn-a", name="Agent")],
+                 msg_id="m1", usage=USAGE),
+            user([tool_result_block("spawn-a", "A done")]),
+        ]
+        a_records = [
+            asst([text_block("A"), tool_use_block("spawn-b", name="Agent")],
+                 msg_id="am1", usage=USAGE, sidechain=True),
+            user([tool_result_block("spawn-b", "B done")], sidechain=True),
+        ]
+        b_records = [
+            asst([text_block("B"), tool_use_block("spawn-c", name="Agent")],
+                 msg_id="bm1", usage=USAGE, sidechain=True),
+            user([tool_result_block("spawn-c", "C done")], sidechain=True),
+        ]
+        c_records = sub_records(call_id="cc1", content="C turn")
+        meta_a = sub_meta(trajectory_id="sess/agent-a", tool_use_id="spawn-a")
+        meta_b = sub_meta(trajectory_id="sess/agent-b", tool_use_id="spawn-b")
+        meta_c = sub_meta(trajectory_id="sess/agent-c", tool_use_id="spawn-c")
+        n = normalize_session(main, [(meta_a, a_records),
+                                     (meta_b, b_records),
+                                     (meta_c, c_records)])
+        sub_b = next(s for s in n.subagent_trajectories
+                     if s.trajectory_id == "sess/agent-b")
+        b_linked = [r for st in sub_b.steps for r in st.observation_results
+                    if r.get("subagent_trajectory_ref")]
+        self.assertEqual(len(b_linked), 1)
+        self.assertEqual(b_linked[0]["subagent_trajectory_ref"],
+                         [{"trajectory_id": "sess/agent-c"}])
+
+
+class TestRollupSubagentMetrics(unittest.TestCase):
+    def test_rollup_sums_tokens_and_cost_no_double_count(self):
+        # Parent + 2 subs, each one agent step with the same known USAGE.
+        main = [asst([text_block("main")], msg_id="m1", usage=USAGE)]
+        meta1 = sub_meta(trajectory_id="sess/agent-1", tool_use_id="t1")
+        meta2 = sub_meta(trajectory_id="sess/agent-2", tool_use_id="t2")
+        subs = [(meta1, sub_records(content="s1")), (meta2, sub_records(content="s2"))]
+        n = normalize_session(main, subs)
+
+        per_prompt = USAGE["input_tokens"] + USAGE["cache_creation_input_tokens"] + \
+            USAGE["cache_read_input_tokens"]
+        per_compl = USAGE["output_tokens"]
+        per_cached = USAGE["cache_read_input_tokens"]
+        # Parent totals = parent step + both subagent steps (flat union).
+        self.assertEqual(n.final_metrics["total_prompt_tokens"], per_prompt * 3)
+        self.assertEqual(n.final_metrics["total_completion_tokens"], per_compl * 3)
+        self.assertEqual(n.final_metrics["total_cached_tokens"], per_cached * 3)
+        # total_steps stays parent-only.
+        self.assertEqual(n.final_metrics["total_steps"], 1)
+        # Cost is the rounded sum of parent + both subs; no double-count.
+        sub1, sub2 = n.subagent_trajectories
+        expected_cost = round(
+            normalize([asst([text_block("main")], msg_id="m1", usage=USAGE)]
+                      ).final_metrics["total_cost_usd"]
+            + sub1.final_metrics["total_cost_usd"]
+            + sub2.final_metrics["total_cost_usd"], 6)
+        self.assertEqual(n.final_metrics["total_cost_usd"], expected_cost)
+        # Each subagent keeps its own final_metrics (its own single step).
+        self.assertEqual(sub1.final_metrics["total_prompt_tokens"], per_prompt)
+        self.assertEqual(sub1.final_metrics["total_steps"], 1)
+        self.assertEqual(sub2.final_metrics["total_prompt_tokens"], per_prompt)
+        self.assertEqual(sub2.final_metrics["total_steps"], 1)
+
+
+class TestNormalizeSessionNoSubagents(unittest.TestCase):
+    def test_no_subagents_reduces_to_normalize(self):
+        main = [
+            asst([text_block("a")], msg_id="m1", usage=USAGE),
+            user([text_block("human")]),
+            asst([text_block("b")], msg_id="m2", usage=USAGE),
+        ]
+        n = normalize_session(main, [])
+        self.assertEqual(n.subagent_trajectories, [])
+        # Behaves exactly like normalize on the main transcript.
+        base = normalize([
+            asst([text_block("a")], msg_id="m1", usage=USAGE),
+            user([text_block("human")]),
+            asst([text_block("b")], msg_id="m2", usage=USAGE),
+        ])
+        self.assertEqual(len(n.steps), len(base.steps))
+        self.assertEqual([s.source for s in n.steps], [s.source for s in base.steps])
+        self.assertEqual([s.message for s in n.steps], [s.message for s in base.steps])
+        self.assertEqual(n.final_metrics, base.final_metrics)
+
+
+class TestNormalizeSessionUnlinkedSubagent(unittest.TestCase):
+    def test_meta_without_tool_use_id_is_embedded_unlinked(self):
+        # Forward-compat shape {agentType, spawnDepth} (no toolUseId, no description).
+        main = [
+            asst([text_block("main"), tool_use_block("spawn-a", name="Agent")],
+                 msg_id="m1", usage=USAGE),
+            user([tool_result_block("spawn-a", "done")]),
+        ]
+        meta = sub_meta(trajectory_id="sess/agent-x", agent_type="mystery",
+                        include_description=False, spawn_depth=1)  # no toolUseId
+        n = normalize_session(main, [(meta, sub_records())])
+        # Embedded.
+        self.assertEqual(len(n.subagent_trajectories), 1)
+        sub = n.subagent_trajectories[0]
+        # subagent_type present, subagent_description absent.
+        self.assertEqual(sub.extra["subagent_type"], "mystery")
+        self.assertNotIn("subagent_description", sub.extra)
+        # No ref attached anywhere (unlinked).
+        all_refs = [r for tr in [n, *n.subagent_trajectories]
+                    for st in tr.steps for r in st.observation_results
+                    if r.get("subagent_trajectory_ref")]
+        self.assertEqual(all_refs, [])
+
+
+class TestEmbeddedTrajectoryIdNonNull(unittest.TestCase):
+    def test_every_embedded_subagent_has_non_null_trajectory_id(self):
+        main = [asst([text_block("main")], msg_id="m1", usage=USAGE)]
+        subs = [
+            (sub_meta(trajectory_id="sess/agent-1", tool_use_id="t1"),
+             sub_records(content="s1")),
+            (sub_meta(trajectory_id="sess/agent-2", tool_use_id="t2"),
+             sub_records(content="s2")),
+        ]
+        n = normalize_session(main, subs)
+        for sub in n.subagent_trajectories:
+            self.assertIsNotNone(sub.trajectory_id)
+            self.assertTrue(sub.trajectory_id)
+
+
+class TestNormalizeSessionExcludeSessionNotAppliedToSubagents(unittest.TestCase):
+    def test_exclude_session_id_does_not_drop_subagents(self):
+        # Subagent records carry the captured session's own sessionId. Passing
+        # that same id as exclude_session_id must NOT drop the subagent — the
+        # exclusion is a parent-transcript concern only.
+        main = [
+            asst([text_block("main"), tool_use_block("spawn-a", name="Agent")],
+                 msg_id="m1", usage=USAGE, session_id="keepsess"),
+            user([tool_result_block("spawn-a", "done")], session_id="keepsess"),
+        ]
+        # Subagent records use a DIFFERENT id ("capsess") which we also exclude;
+        # if exclusion were applied to subagents, the subagent would vanish.
+        sub_recs = [
+            asst([text_block("sub")], msg_id="sm1", usage=USAGE,
+                 sidechain=True, session_id="capsess"),
+        ]
+        meta = sub_meta(trajectory_id="capsess/agent-a", tool_use_id="spawn-a")
+        n = normalize_session(main, [(meta, sub_recs)],
+                              exclude_session_id="capsess")
+        # Parent intact, subagent survived despite the exclusion.
+        self.assertTrue(len(n.steps) >= 1)
+        self.assertEqual(len(n.subagent_trajectories), 1)
+        self.assertEqual(n.subagent_trajectories[0].trajectory_id, "capsess/agent-a")
+
+
+class TestNormalizeSessionDuplicateToolResultRef(unittest.TestCase):
+    def test_ref_attached_to_both_duplicate_results(self):
+        # One spawning Agent call with TWO tool_results (same source_call_id).
+        # The ref must attach to both.
+        main = [
+            asst([text_block("main"), tool_use_block("spawn-a", name="Agent")],
+                 msg_id="m1", usage=USAGE),
+            user([tool_result_block("spawn-a", "first")]),
+            user([tool_result_block("spawn-a", "second")]),
+        ]
+        meta = sub_meta(trajectory_id="sess/agent-a", tool_use_id="spawn-a")
+        n = normalize_session(main, [(meta, sub_records())])
+        spawn_step = next(s for s in n.steps if any(
+            tc["tool_call_id"] == "spawn-a" for tc in s.tool_calls))
+        linked = [r for r in spawn_step.observation_results
+                  if r.get("source_call_id") == "spawn-a"]
+        self.assertEqual(len(linked), 2)
+        for r in linked:
+            self.assertEqual(r["subagent_trajectory_ref"],
+                             [{"trajectory_id": "sess/agent-a"}])
+
+
+class TestNormalizeSessionEmbedUnlinkedOnTruncation(unittest.TestCase):
+    MARKER = "/drvr:capture-session"
+
+    def test_truncated_spawn_call_yields_embedded_but_unlinked(self):
+        # The spawning Agent call lives AFTER the capture-invocation turn, so the
+        # exclude_marker truncation cuts it away. The subagent is still present on
+        # disk → embedded, but with NO ref anywhere (the spawning call is gone).
+        main = [
+            user([text_block("real human turn")]),
+            asst([text_block("agent reply")], msg_id="m1", usage=USAGE),
+            user([text_block(self.MARKER)]),                 # capture invocation = cut
+            asst([text_block("dropped"), tool_use_block("spawn-a", name="Agent")],
+                 msg_id="m2", usage=USAGE),
+            user([tool_result_block("spawn-a", "dropped result")]),
+        ]
+        meta = sub_meta(trajectory_id="sess/agent-a", tool_use_id="spawn-a")
+        n = normalize_session(main, [(meta, sub_records())],
+                              exclude_marker=self.MARKER)
+        # Parent intact (only the pre-marker steps).
+        self.assertEqual(len(n.steps), 2)
+        # Subagent still embedded.
+        self.assertEqual(len(n.subagent_trajectories), 1)
+        # ZERO refs anywhere (the spawning call was truncated away).
+        all_refs = [r for tr in [n, *n.subagent_trajectories]
+                    for st in tr.steps for r in st.observation_results
+                    if r.get("subagent_trajectory_ref")]
+        self.assertEqual(all_refs, [])
+
+
+class TestRefResolvabilityInvariant(unittest.TestCase):
+    def test_every_ref_resolves_to_an_embedded_subagent(self):
+        # Depth-2 fixture: gather every emitted ref across parent + subs and assert
+        # each trajectory_id resolves to an embedded subagent's trajectory_id.
+        main = [
+            asst([text_block("main"), tool_use_block("spawn-a", name="Agent")],
+                 msg_id="m1", usage=USAGE),
+            user([tool_result_block("spawn-a", "A done")]),
+        ]
+        a_records = [
+            asst([text_block("A"), tool_use_block("spawn-b", name="Agent")],
+                 msg_id="am1", usage=USAGE, sidechain=True),
+            user([tool_result_block("spawn-b", "B done")], sidechain=True),
+        ]
+        b_records = sub_records(content="B")
+        meta_a = sub_meta(trajectory_id="sess/agent-a", tool_use_id="spawn-a")
+        meta_b = sub_meta(trajectory_id="sess/agent-b", tool_use_id="spawn-b")
+        n = normalize_session(main, [(meta_a, a_records), (meta_b, b_records)])
+        embedded_ids = {s.trajectory_id for s in n.subagent_trajectories}
+        emitted = [ref["trajectory_id"]
+                   for tr in [n, *n.subagent_trajectories]
+                   for st in tr.steps
+                   for r in st.observation_results
+                   for ref in r.get("subagent_trajectory_ref", [])]
+        self.assertTrue(emitted)  # there ARE refs to check
+        for tid in emitted:
+            self.assertIn(tid, embedded_ids)
+
+
+class TestNormalizeSessionEmptySubagentOmitted(unittest.TestCase):
+    def test_zero_step_subagent_omitted_parent_intact(self):
+        # A subagent whose records yield no steps is dropped via EmptyTranscriptError
+        # caught inside normalize_session; the parent is unaffected.
+        main = [
+            asst([text_block("main"), tool_use_block("spawn-a", name="Agent")],
+                 msg_id="m1", usage=USAGE),
+            user([tool_result_block("spawn-a", "done")]),
+        ]
+        good_meta = sub_meta(trajectory_id="sess/agent-good", tool_use_id="spawn-a")
+        empty_meta = sub_meta(trajectory_id="sess/agent-empty", tool_use_id="t-empty")
+        # The empty subagent has only newer-type records → zero steps.
+        empty_records = [{"type": "mode", "isSidechain": True, "sessionId": "sess",
+                          "timestamp": "2026-06-25T00:00:00Z", "message": {}}]
+        n = normalize_session(
+            main,
+            [(good_meta, sub_records()), (empty_meta, empty_records)])
+        # Only the non-empty subagent survives.
+        ids = {s.trajectory_id for s in n.subagent_trajectories}
+        self.assertEqual(ids, {"sess/agent-good"})
+        # Parent intact.
+        self.assertTrue(len(n.steps) >= 1)
+
+
 if __name__ == "__main__":
     unittest.main()
