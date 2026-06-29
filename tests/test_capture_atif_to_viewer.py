@@ -96,6 +96,171 @@ class TestStepFromAtif(unittest.TestCase):
         self.assertIsNone(atif_to_viewer._cap(None))
 
 
+def _step(step_id, *, source="agent", message="", tool_calls=None, results=None):
+    """Build a serialized-trajectory step dict (the harbor JSON shape the viewer
+    consumes): tool_calls carry tool_call_id/function_name/arguments; observation
+    results carry source_call_id/content and an optional subagent_trajectory_ref."""
+    step = {"step_id": step_id, "source": source, "message": message}
+    if tool_calls is not None:
+        step["tool_calls"] = tool_calls
+    if results is not None:
+        step["observation"] = {"results": results}
+    return step
+
+
+def _agent_call(call_id):
+    return {"tool_call_id": call_id, "function_name": "Agent", "arguments": "{}"}
+
+
+def _spawn_result(call_id, child_trajectory_id, content="subagent finished"):
+    """An observation result whose source_call_id matches the spawning Agent call,
+    carrying the ref to the spawned subagent's trajectory_id."""
+    return {"source_call_id": call_id, "content": content,
+            "subagent_trajectory_ref": [{"trajectory_id": child_trajectory_id}]}
+
+
+def _subagent(trajectory_id, steps, *, subagent_type="explorer"):
+    """A flat subagent entry: trajectory_id + steps + extra.subagent_type (the key
+    mirrors normalize_session's extra mapping; absent when subagent_type is None)."""
+    sub = {"trajectory_id": trajectory_id, "steps": steps}
+    if subagent_type is not None:
+        sub["extra"] = {"subagent_type": subagent_type}
+    return sub
+
+
+class TestFlattenWithSubagents(unittest.TestCase):
+    def test_depth2_splices_subagent_steps_after_spawning_step(self):
+        # main step spawns subagent A; A's two steps splice in right after the
+        # spawning step, preceded by a single source:"system" boundary marker.
+        traj = {
+            "steps": [
+                _step(1, message="main turn", tool_calls=[_agent_call("spawn-a")],
+                      results=[_spawn_result("spawn-a", "sess/agent-a")]),
+                _step(2, source="user", message="after"),
+            ],
+            "subagent_trajectories": [
+                _subagent("sess/agent-a", [
+                    _step(1, message="A step one"),
+                    _step(2, message="A step two"),
+                ], subagent_type="code-reviewer"),
+            ],
+        }
+        out = atif_to_viewer.flatten_with_subagents(traj)
+        # length == parent steps + all subagent steps + one marker.
+        self.assertEqual(len(out), 2 + 2 + 1)
+        # Splice lands right after the spawning step (index 0): marker, then A's steps.
+        self.assertEqual(out[0]["message"], "main turn")
+        self.assertTrue(out[1].get("_boundary"))
+        self.assertEqual(out[1]["source"], "system")
+        self.assertIn("code-reviewer", out[1]["message"])
+        self.assertIn("depth 1", out[1]["message"])
+        self.assertEqual(out[2]["message"], "A step one")
+        self.assertEqual(out[3]["message"], "A step two")
+        # The non-spawning parent step trails the spliced subtree.
+        self.assertEqual(out[4]["message"], "after")
+        # Exactly one boundary marker for one subagent.
+        self.assertEqual(sum(1 for s in out if s.get("_boundary")), 1)
+
+    def test_no_subagents_returns_parent_steps_unchanged(self):
+        steps = [_step(1, message="only"), _step(2, source="user", message="reply")]
+        traj = {"steps": steps}
+        out = atif_to_viewer.flatten_with_subagents(traj)
+        self.assertEqual(out, steps)
+        self.assertFalse(any(s.get("_boundary") for s in out))
+
+    def test_depth3_grandchild_splices_under_its_parent_in_tool_calls_order(self):
+        # main -> A -> B. A spawns B from within A's step; B's step must splice
+        # under A (depth 2), after A's spawning step, in tool_calls order.
+        traj = {
+            "steps": [
+                _step(1, message="main", tool_calls=[_agent_call("spawn-a")],
+                      results=[_spawn_result("spawn-a", "sess/agent-a")]),
+            ],
+            "subagent_trajectories": [
+                _subagent("sess/agent-a", [
+                    _step(1, message="A turn", tool_calls=[_agent_call("spawn-b")],
+                          results=[_spawn_result("spawn-b", "sess/agent-b")]),
+                ]),
+                _subagent("sess/agent-b", [
+                    _step(1, message="B turn"),
+                ]),
+            ],
+        }
+        out = atif_to_viewer.flatten_with_subagents(traj)
+        msgs = [s["message"] for s in out]
+        # Order: main, marker(A depth1), A turn, marker(B depth2), B turn.
+        self.assertEqual(msgs[0], "main")
+        self.assertTrue(out[1].get("_boundary"))
+        self.assertIn("depth 1", out[1]["message"])
+        self.assertEqual(msgs[2], "A turn")
+        self.assertTrue(out[3].get("_boundary"))
+        self.assertIn("depth 2", out[3]["message"])
+        self.assertEqual(msgs[4], "B turn")
+        self.assertEqual(len(out), 2 + 1 + 1 + 1)  # main+A+B steps + 2 markers
+
+    def test_duplicate_spawning_result_splices_subtree_exactly_once(self):
+        # The converter keeps duplicate spawning tool_results and links the ref onto
+        # both; the subagent subtree must still appear exactly once.
+        traj = {
+            "steps": [
+                _step(1, message="main", tool_calls=[_agent_call("spawn-a")],
+                      results=[
+                          _spawn_result("spawn-a", "sess/agent-a", content="first"),
+                          _spawn_result("spawn-a", "sess/agent-a", content="second"),
+                      ]),
+            ],
+            "subagent_trajectories": [
+                _subagent("sess/agent-a", [_step(1, message="A only")]),
+            ],
+        }
+        out = atif_to_viewer.flatten_with_subagents(traj)
+        self.assertEqual(sum(1 for s in out if s.get("message") == "A only"), 1)
+        self.assertEqual(sum(1 for s in out if s.get("_boundary")), 1)
+
+    def test_unlinked_subagent_surfaced_under_root_with_unlinked_marker(self):
+        # An embedded subagent with no incoming ref, plus a dangling ref to a
+        # nonexistent trajectory_id. The unlinked subagent is appended under the
+        # root at depth 1 with an "(unlinked)" note; the dangling ref splices nothing.
+        traj = {
+            "steps": [
+                _step(1, message="main", tool_calls=[_agent_call("spawn-x")],
+                      results=[_spawn_result("spawn-x", "sess/missing")]),
+            ],
+            "subagent_trajectories": [
+                _subagent("sess/agent-orphan", [_step(1, message="orphan step")]),
+            ],
+        }
+        out = atif_to_viewer.flatten_with_subagents(traj)
+        msgs = [s["message"] for s in out]
+        self.assertIn("orphan step", msgs)
+        # The orphan is surfaced via an unlinked marker at depth 1.
+        markers = [s for s in out if s.get("_boundary")]
+        self.assertEqual(len(markers), 1)
+        self.assertIn("unlinked", markers[0]["message"])
+        self.assertIn("depth 1", markers[0]["message"])
+        # The dangling ref ("sess/missing") spliced nothing extra.
+        self.assertEqual(len(out), 1 + 1 + 1)  # main + marker + orphan step
+
+    def test_sparse_subagent_no_keyerror_marker_defaults_to_agent(self):
+        # A subagent carrying only trajectory_id + one minimal step (no observation,
+        # metrics, or extra) flattens without error; the marker type defaults to "agent".
+        traj = {
+            "steps": [
+                _step(1, message="main", tool_calls=[_agent_call("spawn-s")],
+                      results=[_spawn_result("spawn-s", "sess/agent-sparse")]),
+            ],
+            "subagent_trajectories": [
+                {"trajectory_id": "sess/agent-sparse",
+                 "steps": [{"step_id": 1, "source": "agent", "message": "sparse"}]},
+            ],
+        }
+        out = atif_to_viewer.flatten_with_subagents(traj)
+        markers = [s for s in out if s.get("_boundary")]
+        self.assertEqual(len(markers), 1)
+        self.assertIn("agent", markers[0]["message"])
+        self.assertEqual(out[-1]["message"], "sparse")
+
+
 class TestBuildDataset(unittest.TestCase):
     def _traj(self):
         return {

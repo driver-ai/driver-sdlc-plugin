@@ -165,6 +165,55 @@ def step_from_atif(s: dict, idx: int) -> dict:
     }
 
 
+def flatten_with_subagents(traj: dict) -> list[dict]:
+    """Pure: parent steps with each subagent's steps spliced in right after the
+    tool_call that spawned it, recursively, each subtree preceded by a synthetic
+    'system' boundary marker. subagent_trajectories is flat (all depths) -> one
+    lookup map serves every level; placement follows tool_calls order (so siblings
+    match the Opik span order). Each subagent is spliced at most once; any subagent
+    never reached via a ref (truncation-unlinked or dangling) is appended at the end
+    under the root with an '(unlinked)' marker, so no subagent is silently dropped.
+    No I/O."""
+    subs = traj.get("subagent_trajectories") or []
+    by_id = {s.get("trajectory_id"): s for s in subs}
+    placed: set = set()
+
+    def marker(sub: dict, depth: int, note: str = "") -> dict:
+        stype = (sub.get("extra") or {}).get("subagent_type") or "agent"
+        return {"source": "system", "step_id": None, "_boundary": True,
+                "message": f"↳ subagent {stype} (depth {depth}{note})"}
+
+    def walk(steps: list[dict], depth: int) -> list[dict]:
+        out: list[dict] = []
+        for step in steps:
+            out.append(step)
+            results = (step.get("observation") or {}).get("results", [])
+            res_by_call: dict = {}
+            for r in results:
+                res_by_call.setdefault(r.get("source_call_id"), r)
+            for tc in step.get("tool_calls") or []:
+                r = res_by_call.get(tc.get("tool_call_id"))
+                for ref in (r.get("subagent_trajectory_ref") if r else None) or []:
+                    tid = ref.get("trajectory_id")
+                    sub = by_id.get(tid)
+                    if not sub or tid in placed:
+                        continue
+                    placed.add(tid)
+                    out.append(marker(sub, depth + 1))
+                    out.extend(walk(sub.get("steps") or [], depth + 1))
+        return out
+
+    out = walk(traj.get("steps") or [], 0)
+    for sub in subs:                                   # subagents not reached via a ref
+        tid = sub.get("trajectory_id")
+        if tid in placed:
+            continue
+        placed.add(tid)
+        out.append(marker(sub, 1, ", unlinked"))
+        out.extend(walk(sub.get("steps") or [], 1))
+    return out
+
+
 def run_artifacts(steps: list) -> list:
     seen = []
     for s in steps:
@@ -216,8 +265,14 @@ def build_dataset(traj: dict, *, task_id: str, spec_id: str, intent: str, genera
     agent_meta = traj.get("agent") or {}
     model = agent_meta.get("model_name")
 
-    raw_steps = traj.get("steps") or []
-    steps = [step_from_atif(s, i) for i, s in enumerate(raw_steps[:MAX_STEPS])]
+    raw_steps = flatten_with_subagents(traj)
+    if len(raw_steps) > MAX_STEPS:
+        print(f"note: {len(raw_steps) - MAX_STEPS} step(s) beyond MAX_STEPS={MAX_STEPS} "
+              f"dropped from the viewer payload", file=sys.stderr)
+    capped = raw_steps[:MAX_STEPS]
+    while capped and capped[-1].get("_boundary"):      # don't end on a dangling subagent marker
+        capped.pop()
+    steps = [step_from_atif(s, i) for i, s in enumerate(capped)]
 
     vid = "drvr"
     aid = slug(f"claude-code-{model or 'model'}-{vid}")
