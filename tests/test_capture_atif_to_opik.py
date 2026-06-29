@@ -366,6 +366,28 @@ class TestIsLocalOpik(unittest.TestCase):
             self.assertFalse(atif_to_opik.is_local_opik(url), url)
 
 
+class TestOpikHostPort(unittest.TestCase):
+    def test_parses_host_and_explicit_port(self):
+        self.assertEqual(atif_to_opik._opik_host_port("http://localhost:5173/api"),
+                         ("localhost", 5173))
+        self.assertEqual(atif_to_opik._opik_host_port("http://127.0.0.1:1/api"),
+                         ("127.0.0.1", 1))
+
+    def test_defaults_port_by_scheme(self):
+        self.assertEqual(atif_to_opik._opik_host_port("https://opik.example.com/api"),
+                         ("opik.example.com", 443))
+        self.assertEqual(atif_to_opik._opik_host_port("http://opik.example.com/api"),
+                         ("opik.example.com", 80))
+
+    def test_schemeless_host_port(self):
+        self.assertEqual(atif_to_opik._opik_host_port("localhost:5173"),
+                         ("localhost", 5173))
+
+    def test_unparseable_returns_none(self):
+        for url in (None, "", "http://"):
+            self.assertIsNone(atif_to_opik._opik_host_port(url), url)
+
+
 class TestLedgerCorruptRecovers(unittest.TestCase):
     """A corrupt ledger.json is treated as empty (fresh mint + stderr warning),
     NOT a crash. Real corrupt tmp file via DRVR_LEDGER inside an isolated HOME —

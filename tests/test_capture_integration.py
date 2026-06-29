@@ -12,19 +12,23 @@ and proves the `--summary` block (the in-chat review surface) never echoes any o
 them -- the egress non-negotiable.
 
 The stdlib subset (egress, missing-flags, main-writes-html) MUST pass with 0
-external deps installed; the viewer test needs node/npm and the opik tests need a
-local Opik server, so those three are `skipUnless`-guarded.
+external deps installed; the viewer test needs node/npm and the opik upload test
+needs a reachable local Opik server, so those are `skipUnless`-guarded. The opik
+unreachable-path test needs neither (it asserts the down-server exit), so it runs
+in the stdlib subset.
 """
 
 import importlib.util
 import json
 import os
 import shutil
+import socket
 import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from urllib.parse import urlsplit
 
 PLUGIN_ROOT = Path(__file__).resolve().parent.parent
 CAPTURE_DIR = PLUGIN_ROOT / "scripts" / "capture"
@@ -42,6 +46,29 @@ SUB_TYPE_SENTINEL = "ZZ_SUBAGENT_TYPE_SENTINEL_7c4f3e0d_ZZ"
 # Dependency probes -> skipUnless guards (the ONLY permitted skips here).
 _HAS_OPIK = importlib.util.find_spec("opik") is not None
 _HAS_NODE = shutil.which("node") is not None and shutil.which("npm") is not None
+
+
+def _opik_server_reachable() -> bool:
+    """True only when a TCP connect to the Opik host:port succeeds. An upload test
+    needs a live server, not just importable opik -- atif_to_opik now probes
+    reachability and exits non-zero on a down server, so an importability-only gate
+    would fail (not skip) when nothing is listening. This process never imports
+    atif_to_opik, so fall back to its local default URL when the env is unset. A
+    refused/timed-out connect returns False so the gated test SKIPS."""
+    url = os.environ.get("OPIK_URL_OVERRIDE") or "http://localhost:5173/api"
+    parts = urlsplit(url if "://" in url else f"//{url}")
+    host = parts.hostname
+    if not host:
+        return False
+    port = parts.port or (443 if parts.scheme == "https" else 80)
+    try:
+        with socket.create_connection((host, port), timeout=1.0):
+            return True
+    except OSError:
+        return False
+
+
+_OPIK_REACHABLE = _HAS_OPIK and _opik_server_reachable()
 
 
 def _run_capture(script, *args, env=None, timeout=120):
@@ -322,13 +349,13 @@ class TestAtifToViewerDataWrite(unittest.TestCase):
         self.assertIn(rid, stdout)
 
 
-@unittest.skipUnless(_HAS_OPIK, "opik absent")
+@unittest.skipUnless(_OPIK_REACHABLE, "local Opik server unreachable")
 class TestAtifToOpikIdempotent(unittest.TestCase):
     """Two main runs with DRVR_LEDGER -> a tmp file in an isolated HOME reuse the
     same trace id (ledger upsert -> 1 trace).
 
-    Requires a reachable local Opik server; skipped when opik is not importable.
-    Real opik, no mock.
+    Requires a reachable local Opik server (both opik importable AND the server
+    answering); skipped otherwise. Real opik, no mock.
     """
 
     def setUp(self):
@@ -363,15 +390,16 @@ class TestAtifToOpikIdempotent(unittest.TestCase):
                       "second run should report a reused (upserted) trace id")
 
 
-@unittest.skipUnless(_HAS_OPIK, "opik absent")
 class TestAtifToOpikR9Unreachable(unittest.TestCase):
     """R9: an unreachable --base-url -> non-zero exit, the local redacted artifact
     is STILL on disk, and the message says saved-locally with NO retry-queue claim
     and the 'unreachable' wording specifically (distinct from the generic-error
     path).
 
-    Requires opik importable (so register() runs far enough to hit the network);
-    skipped when opik is absent.
+    Needs no opik: main() probes server reachability with a plain socket connect
+    before it imports opik, so an unreachable host short-circuits to exit 1 here.
+    (The SDK's batching thread swallows the connection error and would otherwise
+    let the upload look successful regardless of the opik version.)
     """
 
     def setUp(self):

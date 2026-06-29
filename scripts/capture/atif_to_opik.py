@@ -136,6 +136,25 @@ def is_local_opik(url: str | None) -> bool:
     return host in ("localhost", "127.0.0.1", "::1")
 
 
+def _opik_host_port(url: str | None) -> tuple[str, int] | None:
+    """Pure: (host, port) to probe for reachability, or None when the URL has no
+    parseable host. The port defaults by scheme when the URL omits it. main()
+    probes this before uploading because the SDK's batching thread swallows a
+    connection failure (it just logs 'retried later' and flush() returns), so an
+    unreachable server would otherwise look like a successful upload."""
+    if not url:
+        return None
+    parts = urlsplit(url if "://" in url else f"//{url}")
+    host = parts.hostname
+    if not host:
+        return None
+    try:
+        port = parts.port or (443 if parts.scheme == "https" else 80)
+    except ValueError:
+        return None                                    # malformed port
+    return (host, port)
+
+
 def plan_spans(traj: dict, trace_id: str) -> list[dict]:
     """Pure: trajectory -> ordered client.span(**kw) dicts (caller adds trace_id).
     One span per step, a child per tool_call, and recursively each subagent's steps
@@ -268,6 +287,24 @@ def main() -> None:
               "reach that host.", file=sys.stderr)
 
     traj = json.load(open(args.trajectory))
+
+    # Probe reachability before uploading: the Opik SDK batches spans on a
+    # background thread that catches a connection failure, logs it, and returns
+    # from flush() without raising -- so an unreachable server otherwise exits 0
+    # as if the upload succeeded. A pre-flight connect surfaces it deterministically.
+    target = _opik_host_port(os.environ.get("OPIK_URL_OVERRIDE"))
+    if target is not None:
+        try:
+            socket.create_connection(target, timeout=2).close()
+        except OSError as e:
+            print(f"Opik upload failed (unreachable: {e.__class__.__name__}): {e}",
+                  file=sys.stderr)
+            print(f"  Local redacted trajectory is intact: {args.trajectory}",
+                  file=sys.stderr)
+            print("  Nothing was uploaded. Re-run capture when Opik is reachable.",
+                  file=sys.stderr)
+            raise SystemExit(1)
+
     try:
         trace_id, reused = register(traj, project=args.project)
     except (ConnectionError, TimeoutError, socket.gaierror, OSError) as e:
