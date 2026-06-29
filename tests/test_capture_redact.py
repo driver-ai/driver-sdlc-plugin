@@ -7,7 +7,7 @@ is pure (values in, values out), so every assertion is on a direct return value 
 no mocks, stdlib only.
 """
 
-import sys, unittest
+import base64, sys, time, unittest
 from conftest import PLUGIN_ROOT
 sys.path.insert(0, str(PLUGIN_ROOT / "scripts" / "capture"))  # before importing the core
 import redact
@@ -138,6 +138,59 @@ class TestRedactText(unittest.TestCase):
         rerun, rerun_flags = redact.redact_trajectory(redacted)
         self.assertEqual(rerun_flags, [])
         self.assertEqual(rerun, redacted)
+
+
+class TestRedactEnvNameBound(unittest.TestCase):
+    """The env_secret_assignment variable-name match is bounded so the redaction
+    pass stays linear on adversarial input (no catastrophic backtracking) while
+    still masking values behind realistically long variable names.
+    """
+
+    def _assert_under_one_second(self, text, label):
+        start = time.perf_counter()
+        redact.redact_text(text)
+        elapsed = time.perf_counter() - start
+        self.assertLess(
+            elapsed, 1.0,
+            f"{label}: redact_text took {elapsed:.2f}s on a {len(text)}-char "
+            f"input (expected < 1s; an unbounded name quantifier degrades to "
+            f"an O(n^2) split search)",
+        )
+
+    def test_long_name_class_run_stays_linear(self):
+        # A 40k run of name-class characters with no secret word must not drive
+        # the matcher into a quadratic forward/backtrack search.
+        self._assert_under_one_second("x" * 40_000, "40k 'x' run")
+        self._assert_under_one_second("_" * 40_000, "40k '_' run")
+
+    def test_base64_blob_stays_linear(self):
+        # A realistic ~40k base64 blob is one long alphanumeric run.
+        blob = base64.b64encode(b"x" * 30_000).decode()  # 40_000 chars, all alnum
+        self._assert_under_one_second(blob, "40k base64 blob")
+
+    def test_long_name_prefix_still_masks(self):
+        # 64-char variable name (a 57-char run BEFORE the secret word) masks.
+        text = "X" * 57 + "API_KEY=" + "secretvalue"
+        masked, counts = redact.redact_text(text)
+        self.assertIn("[REDACTED:env_secret_assignment]", masked)
+        self.assertNotIn("secretvalue", masked)
+        self.assertEqual(counts.get("env_secret_assignment"), 1)
+
+    def test_long_name_suffix_still_masks(self):
+        # 100 name-class chars BETWEEN the secret word and the separator (suffix
+        # direction). The value anchors the end, so the engine cannot slide the
+        # match forward -- a too-small suffix bound would silently miss this.
+        text = "API_KEY" + "X" * 100 + "=secretvalue"
+        masked, counts = redact.redact_text(text)
+        self.assertIn("[REDACTED:env_secret_assignment]", masked)
+        self.assertNotIn("secretvalue", masked)
+
+    def test_name_suffix_at_bound_masks(self):
+        # A suffix run of exactly 128 name-class chars is within the bound.
+        text = "API_KEY" + "Y" * 128 + "=secretvalue"
+        masked, counts = redact.redact_text(text)
+        self.assertIn("[REDACTED:env_secret_assignment]", masked)
+        self.assertNotIn("secretvalue", masked)
 
 
 if __name__ == "__main__":

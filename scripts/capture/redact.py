@@ -42,10 +42,12 @@ PATTERNS: list[tuple[str, "re.Pattern[str]"]] = [
     #    run, so the WHOLE value is masked, not just the first token
     #  - (?!\[REDACTED:) guard => a second pass adds no new flags (idempotent)
     ("env_secret_assignment", re.compile(r"""(?ix)
-        ( [A-Za-z0-9_]*
+        ( [A-Za-z0-9_]{0,128}
           (?: API[_-]?KEY | ACCESS[_-]?KEY | SECRET[_-]?KEY | _SECRET
             | _TOKEN | ACCESS[_-]?TOKEN | PASSWORD | PASSWD | CREDENTIALS? )
-          [A-Za-z0-9_]* )        # 1: variable name
+          [A-Za-z0-9_]{0,128} )  # variable name (bounded -> linear scan, no O(n^2)
+                                 # split search; wide enough that a long name run
+                                 # before the value still masks)
         ( \s* [:=] \s* )         # 2: separator (preserved)
         (?! \[REDACTED: )        # idempotent: never re-mask an already-masked value
         (?: "[^"]*" | '[^']*' | [^\s"',}]{6,} )   # value: quoted span OR >=6 nonspace
