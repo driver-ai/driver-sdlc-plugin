@@ -732,6 +732,28 @@ class TestRefResolvabilityInvariant(unittest.TestCase):
             self.assertIn(tid, embedded_ids)
 
 
+class TestIsSafePathComponent(unittest.TestCase):
+    """Pure predicate guarding the subagent-dir glob against a transcript-supplied
+    session_id (PATH-001): a malicious sessionId like '../../../etc' would otherwise
+    join into a path that resolves outside the capture dir. Real Claude Code session
+    ids are opaque UUIDs, so the guard never trips on legitimate data.
+    """
+
+    def test_real_session_ids_are_safe(self):
+        for sid in ("8f5a3cf6-4988-4beb-a861-3163dfac3371", "agent-a",
+                    "sess", "sess-A", "abc123"):
+            self.assertTrue(core.is_safe_path_component(sid), sid)
+
+    def test_traversal_and_separators_rejected(self):
+        for sid in ("..", "../../../etc", "a/b", "a\\b", "/abs",
+                    ".hidden", ".", "", "a\x00b"):
+            self.assertFalse(core.is_safe_path_component(sid), sid)
+
+    def test_non_str_rejected(self):
+        for sid in (None, 123, ["x"]):
+            self.assertFalse(core.is_safe_path_component(sid), sid)
+
+
 class TestNormalizeSessionEmptySubagentOmitted(unittest.TestCase):
     def test_zero_step_subagent_omitted_parent_intact(self):
         # A subagent whose records yield no steps is dropped via EmptyTranscriptError

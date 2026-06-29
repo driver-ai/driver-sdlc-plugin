@@ -357,6 +357,18 @@ class TestSessionDirDiscovery(unittest.TestCase):
         self.assertEqual(len(ids), len(set(ids)))
         self.assertTrue(all(i for i in ids))  # all non-null/non-empty
 
+    def test_traversal_session_id_skips_subagent_discovery(self):
+        # PATH-001: a transcript whose sessionId is a path-traversal string must not
+        # drive the subagent glob out of the project dir. The shell guards the join
+        # (core.is_safe_path_component), warns, and captures no subagents -- the main
+        # transcript still converts (exit 0).
+        transcript = self._write_transcript("../../../etc")
+        res = _run(transcript, "--session-dir", str(self.project), "--out", str(self.out))
+        self.assertEqual(res.returncode, 0, msg=res.stderr)
+        self.assertIn("not a safe path component", res.stderr)
+        d = json.loads(self.out.read_text())
+        self.assertNotIn("subagent_trajectories", d)
+
     def test_missing_sidecar_embeds_unlinked(self):
         # A subagent jsonl with no .meta.json -> embedded with only trajectory_id,
         # no subagent_type, no ref, no crash.

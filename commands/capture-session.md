@@ -189,12 +189,15 @@ until the developer chooses an egress action here. The default approved action i
   - `Open static report` — run `render_trace.py` for a no-dependency HTML scan
     (Step 7), then re-ask this question. Use this when node/npm is unavailable.
   - `Save locally` — copy the redacted trajectory to `./captured-trajectory.json`,
-    then remove the unredacted intermediate. No egress. **This is the default
-    approved action.**
+    then remove the unredacted intermediate and any viewer-loaded copies (symmetry
+    with `Reject` — the viewer holds the redacted trajectory and has no auth). No
+    egress. **This is the default approved action.**
 
     ```bash
     cp "$CUR/trajectory.redacted.json" ./captured-trajectory.json
     rm -f "$CUR/trajectory.json"
+    rm -f "$HOME/.driver/viewer/public/dataset.json" 2>/dev/null
+    rm -rf "$HOME/.driver/viewer/public/runs"/* 2>/dev/null
     ```
   - `Upload to Opik` — register the **redacted** trajectory to a self-hosted Opik
     store (Step 8). Only offered/honored when the developer explicitly chooses it

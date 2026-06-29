@@ -166,6 +166,11 @@ def main() -> None:
         if session_id is None:
             print("warning: --session-dir set but no sessionId in transcript; "
                   "capturing no subagents", file=sys.stderr)
+        elif not core.is_safe_path_component(session_id):
+            # The session_id comes from the transcript; reject one that is not a safe
+            # path segment so it can never traverse out of the project dir on the glob.
+            print(f"warning: --session-dir set but sessionId {session_id!r} is not a "
+                  "safe path component; capturing no subagents", file=sys.stderr)
         else:
             sub_dir = Path(args.session_dir) / session_id / "subagents"
             paths = sorted(sub_dir.glob("agent-*.jsonl"))

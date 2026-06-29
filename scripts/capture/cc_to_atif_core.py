@@ -23,6 +23,20 @@ class EmptyTranscriptError(ValueError):
     """No user/assistant steps found in the transcript."""
 
 
+def is_safe_path_component(name: Any) -> bool:
+    """Pure: True when `name` is safe to use as a single filesystem path segment.
+
+    The shell joins a transcript-supplied session_id into the subagent-dir path, so a
+    value like '../../../etc' would otherwise resolve outside the capture dir. A safe
+    segment is a non-empty str with no path separator or NUL byte, that is not '.'/'..'
+    and does not start with '.'. Real Claude Code session ids are opaque UUIDs, which
+    always pass; an unsafe id makes the shell skip subagent discovery, not crash.
+    """
+    if not isinstance(name, str) or not name or name.startswith("."):
+        return False
+    return not any(c in name for c in ("/", "\\", "\x00"))
+
+
 @dataclass
 class StepRecord:
     step_id: int
