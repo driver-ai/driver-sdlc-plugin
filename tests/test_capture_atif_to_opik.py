@@ -11,17 +11,58 @@ The module MUST import without `opik` installed — that proves the lazy import
 (Task 7) lands; until then a top-level `import opik` makes these red.
 """
 
+import importlib.util
 import json
 import os
 import shutil
+import socket
 import sys
 import tempfile
 import unittest
+from urllib.parse import urlsplit
 
 from conftest import PLUGIN_ROOT
 
 sys.path.insert(0, str(PLUGIN_ROOT / "scripts" / "capture"))  # before importing the core
 import atif_to_opik
+
+
+# ---------------------------------------------------------------------------
+# Gating for the one live integration test (real local Opik, no mock).
+#
+# The pure tests above need neither opik nor a server. The single integration
+# test below talks to a REAL local Opik (mocking it would defeat the point: it
+# validates the span API live). Its skipUnless predicate is True only when BOTH
+# (a) opik is importable AND (b) the local Opik server actually answers on the
+# host:port from OPIK_URL_OVERRIDE -- probed by a real socket connect, so a DOWN
+# server SKIPS rather than erroring. atif_to_opik sets OPIK_URL_OVERRIDE to the
+# local default (http://localhost:5173/api; port 5173 is Opik, 5273 the viewer)
+# at import, so it is always populated here.
+# ---------------------------------------------------------------------------
+
+_HAS_OPIK = importlib.util.find_spec("opik") is not None
+
+
+def _opik_server_reachable() -> bool:
+    """True only when a TCP connection to the OPIK_URL_OVERRIDE host:port succeeds.
+    Parses host/port from the resolved env URL; a refused/timed-out connect (server
+    down) returns False so the gated test SKIPS instead of erroring."""
+    url = os.environ.get("OPIK_URL_OVERRIDE")
+    if not url:
+        return False
+    parts = urlsplit(url if "://" in url else f"//{url}")
+    host = parts.hostname
+    if not host:
+        return False
+    port = parts.port or (443 if parts.scheme == "https" else 80)
+    try:
+        with socket.create_connection((host, port), timeout=1.0):
+            return True
+    except OSError:
+        return False
+
+
+_OPIK_REACHABLE = _HAS_OPIK and _opik_server_reachable()
 
 
 class TestMintUuid7(unittest.TestCase):
@@ -366,6 +407,139 @@ class TestLedgerCorruptRecovers(unittest.TestCase):
         with open(self.ledger) as f:
             ledger = json.load(f)
         self.assertEqual(ledger["sid::task"]["trace_id"], trace_id)
+
+
+@unittest.skipUnless(
+    _OPIK_REACHABLE,
+    "opik absent or local Opik server unreachable on OPIK_URL_OVERRIDE")
+class TestRegisterAgainstLocalOpik(unittest.TestCase):
+    """register() drives the pure plan_spans into a REAL local Opik (no mock).
+
+    Asserts a trace plus step / tool / SUBAGENT spans land, then re-runs register()
+    and asserts the deterministic span ids make re-capture an UPSERT (span count
+    does not grow). Also exercises the single-complete-message span API on the
+    bumped pin: register() calls client.span(**kw) with start_time+end_time
+    together (not trace.span() + span.end()).
+
+    Idempotency rides on the ledger, so an isolated HOME + DRVR_LEDGER keep this
+    run from minting an id that collides with a developer's real ledger. The trace
+    id is the ledger value, so verification queries by it directly.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="capture-opik-register-")
+        self.project = "drvr-capture-register-itest"
+        self.ledger = os.path.join(self.tmp, "ledger.json")
+        self._orig_ledger = atif_to_opik.LEDGER
+        self._orig_env = {k: os.environ.get(k) for k in ("HOME", "DRVR_LEDGER")}
+        os.environ["HOME"] = self.tmp
+        os.environ["DRVR_LEDGER"] = self.ledger
+        atif_to_opik.LEDGER = self.ledger
+
+    def tearDown(self):
+        atif_to_opik.LEDGER = self._orig_ledger
+        for k, v in self._orig_env.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _trajectory_with_subagent(self):
+        # A realistic trajectory whose main turn spawns a subagent via an Agent
+        # tool_call; the spawning observation result carries the
+        # subagent_trajectory_ref linking to the flat subagent_trajectories entry
+        # (the Plan-01 emitted shape).
+        return {
+            "schema_version": "ATIF-v1.7",
+            "session_id": "opik-register-itest-session",
+            "extra": {"sdlc_task_id": "register-itest",
+                      "sdlc_spec_id": "S2",
+                      "sdlc_intent": "register against a real local Opik"},
+            "agent": {"name": "claude-code", "model_name": "claude-opus-4-8"},
+            "final_metrics": {"total_steps": 2, "total_completion_tokens": 12,
+                              "total_cost_usd": 0.51},
+            "steps": [
+                _step(1, source="user", message="please review the diff",
+                      timestamp="2026-06-29T00:00:00Z"),
+                _step(2, source="agent", message="delegating to a reviewer",
+                      model_name="claude-opus-4-8",
+                      timestamp="2026-06-29T00:00:01Z",
+                      tool_calls=[_agent_call("spawn-rev")],
+                      results=[_spawn_result("spawn-rev",
+                                             "opik-register-itest-session/agent-rev")],
+                      metrics={"prompt_tokens": 200, "completion_tokens": 10,
+                               "cost_usd": 0.5}),
+            ],
+            "subagent_trajectories": [
+                _subagent("opik-register-itest-session/agent-rev", [
+                    _step(1, source="agent", message="reviewed; no issues",
+                          model_name="claude-opus-4-8",
+                          timestamp="2026-06-29T00:00:02Z",
+                          metrics={"prompt_tokens": 40, "completion_tokens": 2,
+                                   "cost_usd": 0.01}),
+                ], subagent_type="code-reviewer"),
+            ],
+        }
+
+    def test_register_creates_trace_and_subagent_spans_then_upserts(self):
+        import opik
+
+        traj = self._trajectory_with_subagent()
+        trace_id, reused = atif_to_opik.register(traj, project=self.project)
+        # First capture of this key: a freshly minted (not reused) trace id.
+        self.assertFalse(reused, "first register() should mint a new trace id")
+
+        # The pure planner decides exactly which spans exist; the live run must
+        # land all of them. plan_spans gives: main step + its tool span + the
+        # subagent step span = 3.
+        planned = atif_to_opik.plan_spans(traj, trace_id)
+        self.assertEqual(len(planned), 3)
+        planned_ids = {s["id"] for s in planned}
+        subagent_step_id = atif_to_opik._span_id(
+            trace_id, "opik-register-itest-session/agent-rev:step1")
+        tool_span_id = atif_to_opik._span_id(trace_id, "step2:tool:spawn-rev")
+        self.assertIn(subagent_step_id, planned_ids)
+
+        client = opik.Opik(project_name=self.project)
+
+        # The trace exists (single-complete-message create landed name/metadata).
+        trace = client.get_trace_content(trace_id)
+        self.assertEqual(trace.id, trace_id)
+
+        # Wait for all planned spans to be ingested (eventual consistency), then
+        # verify the hierarchy by id.
+        spans = client.search_spans(project_name=self.project, trace_id=trace_id,
+                                    wait_for_at_least=len(planned))
+        got_ids = {s.id for s in spans}
+        for sid in planned_ids:
+            self.assertIn(sid, got_ids,
+                          f"planned span {sid} missing from the live trace")
+
+        by_id = {s.id: s for s in spans}
+        # The tool span parents the subagent step span: the subagent is a real
+        # nested child, not a sibling.
+        self.assertEqual(by_id[subagent_step_id].parent_span_id, tool_span_id,
+                         "subagent step span should be a child of the spawning tool span")
+        # The single-complete-message create landed name + cost on the subagent span
+        # (the racing trace.span()+span.end() pattern would null these out).
+        self.assertEqual(by_id[subagent_step_id].name, "step 1 (agent)")
+        self.assertIsNotNone(by_id[subagent_step_id].total_estimated_cost)
+
+        baseline = len(got_ids)
+
+        # Re-run: deterministic ids -> UPSERT, not duplication.
+        trace_id2, reused2 = atif_to_opik.register(traj, project=self.project)
+        self.assertEqual(trace_id2, trace_id, "re-run must reuse the same trace id")
+        self.assertTrue(reused2, "second register() should report a reused trace id")
+
+        spans2 = client.search_spans(project_name=self.project, trace_id=trace_id,
+                                     wait_for_at_least=len(planned))
+        got_ids2 = {s.id for s in spans2}
+        self.assertEqual(got_ids2, planned_ids,
+                         "re-capture introduced extra spans (ids not deterministic)")
+        self.assertEqual(len(got_ids2), baseline,
+                         "re-capture duplicated spans instead of upserting")
 
 
 if __name__ == "__main__":
