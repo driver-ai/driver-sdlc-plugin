@@ -76,6 +76,255 @@ class TestTraceKey(unittest.TestCase):
                          atif_to_opik.trace_key("sid", "task"))
 
 
+# ---------------------------------------------------------------------------
+# Fixture builders for the pure span planner — the serialized-trajectory JSON
+# shape the planner consumes (mirrors the converter output): tool_calls carry
+# tool_call_id/function_name/arguments; observation results carry
+# source_call_id/content and an optional subagent_trajectory_ref; subagents are
+# flat under subagent_trajectories with a trajectory_id + extra.subagent_type.
+# ---------------------------------------------------------------------------
+
+
+def _step(step_id, *, source="agent", message="", tool_calls=None, results=None,
+          metrics=None, model_name=None, reasoning_content=None, timestamp=None):
+    step = {"step_id": step_id, "source": source, "message": message}
+    if tool_calls is not None:
+        step["tool_calls"] = tool_calls
+    if results is not None:
+        step["observation"] = {"results": results}
+    if metrics is not None:
+        step["metrics"] = metrics
+    if model_name is not None:
+        step["model_name"] = model_name
+    if reasoning_content is not None:
+        step["reasoning_content"] = reasoning_content
+    if timestamp is not None:
+        step["timestamp"] = timestamp
+    return step
+
+
+def _agent_call(call_id):
+    return {"tool_call_id": call_id, "function_name": "Agent", "arguments": "{}"}
+
+
+def _spawn_result(call_id, child_trajectory_id, content="subagent finished"):
+    return {"source_call_id": call_id, "content": content,
+            "subagent_trajectory_ref": [{"trajectory_id": child_trajectory_id}]}
+
+
+def _subagent(trajectory_id, steps, *, subagent_type="explorer"):
+    sub = {"trajectory_id": trajectory_id, "steps": steps}
+    if subagent_type is not None:
+        sub["extra"] = {"subagent_type": subagent_type}
+    return sub
+
+
+def _trace_id():
+    return atif_to_opik._mint_uuid7("session::task", 1_700_000_000_000)
+
+
+class TestPlanSpans(unittest.TestCase):
+    def test_depth2_hierarchy_unique_deterministic_ids_and_usage(self):
+        # main step spawns subagent A from an Agent tool_call; A's steps become
+        # spans parented under the spawning tool span.
+        trace_id = _trace_id()
+        traj = {
+            "steps": [
+                _step(1, message="main turn",
+                      tool_calls=[_agent_call("spawn-a")],
+                      results=[_spawn_result("spawn-a", "sess/agent-a")],
+                      metrics={"prompt_tokens": 100, "completion_tokens": 10,
+                               "cost_usd": 0.5}),
+            ],
+            "subagent_trajectories": [
+                _subagent("sess/agent-a", [
+                    _step(1, message="A step one",
+                          metrics={"prompt_tokens": 5, "completion_tokens": 2}),
+                ], subagent_type="code-reviewer"),
+            ],
+        }
+        spans = atif_to_opik.plan_spans(traj, trace_id)
+        by_id = {s["id"]: s for s in spans}
+
+        # Three spans: top-level step, its tool span, the subagent step span.
+        self.assertEqual(len(spans), 3)
+        # All span ids unique.
+        self.assertEqual(len({s["id"] for s in spans}), 3)
+
+        # Top-level step span: parent_span_id OMITTED entirely.
+        top_step = spans[0]
+        self.assertNotIn("parent_span_id", top_step)
+        self.assertEqual(top_step["name"], "step 1 (agent)")
+        self.assertEqual(top_step["type"], "llm")
+
+        # Top-level suffixes are byte-identical to the Cycle One register() suffixes.
+        self.assertEqual(top_step["id"], atif_to_opik._span_id(trace_id, "step1"))
+        tool_span = spans[1]
+        self.assertEqual(tool_span["id"],
+                         atif_to_opik._span_id(trace_id, "step1:tool:spawn-a"))
+        # Tool span is a child of the step span.
+        self.assertEqual(tool_span["parent_span_id"], top_step["id"])
+        self.assertEqual(tool_span["type"], "tool")
+
+        # Subagent step span: child of the spawning tool span; suffix qualified by
+        # the subagent trajectory_id so it never collides with a top-level suffix.
+        sub_step = spans[2]
+        self.assertEqual(sub_step["parent_span_id"], tool_span["id"])
+        self.assertEqual(sub_step["id"],
+                         atif_to_opik._span_id(trace_id, "sess/agent-a:step1"))
+        self.assertNotEqual(sub_step["id"], top_step["id"])
+
+        # Per-subagent usage is present (built from its own step metrics).
+        self.assertIsNotNone(sub_step["usage"])
+        self.assertEqual(sub_step["usage"]["total_tokens"], 7)
+
+        # Deterministic: a second call yields byte-identical ids in the same order.
+        again = atif_to_opik.plan_spans(traj, trace_id)
+        self.assertEqual([s["id"] for s in spans], [s["id"] for s in again])
+        # Identical span planning across the two calls.
+        self.assertEqual(by_id.keys(), {s["id"] for s in again})
+
+    def test_no_opik_import_reachable_in_pure_path(self):
+        # Boundary proof: exercising the pure planner must NOT pull opik into the
+        # process. opik is not installed on the stdlib test path, so a top-level
+        # `import opik` in the module would already have failed the import above;
+        # this locks it in as an explicit assertion.
+        trace_id = _trace_id()
+        atif_to_opik.plan_spans({"steps": [_step(1, message="x")]}, trace_id)
+        self.assertNotIn("opik", sys.modules)
+        self.assertFalse(atif_to_opik.is_local_opik("http://example.com:9000"))
+        self.assertNotIn("opik", sys.modules)
+
+    def test_two_subagents_same_step_ids_distinct_trajectories_no_collision(self):
+        # Two subagents, each with a per-trajectory step_id of 1; the trajectory_id
+        # prefix disambiguates so the two subagent step spans never collide.
+        trace_id = _trace_id()
+        traj = {
+            "steps": [
+                _step(1, message="main",
+                      tool_calls=[_agent_call("spawn-a"), _agent_call("spawn-b")],
+                      results=[_spawn_result("spawn-a", "sess/agent-a"),
+                               _spawn_result("spawn-b", "sess/agent-b")]),
+            ],
+            "subagent_trajectories": [
+                _subagent("sess/agent-a", [_step(1, message="A one")]),
+                _subagent("sess/agent-b", [_step(1, message="B one")]),
+            ],
+        }
+        spans = atif_to_opik.plan_spans(traj, trace_id)
+        ids = [s["id"] for s in spans]
+        # All span ids unique despite the colliding per-trajectory step_ids.
+        self.assertEqual(len(ids), len(set(ids)))
+        a_id = atif_to_opik._span_id(trace_id, "sess/agent-a:step1")
+        b_id = atif_to_opik._span_id(trace_id, "sess/agent-b:step1")
+        self.assertIn(a_id, ids)
+        self.assertIn(b_id, ids)
+        self.assertNotEqual(a_id, b_id)
+
+    def test_duplicate_spawning_result_emits_subtree_exactly_once(self):
+        # The converter keeps duplicate spawning tool_results and links the ref onto
+        # both; the subagent subtree must still be emitted exactly once.
+        trace_id = _trace_id()
+        traj = {
+            "steps": [
+                _step(1, message="main", tool_calls=[_agent_call("spawn-a")],
+                      results=[
+                          _spawn_result("spawn-a", "sess/agent-a", content="first"),
+                          _spawn_result("spawn-a", "sess/agent-a", content="second"),
+                      ]),
+            ],
+            "subagent_trajectories": [
+                _subagent("sess/agent-a", [_step(1, message="A only")]),
+            ],
+        }
+        spans = atif_to_opik.plan_spans(traj, trace_id)
+        sub_id = atif_to_opik._span_id(trace_id, "sess/agent-a:step1")
+        self.assertEqual(sum(1 for s in spans if s["id"] == sub_id), 1)
+        # main step + its tool span + exactly one subagent step span.
+        self.assertEqual(len(spans), 3)
+
+    def test_unlinked_and_dangling_subagent_surfaced_under_root(self):
+        # An embedded subagent reached by no ref, plus a dangling ref to a
+        # nonexistent trajectory_id. The unlinked subagent is surfaced under the
+        # trace root (parent_span_id omitted on its top step); the dangling ref
+        # plans nothing extra.
+        trace_id = _trace_id()
+        traj = {
+            "steps": [
+                _step(1, message="main", tool_calls=[_agent_call("spawn-x")],
+                      results=[_spawn_result("spawn-x", "sess/missing")]),
+            ],
+            "subagent_trajectories": [
+                _subagent("sess/agent-orphan", [_step(1, message="orphan step")]),
+            ],
+        }
+        spans = atif_to_opik.plan_spans(traj, trace_id)
+        orphan_id = atif_to_opik._span_id(trace_id, "sess/agent-orphan:step1")
+        orphan = next(s for s in spans if s["id"] == orphan_id)
+        # Surfaced under the trace root: no parent span.
+        self.assertNotIn("parent_span_id", orphan)
+        self.assertEqual(orphan["name"], "step 1 (agent)")
+        # The dangling ref ("sess/missing") planned no extra span.
+        # spans: main step, its tool span, the appended orphan step.
+        self.assertEqual(len(spans), 3)
+
+    def test_sparse_subagent_no_keyerror(self):
+        # A subagent carrying only trajectory_id + one minimal step (no observation,
+        # metrics, model, or extra) is planned without error; usage is None (no metrics).
+        trace_id = _trace_id()
+        traj = {
+            "steps": [
+                _step(1, message="main", tool_calls=[_agent_call("spawn-s")],
+                      results=[_spawn_result("spawn-s", "sess/agent-sparse")]),
+            ],
+            "subagent_trajectories": [
+                {"trajectory_id": "sess/agent-sparse",
+                 "steps": [{"step_id": 1, "source": "agent", "message": "sparse"}]},
+            ],
+        }
+        spans = atif_to_opik.plan_spans(traj, trace_id)
+        sparse_id = atif_to_opik._span_id(trace_id, "sess/agent-sparse:step1")
+        sparse = next(s for s in spans if s["id"] == sparse_id)
+        self.assertIsNone(sparse["usage"])
+        self.assertEqual(sparse["name"], "step 1 (agent)")
+
+    def test_null_trajectory_id_subagent_surfaced_not_skipped(self):
+        # Defensive symmetry: a subagent with a null trajectory_id is surfaced
+        # (not skipped); its lone "None:" span prefix does not collide.
+        trace_id = _trace_id()
+        traj = {
+            "steps": [_step(1, message="main")],
+            "subagent_trajectories": [
+                {"trajectory_id": None,
+                 "steps": [{"step_id": 1, "source": "agent", "message": "nullsub"}]},
+            ],
+        }
+        spans = atif_to_opik.plan_spans(traj, trace_id)
+        ids = [s["id"] for s in spans]
+        self.assertEqual(len(ids), len(set(ids)))
+        null_id = atif_to_opik._span_id(trace_id, "None:step1")
+        self.assertIn(null_id, ids)
+        null_span = next(s for s in spans if s["id"] == null_id)
+        # Surfaced under the trace root (never reached via a ref).
+        self.assertNotIn("parent_span_id", null_span)
+        self.assertEqual(null_span["name"], "step 1 (agent)")
+
+
+class TestIsLocalOpik(unittest.TestCase):
+    def test_local_hosts_classify_true(self):
+        for url in ("localhost", "127.0.0.1", "::1", None, "localhost:5173",
+                    "LOCALHOST", "http://[::1]:5173",
+                    "http://localhost:5173/api", "http://127.0.0.1:5173"):
+            self.assertTrue(atif_to_opik.is_local_opik(url), url)
+
+    def test_remote_and_malformed_classify_false_fail_safe(self):
+        # A remote host, plus malformed/unparseable inputs that must fail SAFE
+        # (empty/unparseable host -> non-local -> warn), never silently trusted.
+        for url in ("http://example.com:9000/api", "remote.host:5173",
+                    "http://", "://garbage", "example.com"):
+            self.assertFalse(atif_to_opik.is_local_opik(url), url)
+
+
 class TestLedgerCorruptRecovers(unittest.TestCase):
     """A corrupt ledger.json is treated as empty (fresh mint + stderr warning),
     NOT a crash. Real corrupt tmp file via DRVR_LEDGER inside an isolated HOME —

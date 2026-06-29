@@ -25,6 +25,7 @@ import socket  # R9: socket.gaierror is a connection-class error to catch in mai
 import sys     # R9: warnings/errors go to stderr
 import time
 from datetime import datetime
+from urllib.parse import urlsplit
 
 # Default to local self-hosted Opik unless the caller already configured it.
 # Dep-free (just env defaults) so the module imports without opik installed.
@@ -115,6 +116,97 @@ def _span_id(trace_id: str, suffix: str) -> str:
     return _mint_uuid7(f"{trace_id}::{suffix}", trace_ms)
 
 
+def is_local_opik(url: str | None) -> bool:
+    """Pure: True when the resolved Opik base URL targets localhost. A non-local
+    auth-less OSS Opik would expose the redacted (incl. subagent) trajectory, so
+    main() warns when this is False. Fails SAFE: an empty or unparseable host is
+    treated as NON-local (warn), never silently trusted. None == unset == local
+    default."""
+    if not url:
+        return True
+    if "://" in url:
+        netloc = url
+    elif ":" in url and url.count(":") > 1 and "[" not in url:
+        netloc = f"//[{url}]"                           # bare IPv6 literal (e.g. ::1) needs brackets
+    else:
+        netloc = f"//{url}"                             # bare host or host:port
+    host = urlsplit(netloc).hostname
+    if not host:
+        return False                                   # unparseable/empty -> warn
+    return host in ("localhost", "127.0.0.1", "::1")
+
+
+def plan_spans(traj: dict, trace_id: str) -> list[dict]:
+    """Pure: trajectory -> ordered client.span(**kw) dicts (caller adds trace_id).
+    One span per step, a child per tool_call, and recursively each subagent's steps
+    parented under the spawning tool_call's span, in tool_calls order.
+    subagent_trajectories is flat (all depths) -> one lookup map serves every level.
+    No opik, no I/O. Deterministic ids: top-level suffixes are unchanged from the
+    prior register() (existing spans upsert in place); subagent suffixes are qualified
+    by trajectory_id. Each subagent is emitted at most once; any subagent never reached
+    via a ref (truncation-unlinked or dangling) is appended under the trace root so
+    Opik never silently omits one."""
+    subs = traj.get("subagent_trajectories") or []
+    by_id = {s.get("trajectory_id"): s for s in subs}
+    placed: set = set()
+    spans: list[dict] = []
+
+    def emit(steps: list[dict], *, prefix: str, step_parent: str | None) -> None:
+        for step in steps:
+            sid = step.get("step_id")
+            src = step.get("source")
+            ts = step.get("timestamp")
+            sdt = _dt(ts)
+            metrics = step.get("metrics") or {}
+            usage = ({"prompt_tokens": metrics.get("prompt_tokens"),
+                      "completion_tokens": metrics.get("completion_tokens"),
+                      "total_tokens": (metrics.get("prompt_tokens") or 0)
+                      + (metrics.get("completion_tokens") or 0)} if metrics else None)
+            step_span_id = _span_id(trace_id, f"{prefix}step{sid}")
+            step_kw = {"id": step_span_id, "name": f"step {sid} ({src})",
+                       "type": "llm" if src == "agent" else "general",
+                       "input": {"message": _truncate(str(step.get("message", "")))},
+                       "output": {"reasoning": _truncate(str(step.get("reasoning_content") or ""))}
+                       if step.get("reasoning_content") else None,
+                       "metadata": {"source": src, "timestamp": ts},
+                       "model": step.get("model_name"), "usage": usage,
+                       "total_cost": metrics.get("cost_usd"),
+                       "start_time": sdt, "end_time": sdt}
+            if step_parent is not None:
+                step_kw["parent_span_id"] = step_parent
+            spans.append(step_kw)
+
+            results = (step.get("observation") or {}).get("results", [])
+            obs_by_call = {r.get("source_call_id"): r.get("content") for r in results}
+            res_by_call: dict = {}
+            for r in results:
+                res_by_call.setdefault(r.get("source_call_id"), r)
+            for tc in step.get("tool_calls") or []:
+                cid = tc.get("tool_call_id")
+                tool_span_id = _span_id(trace_id, f"{prefix}step{sid}:tool:{cid}")
+                spans.append({"id": tool_span_id, "parent_span_id": step_span_id,
+                              "name": f"tool: {tc.get('function_name')}", "type": "tool",
+                              "input": {"arguments": tc.get("arguments")},
+                              "output": {"result": _truncate(str(obs_by_call.get(cid, "")))},
+                              "metadata": {"tool_call_id": cid},
+                              "start_time": sdt, "end_time": sdt})
+                r = res_by_call.get(cid)               # placement via tool_calls -> first matching result
+                for ref in (r.get("subagent_trajectory_ref") if r else None) or []:
+                    tid = ref.get("trajectory_id")
+                    sub = by_id.get(tid)
+                    if sub and tid not in placed:
+                        placed.add(tid)
+                        emit(sub.get("steps") or [], prefix=f"{tid}:", step_parent=tool_span_id)
+
+    emit(traj.get("steps") or [], prefix="", step_parent=None)
+    for sub in subs:                                   # subagents not reached via a ref -> under root
+        tid = sub.get("trajectory_id")
+        if tid not in placed:                          # surface every subagent (matches the viewer flatten)
+            placed.add(tid)
+            emit(sub.get("steps") or [], prefix=f"{tid}:", step_parent=None)
+    return spans
+
+
 def register(traj: dict, *, project: str) -> tuple[str, bool]:
     import opik  # lazy: keep module importable (and pure helpers testable) without opik
     extra = traj.get("extra") or {}
@@ -151,54 +243,11 @@ def register(traj: dict, *, project: str) -> tuple[str, bool]:
     # Log each span as ONE complete message (start_time + end_time together) via
     # the low-level client.span(). The trace.span()+span.end() pattern races the
     # create against the update under batching and drops the create payload
-    # (name/type/usage vanish) -- the warning Opik prints is load-bearing.
-    for step in steps:
-        src = step.get("source")
-        sid = step.get("step_id")
-        sdt = _dt(step.get("timestamp"))
-        metrics = step.get("metrics") or {}
-        usage = None
-        if metrics:
-            usage = {
-                "prompt_tokens": metrics.get("prompt_tokens"),
-                "completion_tokens": metrics.get("completion_tokens"),
-                "total_tokens": (metrics.get("prompt_tokens") or 0)
-                + (metrics.get("completion_tokens") or 0),
-            }
-        step_span_id = _span_id(trace_id, f"step{sid}")
-        client.span(
-            trace_id=trace_id,
-            id=step_span_id,
-            name=f"step {sid} ({src})",
-            type="llm" if src == "agent" else "general",
-            input={"message": _truncate(str(step.get("message", "")))},
-            output={"reasoning": _truncate(str(step.get("reasoning_content") or ""))}
-            if step.get("reasoning_content") else None,
-            metadata={"source": src, "timestamp": step.get("timestamp")},
-            model=step.get("model_name"),
-            usage=usage,
-            total_cost=metrics.get("cost_usd"),
-            start_time=sdt,
-            end_time=sdt,
-        )
-        # observations keyed by tool_call_id for pairing
-        obs_by_call = {}
-        for r in (step.get("observation") or {}).get("results", []):
-            obs_by_call[r.get("source_call_id")] = r.get("content")
-        for tc in step.get("tool_calls") or []:
-            cid = tc.get("tool_call_id")
-            client.span(
-                trace_id=trace_id,
-                parent_span_id=step_span_id,
-                id=_span_id(trace_id, f"step{sid}:tool:{cid}"),
-                name=f"tool: {tc.get('function_name')}",
-                type="tool",
-                input={"arguments": tc.get("arguments")},
-                output={"result": _truncate(str(obs_by_call.get(cid, "")))},
-                metadata={"tool_call_id": cid},
-                start_time=sdt,
-                end_time=sdt,
-            )
+    # (name/type/usage vanish) -- the warning Opik prints is load-bearing. The
+    # per-step/per-tool/per-subagent span layout is planned purely in plan_spans;
+    # this loop is the thin I/O edge that writes each planned span.
+    for kw in plan_spans(traj, trace_id):
+        client.span(trace_id=trace_id, **kw)
 
     client.flush()
     return trace_id, reused
@@ -212,6 +261,11 @@ def main() -> None:
     args = ap.parse_args()
     if args.base_url:
         os.environ["OPIK_URL_OVERRIDE"] = args.base_url
+
+    if not is_local_opik(os.environ.get("OPIK_URL_OVERRIDE")):
+        print("warning: uploading to a non-local Opik. Self-hosted Opik has no auth; "
+              "the redacted trajectory (including subagents) is exposed to whoever can "
+              "reach that host.", file=sys.stderr)
 
     traj = json.load(open(args.trajectory))
     try:
