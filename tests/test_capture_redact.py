@@ -146,27 +146,33 @@ class TestRedactEnvNameBound(unittest.TestCase):
     still masking values behind realistically long variable names.
     """
 
-    def _assert_under_one_second(self, text, label):
+    # The bounded pattern runs sub-second on these 40k inputs (~0.5s); the
+    # unbounded one degrades to an O(n^2) split search (~38s). A generous ceiling
+    # separates linear from quadratic by orders of magnitude without flaking on a
+    # loaded machine, where a sub-second op can still spike past a 1s bound.
+    LINEAR_CEILING_S = 5.0
+
+    def _assert_no_quadratic_blowup(self, text, label):
         start = time.perf_counter()
         redact.redact_text(text)
         elapsed = time.perf_counter() - start
         self.assertLess(
-            elapsed, 1.0,
+            elapsed, self.LINEAR_CEILING_S,
             f"{label}: redact_text took {elapsed:.2f}s on a {len(text)}-char "
-            f"input (expected < 1s; an unbounded name quantifier degrades to "
-            f"an O(n^2) split search)",
+            f"input (an unbounded name quantifier degrades to an O(n^2) split "
+            f"search; the bounded pattern stays well under a second)",
         )
 
     def test_long_name_class_run_stays_linear(self):
         # A 40k run of name-class characters with no secret word must not drive
         # the matcher into a quadratic forward/backtrack search.
-        self._assert_under_one_second("x" * 40_000, "40k 'x' run")
-        self._assert_under_one_second("_" * 40_000, "40k '_' run")
+        self._assert_no_quadratic_blowup("x" * 40_000, "40k 'x' run")
+        self._assert_no_quadratic_blowup("_" * 40_000, "40k '_' run")
 
     def test_base64_blob_stays_linear(self):
         # A realistic ~40k base64 blob is one long alphanumeric run.
         blob = base64.b64encode(b"x" * 30_000).decode()  # 40_000 chars, all alnum
-        self._assert_under_one_second(blob, "40k base64 blob")
+        self._assert_no_quadratic_blowup(blob, "40k base64 blob")
 
     def test_long_name_prefix_still_masks(self):
         # 64-char variable name (a 57-char run BEFORE the secret word) masks.
