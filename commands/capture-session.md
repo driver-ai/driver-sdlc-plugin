@@ -138,18 +138,54 @@ Build `$CUR/env.json` containing only the non-empty keys among `codebase_url`,
 `commit_end`, `branch`, `cwd`, `mcp_endpoint` (use `jq -n` to emit valid JSON;
 skip env-fact gathering entirely if `git` was absent / not a repo).
 
-Convert and redact (this path runs under `uv` — skip with a warning if `uv` is
-absent). Outputs stay under `$CUR`, so the working tree is untouched:
+Produce the redacted trajectory, **preferring the rolling store**. If rolling
+capture has been writing a redacted store for this session and it is still fresh
+(the live transcript has grown by fewer than the roll threshold since the last
+roll), copy that store in as the flush artifact — it is the same canonical
+redacted ATIF the re-derive path produces, already local. Otherwise re-derive
+from the transcript with the convert→redact path (that arm runs under `uv` — skip
+with a warning if `uv` is absent). The store copy is a local file read **before**
+the Step 6 approval gate — not egress. Either way the outputs stay under `$CUR`,
+so the working tree is untouched, and both arms end with
+`$CUR/trajectory.redacted.json` + `$CUR/flags.json`:
 
 ```bash
-uv run --with 'harbor~=0.16' python "${CLAUDE_PLUGIN_ROOT}/scripts/capture/cc_to_atif.py" \
-    "$TRANSCRIPT" --task-id "$TASK" --spec-id "$SPEC" --intent "$INTENT" \
-    --exclude-marker '/drvr:capture-session' --env-file "$CUR/env.json" \
-    --session-dir "$DIR" \
-    --out "$CUR/trajectory.json"
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/capture/redact.py" \
-    "$CUR/trajectory.json" --out "$CUR/trajectory.redacted.json" \
-    --flags-out "$CUR/flags.json"
+# The rolling store is keyed by the live session id, which is the transcript's
+# basename (<session_id>.jsonl). Prefer it when fresh; else re-derive.
+SID="$(basename "$TRANSCRIPT" .jsonl)"
+STORE="$(DRVR_ROOT="${CLAUDE_PLUGIN_ROOT}" python3 - "$HOME/.driver/capture" "$SID" <<'PY' 2>/dev/null
+import os, sys
+sys.path.insert(0, os.path.join(os.environ["DRVR_ROOT"], "scripts", "capture"))
+from capture_store_core import store_path_for
+try: print(store_path_for(sys.argv[1], sys.argv[2]))
+except Exception: pass
+PY
+)"
+STATE="$HOME/.driver/capture/sessions/$SID/roll-state.json"
+CUR_COUNT="$(wc -l < "$TRANSCRIPT" 2>/dev/null | tr -d ' ')"
+FRESH="$(DRVR_ROOT="${CLAUDE_PLUGIN_ROOT}" python3 - "$STATE" "${CUR_COUNT:-0}" <<'PY' 2>/dev/null
+import json, os, sys
+sys.path.insert(0, os.path.join(os.environ["DRVR_ROOT"], "scripts", "capture"))
+from capture_store_core import is_store_fresh, RollThreshold
+prev = 0
+try: prev = json.load(open(sys.argv[1])).get("record_count", 0)
+except Exception: pass
+print("1" if is_store_fresh(prev, int(sys.argv[2]), RollThreshold()) else "0")
+PY
+)"
+if [ -n "$STORE" ] && [ -f "$STORE" ] && [ "$FRESH" = "1" ]; then
+    cp "$STORE" "$CUR/trajectory.redacted.json"
+    cp "$(dirname "$STORE")/flags.json" "$CUR/flags.json" 2>/dev/null || true
+else
+    uv run --with 'harbor~=0.16' python "${CLAUDE_PLUGIN_ROOT}/scripts/capture/cc_to_atif.py" \
+        "$TRANSCRIPT" --task-id "$TASK" --spec-id "$SPEC" --intent "$INTENT" \
+        --exclude-marker '/drvr:capture-session' --env-file "$CUR/env.json" \
+        --session-dir "$DIR" \
+        --out "$CUR/trajectory.json"
+    python3 "${CLAUDE_PLUGIN_ROOT}/scripts/capture/redact.py" \
+        "$CUR/trajectory.json" --out "$CUR/trajectory.redacted.json" \
+        --flags-out "$CUR/flags.json"
+fi
 ```
 
 The converter prints `steps`, token totals, `cost`, `peak_step_context_tokens`,
