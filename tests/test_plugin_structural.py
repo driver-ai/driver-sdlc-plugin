@@ -441,5 +441,70 @@ class TestCaptureSessionGovernance(unittest.TestCase):
         )
 
 
+class TestRollCaptureHookRegistration(unittest.TestCase):
+    """Registration of the rolling-capture Stop / SessionEnd hooks in hooks.json.
+
+    Pins the nested data["hooks"][<event>] shape so a regression that drops or
+    moves the Stop roll hook — or the SessionEnd finalize appended after
+    commit-artifacts.sh — fails the suite. Asserts against the nested
+    data["hooks"][<event>] path, NOT a top-level data[<event>] key, so the test
+    cannot pass vacuously.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.hooks_path = PLUGIN_ROOT / "hooks" / "hooks.json"
+        with open(cls.hooks_path, encoding="utf-8") as f:
+            cls.hooks_data = json.load(f)
+
+    def _entries(self, event):
+        """Flatten every hook entry registered for an event, read from the nested
+        data["hooks"][event][*]["hooks"][*] path."""
+        entries = []
+        for matcher_block in self.hooks_data["hooks"].get(event, []):
+            entries.extend(matcher_block.get("hooks", []))
+        return entries
+
+    def test_hooks_json_parses(self):
+        """hooks.json must be valid JSON with a top-level 'hooks' object."""
+        self.assertIsInstance(self.hooks_data, dict)
+        self.assertIn("hooks", self.hooks_data)
+        self.assertIsInstance(self.hooks_data["hooks"], dict)
+
+    def test_stop_invokes_roll_capture_with_timeout(self):
+        """data["hooks"]["Stop"] must invoke roll-capture.sh via ${CLAUDE_PLUGIN_ROOT}
+        and declare a timeout."""
+        roll_entries = [
+            e for e in self._entries("Stop")
+            if "roll-capture.sh" in e.get("command", "")
+        ]
+        self.assertTrue(
+            roll_entries,
+            'data["hooks"]["Stop"] does not invoke roll-capture.sh',
+        )
+        for entry in roll_entries:
+            self.assertIn(
+                "${CLAUDE_PLUGIN_ROOT}", entry["command"],
+                "Stop roll-capture command must reference ${CLAUDE_PLUGIN_ROOT}",
+            )
+            self.assertIn(
+                "timeout", entry,
+                "Stop roll-capture entry must declare a timeout",
+            )
+
+    def test_session_end_has_commit_and_roll(self):
+        """data["hooks"]["SessionEnd"] must contain BOTH commit-artifacts.sh and
+        roll-capture.sh (the synchronous finalize, appended after the artifact commit)."""
+        commands = [e.get("command", "") for e in self._entries("SessionEnd")]
+        self.assertTrue(
+            any("commit-artifacts.sh" in c for c in commands),
+            "SessionEnd must still invoke commit-artifacts.sh",
+        )
+        self.assertTrue(
+            any("roll-capture.sh" in c for c in commands),
+            "SessionEnd must invoke roll-capture.sh (finalize)",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
