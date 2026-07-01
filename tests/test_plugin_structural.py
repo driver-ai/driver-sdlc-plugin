@@ -442,13 +442,14 @@ class TestCaptureSessionGovernance(unittest.TestCase):
 
 
 class TestRollCaptureHookRegistration(unittest.TestCase):
-    """Registration of the rolling-capture Stop / SessionEnd hooks in hooks.json.
+    """Registration of the rolling-capture Stop / SessionEnd hooks and the
+    SessionStart lineage hook in hooks.json.
 
     Pins the nested data["hooks"][<event>] shape so a regression that drops or
-    moves the Stop roll hook — or the SessionEnd finalize appended after
-    commit-artifacts.sh — fails the suite. Asserts against the nested
-    data["hooks"][<event>] path, NOT a top-level data[<event>] key, so the test
-    cannot pass vacuously.
+    moves the Stop roll hook — the SessionEnd finalize appended after
+    commit-artifacts.sh — or the SessionStart lineage hook fails the suite. Asserts
+    against the nested data["hooks"][<event>] path, NOT a top-level data[<event>]
+    key, so the test cannot pass vacuously.
     """
 
     @classmethod
@@ -504,6 +505,28 @@ class TestRollCaptureHookRegistration(unittest.TestCase):
             any("roll-capture.sh" in c for c in commands),
             "SessionEnd must invoke roll-capture.sh (finalize)",
         )
+
+    def test_session_start_invokes_capture_with_timeout(self):
+        """data["hooks"]["SessionStart"] must invoke session-start-capture.sh via
+        ${CLAUDE_PLUGIN_ROOT} and declare a timeout (read the nested
+        data["hooks"]["SessionStart"] path, not a top-level key)."""
+        start_entries = [
+            e for e in self._entries("SessionStart")
+            if "session-start-capture.sh" in e.get("command", "")
+        ]
+        self.assertTrue(
+            start_entries,
+            'data["hooks"]["SessionStart"] does not invoke session-start-capture.sh',
+        )
+        for entry in start_entries:
+            self.assertIn(
+                "${CLAUDE_PLUGIN_ROOT}", entry["command"],
+                "SessionStart capture command must reference ${CLAUDE_PLUGIN_ROOT}",
+            )
+            self.assertIn(
+                "timeout", entry,
+                "SessionStart capture entry must declare a timeout",
+            )
 
 
 if __name__ == "__main__":
