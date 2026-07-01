@@ -6,6 +6,21 @@
 # Always exits 0. No set -e.
 
 INPUT="$(cat)"                                   # consume stdin (hook protocol)
+
+# Hook shells (notably GUI-launched Claude Code on macOS) often don't inherit the
+# interactive shell's PATH, so uv — installed to ~/.local/bin (or ~/.cargo/bin) — is
+# invisible and the roll silently no-ops at the `command -v uv` gate below. (jq and
+# python3 stay resolvable via the inherited PATH, which is why SessionStart still runs.)
+# Make ONLY uv findable, and only when it isn't already: APPEND its dir so we never
+# shadow an already-working tool. Prepending package-manager dirs like /usr/local/bin
+# is deliberately avoided — it can put a broken python3 (e.g. a dangling python.org
+# symlink) ahead of the homebrew one and turn the redact step into a silent no-op.
+if ! command -v uv >/dev/null 2>&1; then
+  for _d in "$HOME/.local/bin" "$HOME/.cargo/bin"; do
+    if [ -x "$_d/uv" ]; then PATH="$PATH:$_d"; export PATH; break; fi
+  done
+fi
+
 command -v jq >/dev/null 2>&1 || exit 0
 command -v python3 >/dev/null 2>&1 || exit 0     # python3 backs the pure throttle
 
