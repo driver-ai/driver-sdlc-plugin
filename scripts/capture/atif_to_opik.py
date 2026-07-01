@@ -226,6 +226,41 @@ def plan_spans(traj: dict, trace_id: str) -> list[dict]:
     return spans
 
 
+def plan_trace(traj: dict, trace_id: str) -> dict:
+    """Pure: trajectory -> client.trace(**kw) kwargs. Mirrors plan_spans so the
+    trace metadata (incl. the arc group key) is unit-testable without opik. No opik,
+    no I/O. register() passes the result straight to client.trace().
+
+    sdlc_group_key = group_key_for(task, spec, branch): task/spec when the manual flush
+    supplies them, branch as the fallback so a no-task capture groups under the same
+    branch:<x> the local index uses, never 'ungrouped'. The env block lives at
+    extra["environment"] (the converter nests it there), NOT at the top level."""
+    import capture_store_core  # sibling on sys.path (same dir; tests path-insert it)
+    extra = traj.get("extra") or {}
+    env = extra.get("environment") or {}   # converter nests environment under extra
+    session_id = traj.get("session_id") or "unknown-session"
+    task_id = extra.get("sdlc_task_id") or "no-task"
+    fm = traj.get("final_metrics") or {}
+    agent = traj.get("agent") or {}
+    steps = traj.get("steps", [])
+    start_ts = next((s.get("timestamp") for s in steps if s.get("timestamp")), None)
+    end_ts = next((s.get("timestamp") for s in reversed(steps) if s.get("timestamp")), None)
+    group_key = capture_store_core.group_key_for(
+        task_id if task_id != "no-task" else None, extra.get("sdlc_spec_id"),
+        env.get("branch"))
+    return {
+        "id": trace_id,
+        "name": f"{agent.get('name','agent')} :: {task_id}",
+        "input": {"intent": extra.get("sdlc_intent"), "session_id": session_id},
+        "output": {"total_steps": fm.get("total_steps"),
+                   "total_cost_usd": fm.get("total_cost_usd")},
+        "metadata": {"schema_version": traj.get("schema_version"), "agent": agent,
+                     "sdlc_task_id": task_id, "sdlc_spec_id": extra.get("sdlc_spec_id"),
+                     "sdlc_group_key": group_key, "final_metrics": fm},
+        "start_time": _dt(start_ts), "end_time": _dt(end_ts),
+    }
+
+
 def register(traj: dict, *, project: str) -> tuple[str, bool]:
     import opik  # lazy: keep module importable (and pure helpers testable) without opik
     extra = traj.get("extra") or {}
@@ -233,31 +268,11 @@ def register(traj: dict, *, project: str) -> tuple[str, bool]:
     task_id = extra.get("sdlc_task_id") or "no-task"
     trace_id, reused = trace_id_for(trace_key(session_id, task_id))
 
-    steps = traj.get("steps", [])
-    fm = traj.get("final_metrics") or {}
-    agent = traj.get("agent") or {}
-    start_ts = next((s.get("timestamp") for s in steps if s.get("timestamp")), None)
-    end_ts = next((s.get("timestamp") for s in reversed(steps) if s.get("timestamp")), None)
-
     client = opik.Opik(project_name=project)
     # Single complete message (start+end together), no separate .end() update --
-    # same create-drop race as spans otherwise nulls name/metadata.
-    client.trace(
-        id=trace_id,
-        name=f"{agent.get('name','agent')} :: {task_id}",
-        input={"intent": extra.get("sdlc_intent"), "session_id": session_id},
-        output={"total_steps": fm.get("total_steps"),
-                "total_cost_usd": fm.get("total_cost_usd")},
-        metadata={
-            "schema_version": traj.get("schema_version"),
-            "agent": agent,
-            "sdlc_task_id": task_id,
-            "sdlc_spec_id": extra.get("sdlc_spec_id"),
-            "final_metrics": fm,
-        },
-        start_time=_dt(start_ts),
-        end_time=_dt(end_ts),
-    )
+    # same create-drop race as spans otherwise nulls name/metadata. The complete
+    # trace payload (incl. the arc group key) is planned purely in plan_trace.
+    client.trace(**plan_trace(traj, trace_id))
 
     # Log each span as ONE complete message (start_time + end_time together) via
     # the low-level client.span(). The trace.span()+span.end() pattern races the

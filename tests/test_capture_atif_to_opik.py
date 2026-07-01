@@ -225,6 +225,12 @@ class TestPlanSpans(unittest.TestCase):
         # Identical span planning across the two calls.
         self.assertEqual(by_id.keys(), {s["id"] for s in again})
 
+    @unittest.skipIf(
+        _HAS_OPIK,
+        "opik-absence in sys.modules is only assertable on the stdlib path; when opik "
+        "is installed, sibling live tests legitimately import it into the shared "
+        "process, so the global-state check no longer reflects the pure path alone",
+    )
     def test_no_opik_import_reachable_in_pure_path(self):
         # Boundary proof: exercising the pure planner must NOT pull opik into the
         # process. opik is not installed on the stdlib test path, so a top-level
@@ -349,6 +355,70 @@ class TestPlanSpans(unittest.TestCase):
         # Surfaced under the trace root (never reached via a ref).
         self.assertNotIn("parent_span_id", null_span)
         self.assertEqual(null_span["name"], "step 1 (agent)")
+
+
+class TestPlanTrace(unittest.TestCase):
+    """The pure trace planner mirrors plan_spans: trajectory -> client.trace(**kw)
+    kwargs, so the trace metadata (incl. the arc group key) is asserted with NO
+    opik and NO mocks (real dicts). The group key is the single source of truth
+    for tying one arc's per-session traces; the fallback (branch, never
+    'ungrouped') is guarded here regardless of the SDK round-trip."""
+
+    def test_task_wins_over_branch(self):
+        # A traj carrying both an sdlc_task_id and a nested env branch: task wins.
+        trace_id = _trace_id()
+        traj = {
+            "schema_version": "ATIF-v1.7",
+            "session_id": "sess-1",
+            "extra": {"sdlc_task_id": "T-1", "sdlc_spec_id": "S2",
+                      "sdlc_intent": "do the thing",
+                      "environment": {"branch": "br"}},
+            "agent": {"name": "claude-code"},
+            "final_metrics": {"total_steps": 3, "total_cost_usd": 0.42},
+        }
+        kw = atif_to_opik.plan_trace(traj, trace_id)
+        # group_key_for is the single source of truth; task wins over branch.
+        import capture_store_core
+        self.assertEqual(kw["metadata"]["sdlc_group_key"],
+                         capture_store_core.group_key_for("T-1", "S2", "br"))
+        self.assertEqual(kw["metadata"]["sdlc_group_key"], "T-1")
+        # id is the passed trace id (idempotency owned upstream in register).
+        self.assertEqual(kw["id"], trace_id)
+        # No regression vs the prior inline dict: the existing metadata fields stay.
+        self.assertEqual(kw["metadata"]["sdlc_task_id"], "T-1")
+        self.assertEqual(kw["metadata"]["sdlc_spec_id"], "S2")
+        self.assertEqual(kw["metadata"]["schema_version"], "ATIF-v1.7")
+        self.assertEqual(kw["metadata"]["final_metrics"],
+                         {"total_steps": 3, "total_cost_usd": 0.42})
+        self.assertEqual(kw["metadata"]["agent"], {"name": "claude-code"})
+        # Existing trace fields preserved (name/input/output shape unchanged).
+        self.assertEqual(kw["name"], "claude-code :: T-1")
+        self.assertEqual(kw["input"],
+                         {"intent": "do the thing", "session_id": "sess-1"})
+        self.assertEqual(kw["output"],
+                         {"total_steps": 3, "total_cost_usd": 0.42})
+
+    def test_no_task_falls_back_to_branch_not_ungrouped(self):
+        # NO task, but a NESTED extra.environment.branch: the group key is the
+        # branch fallback ('branch:br'), NEVER 'ungrouped'. Uses the REAL nested
+        # extra.environment shape (a top-level `environment` key would pass
+        # vacuously while production, which reads extra["environment"], fails).
+        trace_id = _trace_id()
+        traj = {
+            "schema_version": "ATIF-v1.7",
+            "session_id": "sess-2",
+            "extra": {"environment": {"branch": "br"}},
+            "agent": {"name": "claude-code"},
+            "final_metrics": {"total_steps": 1},
+        }
+        # Guard: no top-level environment key (would mask the nesting bug).
+        self.assertNotIn("environment", traj)
+        kw = atif_to_opik.plan_trace(traj, trace_id)
+        self.assertEqual(kw["metadata"]["sdlc_group_key"], "branch:br")
+        self.assertNotEqual(kw["metadata"]["sdlc_group_key"], "ungrouped")
+        # No task -> the sentinel task id, still recorded in metadata.
+        self.assertEqual(kw["metadata"]["sdlc_task_id"], "no-task")
+        self.assertEqual(kw["id"], trace_id)
 
 
 class TestIsLocalOpik(unittest.TestCase):
@@ -562,6 +632,131 @@ class TestRegisterAgainstLocalOpik(unittest.TestCase):
                          "re-capture introduced extra spans (ids not deterministic)")
         self.assertEqual(len(got_ids2), baseline,
                          "re-capture duplicated spans instead of upserting")
+
+
+@unittest.skipUnless(
+    _OPIK_REACHABLE,
+    "opik absent or local Opik server unreachable on OPIK_URL_OVERRIDE")
+class TestGroupKeyAgainstLocalOpik(unittest.TestCase):
+    """The arc group key lands in trace metadata in a REAL local Opik (no mock),
+    read back via get_trace_content(...).metadata (SDK 2.0.64 round-trips it as a
+    dict). Two sessions sharing a task carry the SAME sdlc_group_key='T-1'; a
+    no-task session with a nested extra.environment.branch keys 'branch:br' (never
+    'ungrouped'). All three traces resolve to distinct deterministic ids, so
+    per-session idempotency is preserved while the arc is tied by the group key.
+
+    Isolated HOME + DRVR_LEDGER so this never collides with a developer's real
+    ledger; the trace id is the ledger value, queried back directly."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="capture-opik-groupkey-")
+        self.project = "drvr-capture-groupkey-itest"
+        self.ledger = os.path.join(self.tmp, "ledger.json")
+        self._orig_ledger = atif_to_opik.LEDGER
+        self._orig_env = {k: os.environ.get(k) for k in ("HOME", "DRVR_LEDGER")}
+        os.environ["HOME"] = self.tmp
+        os.environ["DRVR_LEDGER"] = self.ledger
+        atif_to_opik.LEDGER = self.ledger
+
+    def tearDown(self):
+        atif_to_opik.LEDGER = self._orig_ledger
+        for k, v in self._orig_env.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    @staticmethod
+    def _task_session(session_id):
+        # Two of these (distinct session_ids) share sdlc_task_id='T-1' -> one arc.
+        return {
+            "schema_version": "ATIF-v1.7",
+            "session_id": session_id,
+            "extra": {"sdlc_task_id": "T-1", "sdlc_spec_id": "S2",
+                      "sdlc_intent": "tie the arc",
+                      "environment": {"branch": "br"}},
+            "agent": {"name": "claude-code", "model_name": "claude-opus-4-8"},
+            "final_metrics": {"total_steps": 1, "total_cost_usd": 0.1},
+            "steps": [
+                _step(1, source="agent", message="work",
+                      model_name="claude-opus-4-8",
+                      timestamp="2026-06-30T00:00:00Z",
+                      metrics={"prompt_tokens": 10, "completion_tokens": 2,
+                               "cost_usd": 0.1}),
+            ],
+        }
+
+    @staticmethod
+    def _no_task_session(session_id):
+        # NO sdlc_task_id; the arc key falls back to the nested env branch.
+        return {
+            "schema_version": "ATIF-v1.7",
+            "session_id": session_id,
+            "extra": {"sdlc_intent": "no task here",
+                      "environment": {"branch": "br"}},
+            "agent": {"name": "claude-code", "model_name": "claude-opus-4-8"},
+            "final_metrics": {"total_steps": 1, "total_cost_usd": 0.1},
+            "steps": [
+                _step(1, source="agent", message="work",
+                      model_name="claude-opus-4-8",
+                      timestamp="2026-06-30T00:00:00Z",
+                      metrics={"prompt_tokens": 10, "completion_tokens": 2,
+                               "cost_usd": 0.1}),
+            ],
+        }
+
+    def _read_group_key(self, client, trace_id):
+        # get_trace_content is eventually consistent; retry until metadata carries
+        # the key (SDK 2.0.64 returns metadata as a dict — capability-checked).
+        import time
+        for _ in range(20):
+            try:
+                md = client.get_trace_content(trace_id).metadata or {}
+                if "sdlc_group_key" in md:
+                    return md["sdlc_group_key"]
+            except Exception:
+                pass
+            time.sleep(1.0)
+            client.flush()
+        self.fail(f"trace {trace_id} metadata never carried sdlc_group_key")
+
+    def test_shared_task_ties_arc_no_task_falls_back_to_branch(self):
+        import opik
+
+        client = opik.Opik(project_name=self.project)
+
+        # Two sessions sharing task T-1 -> the SAME arc group key, distinct ids.
+        t1a, reused_a = atif_to_opik.register(
+            self._task_session("groupkey-itest-A"), project=self.project)
+        t1b, reused_b = atif_to_opik.register(
+            self._task_session("groupkey-itest-B"), project=self.project)
+        self.assertFalse(reused_a)
+        self.assertFalse(reused_b)
+        # Per-session idempotency preserved: distinct session_ids -> distinct ids.
+        self.assertNotEqual(t1a, t1b,
+                            "distinct sessions must resolve to distinct trace ids")
+
+        # A no-task session keyed by the branch fallback, distinct id again.
+        t_nt, reused_nt = atif_to_opik.register(
+            self._no_task_session("groupkey-itest-NT"), project=self.project)
+        self.assertFalse(reused_nt)
+        self.assertNotIn(t_nt, {t1a, t1b},
+                         "no-task session must resolve to a distinct trace id")
+
+        # Read the group key back from real Opik trace metadata.
+        gk_a = self._read_group_key(client, t1a)
+        gk_b = self._read_group_key(client, t1b)
+        gk_nt = self._read_group_key(client, t_nt)
+
+        # Both task sessions carry the SAME group key 'T-1' (the arc is tied).
+        self.assertEqual(gk_a, "T-1")
+        self.assertEqual(gk_b, "T-1")
+        self.assertEqual(gk_a, gk_b,
+                         "two sessions of one task must share the arc group key")
+        # The no-task session falls back to 'branch:br', never 'ungrouped'.
+        self.assertEqual(gk_nt, "branch:br")
+        self.assertNotEqual(gk_nt, "ungrouped")
 
 
 if __name__ == "__main__":
