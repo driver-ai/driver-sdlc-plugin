@@ -192,6 +192,33 @@ The converter prints `steps`, token totals, `cost`, `peak_step_context_tokens`,
 and `tools_used`. The redactor prints the secrets it masked. Only the redacted
 trajectory (`$CUR/trajectory.redacted.json`) is ever fed to review/viewer/upload.
 
+Now fill the Opik grouping identity that a store-fresh flush lacks. The rolling
+store was converted without the identity flags, so a fresh copy carries neither the
+task id nor the branch and would key as `ungrouped` in Opik. Fill them from the
+task/spec resolved in Step 3 and the git branch — absent-only, so the re-derive arm
+(which already carries them) is a no-op — before the render and the upload:
+
+```bash
+# Fill the Opik grouping identity the rolling store lacks (it was converted without
+# the identity flags). Absent-only, so the re-derive arm is a no-op. Content-free
+# (ids + branch); the artifact is already redacted; runs before the upload. The fill
+# semantics live in the pure complete_identity helper (unit-tested); this is its
+# thin wiring (load -> complete_identity -> dump).
+BRANCH="$(git branch --show-current 2>/dev/null)"
+DRVR_ROOT="${CLAUDE_PLUGIN_ROOT}" python3 - "$CUR/trajectory.redacted.json" "$TASK" "$SPEC" "$BRANCH" <<'PY' 2>/dev/null || true
+import json, os, sys
+sys.path.insert(0, os.path.join(os.environ["DRVR_ROOT"], "scripts", "capture"))
+from capture_store_core import complete_identity
+path, task, spec, branch = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+try:
+    traj = json.load(open(path))
+except Exception:
+    sys.exit(0)
+traj = complete_identity(traj, task, spec, branch)
+json.dump(traj, open(path, "w"), indent=2)
+PY
+```
+
 ## Step 5 — Render the in-chat review summary (egress-safe, no content)
 
 Run `render_trace.py --summary`, which prints an egress-safe block built only from
@@ -306,6 +333,43 @@ unredacted intermediate (the redacted copy and flags remain):
 
 ```bash
 rm -f "$CUR/trajectory.json"
+```
+
+## Step 9 — Report the arc (content-free, from the index)
+
+After the gate/save/upload, print the multi-session arc summary for the current
+branch. It reads the rolling index the hooks maintain and prints only ids and
+counts (sessions, steps, cost) — never step content — so it is informational and
+never triggers egress. Resolve the branch the same way the index writers do (via
+git), and skip the summary when the branch is unknown (`ungrouped`) or the index is
+missing/empty:
+
+```bash
+# Step 9 (after the gate/save/upload): print the content-free arc summary.
+# The rolling index is branch-keyed, so resolve the branch arc the same way the index
+# writers do — via git in the shell, not from the store's extra (the store-fresh flush
+# arm copies a store with no environment block).
+BRANCH="$(git branch --show-current 2>/dev/null)"
+DRVR_ROOT="${CLAUDE_PLUGIN_ROOT}" python3 - "$HOME/.driver/capture/index.json" "$BRANCH" <<'PY' 2>/dev/null || true
+import json, os, sys
+sys.path.insert(0, os.path.join(os.environ["DRVR_ROOT"], "scripts", "capture"))
+from capture_store_core import group_key_for
+index_path, branch = sys.argv[1], (sys.argv[2] or None)
+try:
+    index = json.load(open(index_path))
+except Exception:
+    sys.exit(0)
+gk = group_key_for(None, None, branch)   # branch arc, matching the index writers
+if gk == "ungrouped":
+    sys.exit(0)                          # off-git / no branch -> not a real arc
+group = index.get(gk) or {}
+if not group:
+    sys.exit(0)
+n = len(group)
+steps = sum((e.get("record_count") or 0) for e in group.values())
+cost = sum((e.get("total_cost_usd") or 0) for e in group.values())
+print(f"arc {gk}: {n} session(s), {steps} steps, ${cost:.4f}")   # ids/counts only — content-free
+PY
 ```
 
 ---

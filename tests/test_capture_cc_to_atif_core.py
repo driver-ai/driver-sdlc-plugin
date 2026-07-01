@@ -3,6 +3,7 @@
 Pure-core tests: import `cc_to_atif_core` ONLY (its `import pricing` resolves off
 the inserted path). No harbor, no mocks. Stdlib `unittest` only.
 """
+import os
 import sys
 import unittest
 
@@ -776,6 +777,217 @@ class TestNormalizeSessionEmptySubagentOmitted(unittest.TestCase):
         self.assertEqual(ids, {"sess/agent-good"})
         # Parent intact.
         self.assertTrue(len(n.steps) >= 1)
+
+
+# ---------------------------------------------------------------------------
+# Command-bash wiring tests: the identity-completion block (after Step 4) and the
+# Step 9 arc summary. These extract the REAL fenced bash blocks from
+# commands/capture-session.md and run them as subprocesses against real artifacts /
+# a seeded real index -- no module mocks. The fill/arc semantics live in the pure
+# capture_store_core helpers (unit-tested in tests/test_capture_store_core.py); these
+# prove the thin wiring loads/dumps and resolves the key via git as the writers do.
+# ---------------------------------------------------------------------------
+
+import json as _json
+import re as _re
+import subprocess as _subprocess
+import tempfile as _tempfile
+from pathlib import Path as _Path
+
+_COMMAND_MD = PLUGIN_ROOT / "commands" / "capture-session.md"
+
+
+def _extract_bash_block(anchor: str) -> str:
+    """Return the single fenced ```bash block from the command markdown that
+    contains `anchor`. Fails loudly if zero or more than one block matches, so a
+    markdown edit that removes/duplicates the block is caught here (not silently
+    skipped)."""
+    text = _COMMAND_MD.read_text(encoding="utf-8")
+    blocks = _re.findall(r"```bash\n(.*?)```", text, flags=_re.DOTALL)
+    matching = [b for b in blocks if anchor in b]
+    if len(matching) != 1:
+        raise AssertionError(
+            f"expected exactly one ```bash block containing {anchor!r}, "
+            f"found {len(matching)}")
+    return matching[0]
+
+
+def _run_bash(block: str, *, cwd, env):
+    """Run an extracted command-bash block under bash from `cwd` with `env`."""
+    return _subprocess.run(
+        ["bash", "-c", block], cwd=str(cwd), env=env,
+        capture_output=True, text=True)
+
+
+def _init_git_repo(path: _Path, branch: str) -> None:
+    """Init a real git repo at `path` with a single commit on `branch` (so
+    `git branch --show-current` yields that branch — matching how the index writers
+    resolve the key)."""
+    g = ["git", "-C", str(path)]
+    _subprocess.run(g + ["init", "-q", "-b", branch], check=True, capture_output=True)
+    _subprocess.run(g + ["config", "user.email", "t@t.test"], check=True, capture_output=True)
+    _subprocess.run(g + ["config", "user.name", "t"], check=True, capture_output=True)
+    (path / "f.txt").write_text("x")
+    _subprocess.run(g + ["add", "-A"], check=True, capture_output=True)
+    _subprocess.run(g + ["commit", "-qm", "init"], check=True, capture_output=True)
+
+
+class TestFlushIdentityCompletionWiring(unittest.TestCase):
+    """The identity-completion block (after Step 4) fills an absent grouping identity
+    on the ALREADY-redacted artifact via the pure complete_identity helper — thin
+    wiring only. Real artifact on disk, real git branch, no mocks."""
+
+    IDENTITY_ANCHOR = "the pure complete_identity helper (unit-tested)"
+
+    def setUp(self):
+        self.tmp = _tempfile.TemporaryDirectory()
+        self.root = _Path(self.tmp.name)
+        self.cur = self.root / "cur"
+        self.cur.mkdir()
+        self.block = _extract_bash_block(self.IDENTITY_ANCHOR)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _env(self, *, task, spec):
+        return {**os.environ, "CLAUDE_PLUGIN_ROOT": str(PLUGIN_ROOT),
+                "CUR": str(self.cur), "TASK": task, "SPEC": spec}
+
+    def _write_artifact(self, traj):
+        (self.cur / "trajectory.redacted.json").write_text(_json.dumps(traj))
+
+    def _read_artifact(self):
+        return _json.loads((self.cur / "trajectory.redacted.json").read_text())
+
+    def test_store_fresh_artifact_gets_task_and_branch(self):
+        # A store-fresh artifact lacking sdlc_task_id / environment.branch: after the
+        # block runs it carries the command's $TASK and the git branch, so the arc
+        # keys by task/branch instead of 'ungrouped'.
+        repo = self.root / "repo"
+        repo.mkdir()
+        _init_git_repo(repo, "eric/rolling-capture")
+        self._write_artifact({"schema_version": "ATIF-v1.7", "session_id": "s1",
+                              "extra": {}, "steps": []})
+        res = _run_bash(self.block, cwd=repo, env=self._env(task="T6", spec="S2"))
+        self.assertEqual(res.returncode, 0, msg=res.stderr)
+        out = self._read_artifact()
+        self.assertEqual(out["extra"]["sdlc_task_id"], "T6")
+        self.assertEqual(out["extra"]["sdlc_spec_id"], "S2")
+        self.assertEqual(out["extra"]["environment"]["branch"], "eric/rolling-capture")
+        # Content-free: ONLY ids/branch were added; no step content invented.
+        self.assertEqual(out["steps"], [])
+        # The resolved group key is now task-keyed (not ungrouped).
+        from capture_store_core import group_key_for
+        self.assertEqual(
+            group_key_for(out["extra"].get("sdlc_task_id"),
+                          out["extra"].get("sdlc_spec_id"),
+                          out["extra"]["environment"].get("branch")), "T6")
+
+    def test_re_derive_artifact_is_unchanged_idempotent(self):
+        # An artifact that ALREADY carries the identity (the re-derive arm): the block
+        # is a no-op — nothing is overwritten.
+        repo = self.root / "repo"
+        repo.mkdir()
+        _init_git_repo(repo, "some/other-branch")
+        before = {"schema_version": "ATIF-v1.7", "session_id": "s1",
+                  "extra": {"sdlc_task_id": "ORIG-T", "sdlc_spec_id": "ORIG-S",
+                            "environment": {"branch": "orig/branch"}}, "steps": []}
+        self._write_artifact(before)
+        res = _run_bash(self.block, cwd=repo, env=self._env(task="T6", spec="S2"))
+        self.assertEqual(res.returncode, 0, msg=res.stderr)
+        out = self._read_artifact()
+        self.assertEqual(out["extra"]["sdlc_task_id"], "ORIG-T")
+        self.assertEqual(out["extra"]["sdlc_spec_id"], "ORIG-S")
+        self.assertEqual(out["extra"]["environment"]["branch"], "orig/branch")
+
+    def test_off_git_no_task_leaves_artifact_identity_free(self):
+        # OFF-GIT (cwd not a repo) with no task/spec: git yields no branch and the
+        # empty ids are absent, so the artifact stays identity-free and the key stays
+        # 'ungrouped' (accepted; no real arc). Only ids/branch could ever be written.
+        nogit = self.root / "nogit"
+        nogit.mkdir()
+        self._write_artifact({"schema_version": "ATIF-v1.7", "session_id": "s1",
+                              "extra": {}, "steps": []})
+        res = _run_bash(self.block, cwd=nogit, env=self._env(task="", spec=""))
+        self.assertEqual(res.returncode, 0, msg=res.stderr)
+        out = self._read_artifact()
+        self.assertNotIn("sdlc_task_id", out["extra"])
+        self.assertNotIn("sdlc_spec_id", out["extra"])
+        self.assertNotIn("environment", out["extra"])
+        from capture_store_core import group_key_for
+        self.assertEqual(
+            group_key_for(out["extra"].get("sdlc_task_id"),
+                          out["extra"].get("sdlc_spec_id"), None), "ungrouped")
+
+
+class TestStep9ArcSummaryWiring(unittest.TestCase):
+    """Step 9 prints the content-free arc summary from a seeded REAL index, resolving
+    the branch key the same way the writers do (via git). No mocks."""
+
+    ARC_ANCHOR = "Step 9 (after the gate/save/upload)"
+
+    def setUp(self):
+        self.tmp = _tempfile.TemporaryDirectory()
+        self.root = _Path(self.tmp.name)
+        self.home = self.root / "home"
+        (self.home / ".driver" / "capture").mkdir(parents=True)
+        self.index_path = self.home / ".driver" / "capture" / "index.json"
+        self.block = _extract_bash_block(self.ARC_ANCHOR)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _env(self):
+        return {**os.environ, "CLAUDE_PLUGIN_ROOT": str(PLUGIN_ROOT),
+                "HOME": str(self.home)}
+
+    def _write_index(self, index):
+        self.index_path.write_text(_json.dumps(index))
+
+    def test_seeded_branch_index_prints_arc(self):
+        # A branch:x index with two sessions -> "arc branch:x: 2 session(s), <Σsteps>
+        # steps, $<Σcost>", read by the SAME branch:x the writers key with.
+        repo = self.root / "repo"
+        repo.mkdir()
+        _init_git_repo(repo, "x")
+        self._write_index({"branch:x": {
+            "s1": {"session_id": "s1", "record_count": 3, "total_cost_usd": 0.10},
+            "s2": {"session_id": "s2", "record_count": 5, "total_cost_usd": 0.25},
+        }})
+        res = _run_bash(self.block, cwd=repo, env=self._env())
+        self.assertEqual(res.returncode, 0, msg=res.stderr)
+        self.assertEqual(res.stdout.strip(),
+                         "arc branch:x: 2 session(s), 8 steps, $0.3500")
+
+    def test_ungrouped_off_git_prints_nothing(self):
+        # OFF-GIT: no branch -> group_key_for -> 'ungrouped' -> no arc printed, no crash.
+        nogit = self.root / "nogit"
+        nogit.mkdir()
+        self._write_index({"branch:x": {
+            "s1": {"session_id": "s1", "record_count": 3, "total_cost_usd": 0.10}}})
+        res = _run_bash(self.block, cwd=nogit, env=self._env())
+        self.assertEqual(res.returncode, 0, msg=res.stderr)
+        self.assertEqual(res.stdout.strip(), "")
+
+    def test_empty_index_prints_nothing(self):
+        # An empty index (no matching group) -> nothing printed, no crash.
+        repo = self.root / "repo"
+        repo.mkdir()
+        _init_git_repo(repo, "x")
+        self._write_index({})
+        res = _run_bash(self.block, cwd=repo, env=self._env())
+        self.assertEqual(res.returncode, 0, msg=res.stderr)
+        self.assertEqual(res.stdout.strip(), "")
+
+    def test_missing_index_prints_nothing(self):
+        # No index file at all -> the block fails open (|| true), prints nothing.
+        repo = self.root / "repo"
+        repo.mkdir()
+        _init_git_repo(repo, "x")
+        # (index.json intentionally not written)
+        res = _run_bash(self.block, cwd=repo, env=self._env())
+        self.assertEqual(res.returncode, 0, msg=res.stderr)
+        self.assertEqual(res.stdout.strip(), "")
 
 
 if __name__ == "__main__":
