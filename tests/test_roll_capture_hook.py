@@ -382,5 +382,318 @@ class TestRollCaptureNetworkFree(RollCaptureHookBase):
         self.assertIn("OK", res.stdout)
 
 
+# ---------------------------------------------------------------------------
+# Per-roll branch-keyed enrich (update_index_from_store): the authoritative
+# index writer that runs after do_roll. These drive the REAL hook against a
+# pre-seeded redacted-store fixture so ONLY the enrich tail is exercised (the
+# harbor convert is made a no-op by a stub `uv` on PATH that exits nonzero,
+# leaving the pre-seeded store intact) -- no module mocks, real index.json,
+# real git repos for the branch derivation.
+# ---------------------------------------------------------------------------
+
+
+def _git_available() -> bool:
+    return shutil.which("git") is not None
+
+
+@unittest.skipUnless(_jq_available(), "jq is not installed -- skipping enrich tests")
+@unittest.skipUnless(_git_available(), "git is not installed -- skipping enrich tests")
+class RollCaptureEnrichBase(RollCaptureHookBase):
+    """Scaffolding to exercise update_index_from_store against a store fixture.
+
+    A stub `uv` (a real on-disk script that exits 1) keeps `command -v uv`
+    satisfied while forcing do_roll's harbor convert to fail -- so a pre-seeded
+    redacted store survives and the enrich tail reads it. This simulates an
+    environment condition (convert unavailable) with a real executable, not a
+    mock of any internal module.
+    """
+
+    @property
+    def index(self):
+        return self.driver / "capture" / "index.json"
+
+    def _write_index(self, obj):
+        cap = self.driver / "capture"
+        cap.mkdir(parents=True, exist_ok=True)
+        if isinstance(obj, str):
+            self.index.write_text(obj)
+        else:
+            self.index.write_text(json.dumps(obj, indent=2))
+
+    def _read_index(self):
+        return json.loads(self.index.read_text())
+
+    def _seed_store(self, session_id, *, total_steps=None, total_cost_usd=None,
+                    extra_final=None):
+        """Write a real redacted-store fixture with a content-free final_metrics.
+
+        The fixture carries a `content` field OUTSIDE final_metrics to prove the
+        enrich reads ONLY final_metrics (counts/cost) into the index.
+        """
+        store = self._store_dir(session_id)
+        store.mkdir(parents=True, exist_ok=True)
+        fm = {}
+        if total_steps is not None:
+            fm["total_steps"] = total_steps
+        if total_cost_usd is not None:
+            fm["total_cost_usd"] = total_cost_usd
+        if extra_final:
+            fm.update(extra_final)
+        traj = {"final_metrics": fm,
+                "records": [{"message": "secret reasoning content"}]}
+        (store / "trajectory.redacted.json").write_text(json.dumps(traj))
+        return store / "trajectory.redacted.json"
+
+    def _stub_uv_path(self):
+        """A PATH whose `uv` is a stub that exits 1 (convert no-op), every other
+        tool the hook needs symlinked from the real environment."""
+        bindir = self.work / "bin-stub-uv"
+        bindir.mkdir(parents=True, exist_ok=True)
+        for tool in ("bash", "sh", "jq", "python3", "python", "cat", "mkdir",
+                     "mktemp", "mv", "rm", "wc", "stat", "tr", "printf",
+                     "dirname", "env", "uname", "sleep", "git"):
+            real = shutil.which(tool)
+            if real:
+                link = bindir / tool
+                if not link.exists():
+                    try:
+                        link.symlink_to(real)
+                    except OSError:
+                        pass
+        stub = bindir / "uv"
+        stub.write_text("#!/bin/sh\nexit 1\n")
+        stub.chmod(0o755)
+        return str(bindir)
+
+    def _git_repo(self, branch):
+        repo = self.work / f"repo-{branch}-{os.getpid()}-{int(time.time()*1000)%1000000}"
+        repo.mkdir(parents=True, exist_ok=True)
+        env = dict(os.environ)
+        env.update({
+            "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
+            "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t",
+        })
+        subprocess.run(["git", "init", "-q"], cwd=str(repo), env=env, check=True,
+                       capture_output=True)
+        subprocess.run(["git", "checkout", "-q", "-b", branch], cwd=str(repo),
+                       env=env, check=True, capture_output=True)
+        (repo / "f.txt").write_text("x")
+        subprocess.run(["git", "add", "."], cwd=str(repo), env=env, check=True,
+                       capture_output=True)
+        subprocess.run(["git", "commit", "-q", "-m", "init"], cwd=str(repo),
+                       env=env, check=True, capture_output=True)
+        return os.path.realpath(str(repo))
+
+    def _run_enrich(self, session_id, transcript, repo, *, event="SessionEnd",
+                    payload_cwd=True):
+        """Drive the hook so the enrich tail runs synchronously (SessionEnd) with a
+        stub uv that no-ops the convert. `repo` is the cwd used for branch
+        derivation; when payload_cwd is False the .cwd is omitted from stdin so
+        the backward-scan transcript fallback is exercised."""
+        payload = {"session_id": session_id, "transcript_path": str(transcript),
+                   "hook_event_name": event}
+        if payload_cwd:
+            payload["cwd"] = str(repo)
+        return self._run(payload, path=self._stub_uv_path())
+
+
+class TestRollCaptureEnrichInPlace(RollCaptureEnrichBase):
+    def test_enrich_seeds_real_counts_in_place(self):
+        # A branch:x entry for S with null counts, enriched by a roll whose store
+        # carries final_metrics -> S stays under branch:x (no new group) with real
+        # record_count/total_cost_usd/store_path; the index write is atomic (no
+        # temp left behind).
+        self._write_config(rolling_capture=True)
+        repo = self._git_repo("x")
+        sid = self._sid("enrich")
+        t = self._write_transcript(sid, n_turns=5)
+        self._write_index({
+            "branch:x": {
+                sid: {"group_key": "branch:x", "session_id": sid, "cwd": repo,
+                      "first_seen": "2026-06-01T00:00:00+00:00",
+                      "last_seen": "2026-06-01T00:00:00+00:00",
+                      "record_count": None, "total_cost_usd": None,
+                      "prev_session_id": None}
+            }
+        })
+        store = self._seed_store(sid, total_steps=42, total_cost_usd=1.25)
+        res = self._run_enrich(sid, t, repo)
+        self.assertEqual(res.returncode, 0, msg=res.stderr)
+        idx = self._read_index()
+        self.assertEqual(list(idx.keys()), ["branch:x"], "no new group created")
+        entry = idx["branch:x"][sid]
+        self.assertEqual(entry["record_count"], 42)
+        self.assertEqual(entry["total_cost_usd"], 1.25)
+        self.assertEqual(entry["store_path"], str(store))
+        # Atomic write: no .tmp intermediate left in the capture dir.
+        leftovers = [p.name for p in (self.driver / "capture").iterdir()
+                     if ".tmp." in p.name]
+        self.assertEqual(leftovers, [], f"index temp left behind: {leftovers}")
+
+    def test_enrich_reads_only_final_metrics_no_content(self):
+        # Egress-by-construction: the store carries content outside final_metrics;
+        # the index entry must hold only metadata (no message/reasoning content).
+        self._write_config(rolling_capture=True)
+        repo = self._git_repo("x")
+        sid = self._sid("nocontent")
+        t = self._write_transcript(sid, n_turns=5)
+        self._write_index({"branch:x": {sid: {
+            "group_key": "branch:x", "session_id": sid, "cwd": repo,
+            "first_seen": "2026-06-01T00:00:00+00:00",
+            "last_seen": "2026-06-01T00:00:00+00:00",
+            "record_count": None, "total_cost_usd": None, "prev_session_id": None}}})
+        self._seed_store(sid, total_steps=3, total_cost_usd=0.0)
+        res = self._run_enrich(sid, t, repo)
+        self.assertEqual(res.returncode, 0, msg=res.stderr)
+        blob = self.index.read_text()
+        for banned in ("secret reasoning content", "reasoning", "observation"):
+            self.assertNotIn(banned, blob, f"index leaked content: {banned!r}")
+        # A genuine 0.0 cost (free/cached roll) is a real value and is stored.
+        self.assertEqual(self._read_index()["branch:x"][sid]["total_cost_usd"], 0.0)
+
+
+class TestRollCaptureEnrichBranchMigrate(RollCaptureEnrichBase):
+    def test_branch_change_migrates_entry(self):
+        # A branch:main entry for S, then a roll whose cwd is on branch `feature`
+        # -> S migrates to branch:feature only; branch:main is pruned; first_seen
+        # preserved.
+        self._write_config(rolling_capture=True)
+        repo = self._git_repo("feature")
+        sid = self._sid("migrate")
+        t = self._write_transcript(sid, n_turns=5)
+        first_seen = "2026-06-01T00:00:00+00:00"
+        self._write_index({"branch:main": {sid: {
+            "group_key": "branch:main", "session_id": sid, "cwd": repo,
+            "first_seen": first_seen, "last_seen": first_seen,
+            "record_count": 9, "total_cost_usd": 0.3, "prev_session_id": None}}})
+        self._seed_store(sid, total_steps=15, total_cost_usd=0.7)
+        res = self._run_enrich(sid, t, repo)
+        self.assertEqual(res.returncode, 0, msg=res.stderr)
+        idx = self._read_index()
+        self.assertNotIn("branch:main", idx, "old branch group must be pruned")
+        self.assertIn("branch:feature", idx)
+        entry = idx["branch:feature"][sid]
+        self.assertEqual(entry["first_seen"], first_seen, "first_seen preserved")
+        self.assertEqual(entry["record_count"], 15)
+        self.assertEqual(entry["total_cost_usd"], 0.7)
+
+
+class TestRollCaptureEnrichCwdFallback(RollCaptureEnrichBase):
+    def _write_transcript_ending_cwdless(self, session_id, repo):
+        """A transcript whose LAST record has NO .cwd (a trailing mode record) while
+        an EARLIER record DOES -> the backward-scan must recover the earlier cwd.
+        Ends cwd-less so a `tail -n 1` fallback would fail (non-vacuous guard)."""
+        sess_dir = self.work / session_id
+        sess_dir.mkdir(parents=True, exist_ok=True)
+        tpath = sess_dir / "session.jsonl"
+        lines = []
+        # earlier records carry .cwd
+        for i in range(3):
+            lines.append(json.dumps({
+                "type": "assistant", "sessionId": session_id, "cwd": repo,
+                "timestamp": "2026-06-25T00:00:00Z",
+                "message": {"id": f"m{i}", "model": "claude-opus-4-8-20260315",
+                            "content": [{"type": "text", "text": "hi"}],
+                            "usage": {"input_tokens": 1, "output_tokens": 1}}}))
+        # trailing record with NO .cwd (mode / file-history-snapshot style)
+        lines.append(json.dumps({"type": "mode", "mode": "default",
+                                 "timestamp": "2026-06-25T00:00:01Z"}))
+        tpath.write_text("\n".join(lines) + "\n")
+        return tpath
+
+    def test_backward_scan_recovers_cwd_from_earlier_record(self):
+        # No .cwd on the payload; transcript ends in a cwd-less record. The tail
+        # backward-scans PAST that record to the earlier cwd, derives the branch,
+        # and enriches. (A tail -n 1 fallback would find no cwd and fail this.)
+        self._write_config(rolling_capture=True)
+        repo = self._git_repo("scan")
+        sid = self._sid("bscan")
+        t = self._write_transcript_ending_cwdless(sid, repo)
+        self._write_index({"branch:scan": {sid: {
+            "group_key": "branch:scan", "session_id": sid, "cwd": repo,
+            "first_seen": "2026-06-01T00:00:00+00:00",
+            "last_seen": "2026-06-01T00:00:00+00:00",
+            "record_count": None, "total_cost_usd": None, "prev_session_id": None}}})
+        self._seed_store(sid, total_steps=8, total_cost_usd=0.2)
+        res = self._run_enrich(sid, t, repo, payload_cwd=False)
+        self.assertEqual(res.returncode, 0, msg=res.stderr)
+        idx = self._read_index()
+        self.assertIn("branch:scan", idx)
+        self.assertEqual(idx["branch:scan"][sid]["record_count"], 8)
+        self.assertEqual(idx["branch:scan"][sid]["total_cost_usd"], 0.2)
+
+    def test_no_resolvable_cwd_no_index_write(self):
+        # No .cwd on the payload AND no transcript record has a cwd -> the tail
+        # returns 0 with no crash and no index write.
+        self._write_config(rolling_capture=True)
+        sid = self._sid("nocwd")
+        sess_dir = self.work / sid
+        sess_dir.mkdir(parents=True, exist_ok=True)
+        tpath = sess_dir / "session.jsonl"
+        # transcript with content but NO record carrying a .cwd
+        lines = [json.dumps({"type": "mode", "mode": "default"}),
+                 json.dumps({"type": "last-prompt", "text": "hi"})]
+        tpath.write_text("\n".join(lines) + "\n")
+        self._seed_store(sid, total_steps=5, total_cost_usd=0.1)
+        res = self._run_enrich(sid, tpath, self.work, payload_cwd=False)
+        self.assertEqual(res.returncode, 0, msg=res.stderr)
+        self.assertFalse(self.index.exists(),
+                         "no resolvable cwd -> no index write")
+
+
+class TestRollCaptureEnrichOffGit(RollCaptureEnrichBase):
+    def test_off_git_cwd_skips_index_write(self):
+        # A roll whose cwd is a non-git dir -> branch empty -> group_key
+        # 'ungrouped' -> the enrich tail skips the write (no ungrouped bloat); rc 0.
+        self._write_config(rolling_capture=True)
+        sid = self._sid("offgit")
+        t = self._write_transcript(sid, n_turns=5)
+        nongit = self.work / "plain"
+        nongit.mkdir(parents=True, exist_ok=True)
+        self._seed_store(sid, total_steps=5, total_cost_usd=0.1)
+        res = self._run_enrich(sid, t, nongit)
+        self.assertEqual(res.returncode, 0, msg=res.stderr)
+        self.assertFalse(self.index.exists(),
+                         "off-git (ungrouped) roll must not write an index entry")
+
+
+@unittest.skipUnless(_harbor_available(), "harbor not installed")
+@unittest.skipUnless(_git_available(), "git not installed")
+class TestRollCaptureEnrichHarborReal(RollCaptureEnrichBase):
+    """A REAL roll (harbor convert + redact) enriches a seeded branch:x entry with
+    real counts/cost derived from the converted store's final_metrics."""
+
+    def test_real_roll_enriches_branch_entry(self):
+        if shutil.which("uv") is None:
+            self.skipTest("uv not installed -- roll path needs uv")
+        self._write_config(rolling_capture=True)
+        repo = self._git_repo("x")
+        sid = self._sid("realenrich")
+        # transcript lives under the git repo so the roll's cwd derivation works
+        sess_dir = Path(repo) / sid
+        sess_dir.mkdir(parents=True, exist_ok=True)
+        tpath = sess_dir / "session.jsonl"
+        tpath.write_text(
+            "\n".join(_transcript_lines(sid, n_turns=4)) + "\n")
+        self._write_index({"branch:x": {sid: {
+            "group_key": "branch:x", "session_id": sid, "cwd": repo,
+            "first_seen": "2026-06-01T00:00:00+00:00",
+            "last_seen": "2026-06-01T00:00:00+00:00",
+            "record_count": None, "total_cost_usd": None, "prev_session_id": None}}})
+        payload = {"session_id": sid, "transcript_path": str(tpath),
+                   "hook_event_name": "SessionEnd", "cwd": repo}
+        res = self._run(payload)  # real uv/harbor, foreground SessionEnd finalize
+        self.assertEqual(res.returncode, 0, msg=res.stderr)
+        redacted = self._store_dir(sid) / "trajectory.redacted.json"
+        self.assertTrue(redacted.exists(),
+                        f"real roll must publish the store; stderr={res.stderr}")
+        idx = self._read_index()
+        self.assertIn("branch:x", idx)
+        entry = idx["branch:x"][sid]
+        self.assertIsNotNone(entry["record_count"],
+                             "real roll must enrich record_count from final_metrics")
+        self.assertIsNotNone(entry["total_cost_usd"])
+
+
 if __name__ == "__main__":
     unittest.main()

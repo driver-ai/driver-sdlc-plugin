@@ -82,10 +82,88 @@ do_roll() {
   rm -f "$TMP"
 }
 
+# --- per-roll branch-keyed enrich (authoritative index writer) ---
+# Runs after do_roll. Derives branch from cwd (git) and reads final_metrics
+# (counts/cost only — content-free) from the just-written REDACTED store, then
+# enriches the session's branch:<branch> index entry with real counts/cost. Task/spec
+# are NOT read — the rolled store never carries them.
+update_index_from_store() {
+  STORE="$HOME/.driver/capture/sessions/$SID/trajectory.redacted.json"
+  [ -f "$STORE" ] || return 0
+  CWD="$(printf '%s' "$INPUT" | jq -r '.cwd // empty' 2>/dev/null)"
+  # Stop/SessionEnd may omit .cwd from the hook payload; fall back to the cwd recorded on
+  # the last transcript record that HAS one. Most but not all record types carry .cwd —
+  # trailing `mode` / `last-prompt` / `file-history-snapshot` records do NOT (~20% of real
+  # transcripts end in such a record), so `tail -n 1 | jq .cwd` is unreliable; scan
+  # BACKWARD for the last record with a .cwd so the authoritative writer never hinges on an
+  # absent payload field (RUN-verified to recover the cwd where tail -n 1 returns empty).
+  [ -n "$CWD" ] || CWD="$(python3 -c 'import sys, json
+for line in reversed(open(sys.argv[1]).read().splitlines()):
+    line = line.strip()
+    if not line:
+        continue
+    try:
+        rec = json.loads(line)
+    except Exception:
+        continue
+    if rec.get("cwd"):
+        print(rec["cwd"]); break' "$TRANSCRIPT" 2>/dev/null)"
+  [ -n "$CWD" ] || return 0
+  BRANCH="$(git -C "$CWD" branch --show-current 2>/dev/null)"
+  INDEX="$HOME/.driver/capture/index.json"
+  DRVR_PLUGIN_ROOT="$PLUGIN_ROOT" python3 - "$INDEX" "$STORE" "$SID" "$CWD" "$BRANCH" <<'PY' || return 0
+import json, os, sys, datetime
+sys.path.insert(0, os.path.join(os.environ["DRVR_PLUGIN_ROOT"], "scripts", "capture"))
+from capture_store_core import group_key_for, update_index, resolve_lineage
+index_path, store_path, sid, cwd, branch = (
+    sys.argv[1], sys.argv[2], sys.argv[3], os.path.realpath(sys.argv[4]), (sys.argv[5] or None))
+try:
+    traj = json.load(open(store_path))
+except Exception:
+    sys.exit(0)
+fm = traj.get("final_metrics") or {}
+index = {}
+if os.path.exists(index_path):
+    try:
+        index = json.load(open(index_path))
+    except Exception as e:
+        print(f"Warning: capture index unreadable ({e.__class__.__name__}); "
+              f"treating as empty: {index_path}", file=sys.stderr)
+        index = {}
+# branch-keyed rolling arc (no task/spec read). The same key SessionStart wrote, so
+# this enriches in place; a branch switch mid-session migrates the entry.
+gk = group_key_for(None, None, branch)
+if gk == "ungrouped":
+    sys.exit(0)             # off-git roll: not a real arc; don't bloat the index
+now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+prev = resolve_lineage(index, gk, cwd, sid)
+# fm.get(...) is None when a metric is absent -> the is-None merge keeps the prior;
+# a genuine 0/0.0 (free/cached roll) is a real value and overwrites.
+entry = {"group_key": gk, "session_id": sid, "cwd": cwd,
+         "first_seen": now, "last_seen": now,
+         "store_path": store_path,
+         "record_count": fm.get("total_steps"),
+         "total_cost_usd": fm.get("total_cost_usd"),
+         "prev_session_id": prev}
+index = update_index(index, entry)
+os.makedirs(os.path.dirname(index_path), exist_ok=True)
+tmp = index_path + ".tmp." + str(os.getpid())
+try:
+    json.dump(index, open(tmp, "w"), indent=2)
+    os.replace(tmp, index_path)
+finally:
+    if os.path.exists(tmp):
+        os.remove(tmp)
+PY
+}
+
+# call it after do_roll (foreground on SessionEnd, inside the backgrounded subshell
+# on Stop so it never blocks the turn):
 if [ "$EVENT" = "SessionEnd" ]; then
-  do_roll                       # foreground: must complete before teardown
+  do_roll
+  update_index_from_store
 else
-  do_roll >/dev/null 2>&1 &     # background: never block the turn
+  ( do_roll; update_index_from_store ) >/dev/null 2>&1 &
 fi
 
 exit 0
