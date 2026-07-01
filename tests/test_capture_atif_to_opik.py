@@ -583,10 +583,10 @@ class TestRegisterAgainstLocalOpik(unittest.TestCase):
         self.assertFalse(reused, "first register() should mint a new trace id")
 
         # The pure planner decides exactly which spans exist; the live run must
-        # land all of them. plan_spans gives: main step + its tool span + the
-        # subagent step span = 3.
+        # land all of them. plan_spans gives: the user step + the agent step + its
+        # tool span + the subagent step span = 4.
         planned = atif_to_opik.plan_spans(traj, trace_id)
-        self.assertEqual(len(planned), 3)
+        self.assertEqual(len(planned), 4)
         planned_ids = {s["id"] for s in planned}
         subagent_step_id = atif_to_opik._span_id(
             trace_id, "opik-register-itest-session/agent-rev:step1")
