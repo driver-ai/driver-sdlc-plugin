@@ -37,6 +37,9 @@
     "./commands/review.md",
     "./commands/capture-session.md",
     "./commands/capture-sync.md",
-    "./commands/capture-viewer.md"
+    "./commands/capture-viewer.md",
+    "./commands/capture-stop.md",
+    "./commands/capture-start.md",
+    "./commands/capture-statusline.md"
   ]
 }

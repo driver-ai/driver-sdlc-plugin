@@ -396,6 +396,9 @@ Features follow a phased development lifecycle. Each phase has a dedicated skill
 | `/drvr:retro` | Evaluate session quality, patterns, and improvements |
 | `/drvr:driverize` | Install Driver enforcement stack — hooks, shadow agents, context injection |
 | `/drvr:un-driverize` | Remove Driver enforcement stack — restore backups and remove artifacts |
+| `/drvr:capture-stop` | Stop rolling session capture -- flips the global flag; stored data is untouched |
+| `/drvr:capture-start` | Resume rolling session capture |
+| `/drvr:capture-statusline` | Install or remove the "capturing" statusline badge (composes with an existing statusline) |
 
 ## Skills
 

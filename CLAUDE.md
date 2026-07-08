@@ -163,6 +163,9 @@ Every feature has a `FEATURE_LOG.md` at its root -- the source of truth for life
 | `/drvr:retro` | Analyze current session -- evaluate work quality, identify improvements |
 | `/drvr:driverize` | Install Driver enforcement stack -- hooks, shadow agents, context injection, and CLAUDE.md routing |
 | `/drvr:un-driverize` | Remove Driver enforcement stack -- restore backups and remove driverize artifacts |
+| `/drvr:capture-stop` | Stop rolling session capture -- flips the global flag; stored data is untouched |
+| `/drvr:capture-start` | Resume rolling session capture |
+| `/drvr:capture-statusline` | Install or remove the "capturing" statusline badge (composes with an existing statusline) |
 
 ### Skills
 

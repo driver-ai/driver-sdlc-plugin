@@ -288,6 +288,7 @@ class TestCommandQualification(unittest.TestCase):
         "docs-artifacts", "open-pr", "orchestrate", "retro", "setup",
         "driverize", "un-driverize", "review", "capture-session",
         "capture-sync", "capture-viewer",
+        "capture-stop", "capture-start", "capture-statusline",
     ]
 
     SCAN_DIRS = ["commands", "skills", "agents", "docs", "hooks", "templates"]
@@ -724,6 +725,97 @@ class TestCaptureViewerGovernance(unittest.TestCase):
         self.assertIn(
             "(_BIND_HOST, port)", source,
             "make_server must bind (_BIND_HOST, port) — the pinned localhost constant",
+        )
+
+
+class TestCaptureStatuslineGovernance(unittest.TestCase):
+    """Registration + never-clobber governance for /drvr:capture-statusline.
+
+    These tests pin the registration of the capture-control commands and the
+    load-bearing ordering of the capture-statusline command body — backup before
+    the settings write, an AskUserQuestion gate before the settings write, and
+    the compose branch (existing statusLine.command handling instantiated from
+    statusline-wrapper-template.sh, not improvised) documented before the
+    settings write — so an MD regression that force-installs over user-owned
+    configuration fails the suite.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.command_path = PLUGIN_ROOT / "commands" / "capture-statusline.md"
+
+    def test_capture_controls_registered(self):
+        """capture-statusline, capture-stop, and capture-start must all be in the
+        qualified-name scanner's COMMANDS list."""
+        for cmd in ("capture-statusline", "capture-stop", "capture-start"):
+            self.assertIn(
+                cmd,
+                TestCommandQualification.COMMANDS,
+                f"{cmd} not added to COMMANDS list",
+            )
+
+    def test_statusline_governance_structure(self):
+        """The backup instruction, the AskUserQuestion gate, and the compose-branch
+        markers (existing statusLine.command + statusline-wrapper-template.sh) must
+        all appear BEFORE the settings.json write instruction."""
+        self.assertTrue(
+            self.command_path.is_file(),
+            f"command file does not exist: {self.command_path}",
+        )
+        body = get_md_body(self.command_path)
+        # Normalize whitespace so ordering checks are robust to line wrapping.
+        norm = " ".join(body.split())
+
+        write_idx = norm.find("write settings.json")
+        self.assertNotEqual(
+            write_idx, -1,
+            "capture-statusline body has no settings.json write step to order against",
+        )
+
+        # (a) Backup instruction must precede the settings write.
+        backup_idx = norm.find("settings.json.pre-drvr-statusline")
+        self.assertNotEqual(
+            backup_idx, -1,
+            "capture-statusline body has no settings.json.pre-drvr-statusline backup instruction",
+        )
+        self.assertLess(
+            backup_idx, write_idx,
+            "the backup instruction must appear BEFORE the settings.json write "
+            "(back up only-if-absent, then write)",
+        )
+
+        # (b) AskUserQuestion gate must precede the settings write.
+        gate_idx = norm.find("AskUserQuestion")
+        self.assertNotEqual(gate_idx, -1, "capture-statusline body has no AskUserQuestion gate")
+        self.assertLess(
+            gate_idx, write_idx,
+            "the AskUserQuestion gate must appear BEFORE the settings.json write "
+            "(no settings change without explicit approval)",
+        )
+
+        # (c) Compose branch: the existing-statusLine.command marker AND the wrapper
+        # template filename must both precede the settings write — the compose path
+        # exists and is template-instantiated, not improvised.
+        compose_idx = norm.find("existing statusLine.command")
+        self.assertNotEqual(
+            compose_idx, -1,
+            "capture-statusline body has no existing-statusLine.command compose branch",
+        )
+        self.assertLess(
+            compose_idx, write_idx,
+            "the compose branch for an existing statusLine.command must appear BEFORE "
+            "the settings.json write",
+        )
+
+        template_idx = norm.find("statusline-wrapper-template.sh")
+        self.assertNotEqual(
+            template_idx, -1,
+            "capture-statusline body does not reference statusline-wrapper-template.sh",
+        )
+        self.assertLess(
+            template_idx, write_idx,
+            "the statusline-wrapper-template.sh instantiation must appear BEFORE "
+            "the settings.json write",
         )
 
 
