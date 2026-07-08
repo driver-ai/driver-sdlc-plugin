@@ -14,10 +14,10 @@ PATH is stripped to simulate a missing `uv` / `python3` for the degrade cases.
 The cases that need a real conversion (a token actually redacted into the store;
 the SessionEnd synchronous finalize; the real-roll index enrich) require
 logs2atif -- an external dependency absent from the zero-dep CI path, pinned to
-a git+ssh ref. They are gated with
+a git ref. They are gated with
 `@unittest.skipUnless(_logs2atif_available(), ...)` plus a per-test
 pin-resolvability probe (`_hook_pin_resolvable`) -- named justifications for
-skipping, NOT mocks of logs2atif. When logs2atif is absent or the hook's git+ssh
+skipping, NOT mocks of logs2atif. When logs2atif is absent or the hook's git
 pin cannot resolve from this environment, they SKIP cleanly; that is expected.
 """
 
@@ -37,8 +37,8 @@ from conftest import PLUGIN_ROOT
 
 HOOK = PLUGIN_ROOT / "hooks" / "roll-capture.sh"
 
-_HOOK_PIN_SKIP_REASON = ("logs2atif git+ssh pin not resolvable from this "
-                         "environment (needs GitHub ssh auth or a warm uv cache)")
+_HOOK_PIN_SKIP_REASON = ("logs2atif git pin not resolvable from this "
+                         "environment (needs GitHub auth or a warm uv cache)")
 
 
 def _logs2atif_available() -> bool:
@@ -65,7 +65,7 @@ def _hook_dep_pin() -> str:
 def _real_uv_cache_dir() -> str:
     """The uv cache dir under the REAL home (asked of uv once). The isolated
     test HOME would otherwise point uv at an empty cache, forcing every hook run
-    through a cold git+ssh resolve. "" when uv is absent or unaskable."""
+    through a cold git resolve. "" when uv is absent or unaskable."""
     uv = shutil.which("uv")
     if uv is None:
         return ""
@@ -80,14 +80,16 @@ def _real_uv_cache_dir() -> str:
 @lru_cache(maxsize=None)
 def _hook_pin_resolvable() -> bool:
     """Probe (once per test run) whether the hook's inner
-    `uv run --with '<git+ssh pin>'` can resolve from this environment.
+    `uv run --with '<git pin>'` can resolve from this environment.
 
-    logs2atif is pinned to a git+ssh ref, so resolution needs GitHub ssh auth or
+    logs2atif is pinned to a git ref, so resolution needs GitHub auth matching
+    the pin's transport (credential helper for https, ssh keys for ssh) or
     an already-warm uv cache; the e2e tests that run the real hook SKIP with a
     named reason when neither is available (external dependency absent -- never
     mocked). A successful probe also warms the uv cache under the real HOME's
-    ssh setup, which the isolated-HOME hook runs then reuse via UV_CACHE_DIR.
-    BatchMode/ConnectTimeout keep an authless or offline probe from hanging."""
+    auth setup, which the isolated-HOME hook runs then reuse via UV_CACHE_DIR.
+    The ssh options only matter for ssh-transport pins; they keep an authless
+    or offline probe from hanging instead of prompting."""
     pin = _hook_dep_pin()
     uv = shutil.which("uv")
     if not pin or uv is None:
@@ -193,10 +195,10 @@ class RollCaptureHookBase(unittest.TestCase):
     def _run(self, payload, *, path=None, env_overrides=None):
         """Run the hook with `payload` as JSON stdin under the isolated HOME.
 
-        The isolated HOME hides the real uv cache and ~/.ssh, both of which the
-        hook's inner `uv run --with '<git+ssh logs2atif pin>'` needs to resolve:
-        point uv back at the real cache (UV_CACHE_DIR) and auto-accept unknown
-        host keys (the fake HOME has no known_hosts). Whether auth/cache
+        The isolated HOME hides the real uv cache and ~/.ssh, which the hook's
+        inner `uv run --with '<git logs2atif pin>'` may need to resolve: point
+        uv back at the real cache (UV_CACHE_DIR) and, for ssh-transport pins,
+        auto-accept unknown host keys (the fake HOME has no known_hosts). Whether auth/cache
         actually suffice is probed by _hook_pin_resolvable; unresolvable
         environments skip the real-roll e2e tests by name."""
         env = dict(os.environ)

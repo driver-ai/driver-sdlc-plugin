@@ -81,7 +81,10 @@ do_roll() {
   mkdir -p "$STORE_DIR" 2>/dev/null || return 0
   TMP="$(mktemp "${TMPDIR:-/tmp}/driver-roll-$SID.XXXXXX")" || return 0
   # --session-dir locates subagent sidechains at <dir>/<session_id>/subagents/.
-  if uv run --with 'logs2atif @ git+ssh://git@github.com/driver-ai/logs2atif.git@3364a76' python "$PLUGIN_ROOT/scripts/capture/cc_to_atif.py" \
+  # Full-SHA https pin: https matches this machine's GitHub auth (credential
+  # helper), and uv treats a full 40-char SHA as immutable — warm rolls reuse the
+  # cached build with no network fetch (a short ref re-resolves remotely per run).
+  if uv run --with 'logs2atif @ git+https://github.com/driver-ai/logs2atif.git@3364a764293525faea54a3e3658812f034a808f7' python "$PLUGIN_ROOT/scripts/capture/cc_to_atif.py" \
         "$TRANSCRIPT" --session-dir "$(dirname "$TRANSCRIPT")" --out "$TMP" >/dev/null 2>&1; then
     RTMP="$STORE_DIR/.redacted.$$.tmp"
     FTMP="$STORE_DIR/.flags.$$.tmp"

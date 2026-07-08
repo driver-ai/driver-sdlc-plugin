@@ -177,7 +177,7 @@ if [ -n "$STORE" ] && [ -f "$STORE" ] && [ "$FRESH" = "1" ]; then
     cp "$STORE" "$CUR/trajectory.redacted.json"
     cp "$(dirname "$STORE")/flags.json" "$CUR/flags.json" 2>/dev/null || true
 else
-    uv run --with 'logs2atif @ git+ssh://git@github.com/driver-ai/logs2atif.git@3364a76' python "${CLAUDE_PLUGIN_ROOT}/scripts/capture/cc_to_atif.py" \
+    uv run --with 'logs2atif @ git+https://github.com/driver-ai/logs2atif.git@3364a764293525faea54a3e3658812f034a808f7' python "${CLAUDE_PLUGIN_ROOT}/scripts/capture/cc_to_atif.py" \
         "$TRANSCRIPT" --task-id "$TASK" --spec-id "$SPEC" --intent "$INTENT" \
         --exclude-marker '/drvr:capture-session' --env-file "$CUR/env.json" \
         --session-dir "$DIR" \
