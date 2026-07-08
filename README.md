@@ -339,6 +339,17 @@ Tracks which skills are loaded during a session by appending skill names to a se
 
 Auto-commits uncommitted SDLC artifacts (research docs, plans, implementation logs, feature logs) when a Claude Code session ends. Acts as a safety net to prevent artifact loss from session crashes or forgotten commits. Scans all feature directories for uncommitted `.md` files in artifact directories and commits them with a descriptive message. Follows the fail-open pattern — never blocks session termination.
 
+### session-start-banner (SessionStart)
+
+The plugin's first user-visible hook: shows a "🔴 Capture ON" banner when a session starts, resumes, or is cleared while rolling capture is enabled, so a recorded session is never a surprise. Prints nothing when capture is off.
+
+### Capture indicators
+
+Two surfaces show that rolling capture is recording, both reading `~/.driver/config.json` locally on each render:
+
+- **Banner (zero-config)** — the `session-start-banner` hook above. One message per session start/resume/clear: what is being recorded, where it goes (`~/.driver/capture`), and how to stop (`/drvr:capture-stop`).
+- **Statusline badge (opt-in)** — `/drvr:capture-statusline` installs a persistent "📹 capturing" badge into the `statusLine` slot of `~/.claude/settings.json`, after showing you the exact change for approval. An existing statusline is composed with, never replaced: the badge is appended to the final line of its output. After a plugin update, re-run `/drvr:capture-statusline` to refresh the installed copies under `~/.claude/drvr/`; run `/drvr:capture-statusline remove` to restore the prior state.
+
 All hooks resolve their configuration via the `CLAUDE_PLUGIN_ROOT` environment variable (set by Claude Code) with a fallback to relative path resolution for backward compatibility. They follow a fail-open pattern — errors never block user operations.
 
 ## Friction Tracking
