@@ -16,9 +16,9 @@ self-hosted Opik store (opt-in).
 (Step 6) is the load-bearing governance control: no network egress runs before
 it, and the default approved action is a local save with no egress.
 
-**Scripts** (referenced via `${CLAUDE_PLUGIN_ROOT}`; the convert/redact/render
-scripts are pure stdlib, the Opik path needs `uv`):
-- `${CLAUDE_PLUGIN_ROOT}/scripts/capture/cc_to_atif.py` — JSONL transcript -> ATIF
+**Scripts** (referenced via `${CLAUDE_PLUGIN_ROOT}`; the redact/render scripts
+are pure stdlib, the convert and Opik paths need `uv`):
+- `${CLAUDE_PLUGIN_ROOT}/scripts/capture/cc_to_atif.py` — JSONL transcript -> ATIF (via logs2atif)
 - `${CLAUDE_PLUGIN_ROOT}/scripts/capture/redact.py` — secret redaction pass
 - `${CLAUDE_PLUGIN_ROOT}/scripts/capture/render_trace.py` — egress-safe summary + local HTML review
 - `${CLAUDE_PLUGIN_ROOT}/scripts/capture/atif_to_viewer.py` — feed the redacted trajectory into the trajectory viewer
@@ -177,7 +177,7 @@ if [ -n "$STORE" ] && [ -f "$STORE" ] && [ "$FRESH" = "1" ]; then
     cp "$STORE" "$CUR/trajectory.redacted.json"
     cp "$(dirname "$STORE")/flags.json" "$CUR/flags.json" 2>/dev/null || true
 else
-    uv run --with 'harbor~=0.16' python "${CLAUDE_PLUGIN_ROOT}/scripts/capture/cc_to_atif.py" \
+    uv run --with 'logs2atif @ git+ssh://git@github.com/driver-ai/logs2atif.git@3364a76' python "${CLAUDE_PLUGIN_ROOT}/scripts/capture/cc_to_atif.py" \
         "$TRANSCRIPT" --task-id "$TASK" --spec-id "$SPEC" --intent "$INTENT" \
         --exclude-marker '/drvr:capture-session' --env-file "$CUR/env.json" \
         --session-dir "$DIR" \

@@ -1,6 +1,6 @@
 """Unit tests for the pure `environment.build_environment` core (Contract C).
 
-Pure-core tests: import `environment` ONLY. No harbor, no mocks, no I/O. Stdlib
+Pure-core tests: import `environment` ONLY. No logs2atif, no mocks, no I/O. Stdlib
 `unittest` only. `build_environment` is a pure transform of the facts handed to
 it, so these tests exercise it directly with plain kwargs.
 """

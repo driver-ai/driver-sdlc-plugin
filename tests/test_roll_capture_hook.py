@@ -11,32 +11,39 @@ Every test uses an isolated tmp HOME (so config.json + the capture store live
 under it, never the developer's real ~/.driver) and a unique per-test session id.
 PATH is stripped to simulate a missing `uv` / `python3` for the degrade cases.
 
-The two cases that need a real conversion (a token actually redacted into the
-store; the SessionEnd synchronous finalize) require harbor, an external dependency
-absent from the zero-dep CI path. They are gated with
-`@unittest.skipUnless(_harbor_available(), "harbor not installed")` -- a named
-justification for skipping, NOT a mock of harbor. When harbor is absent they SKIP
-cleanly; that is expected.
+The cases that need a real conversion (a token actually redacted into the store;
+the SessionEnd synchronous finalize; the real-roll index enrich) require
+logs2atif -- an external dependency absent from the zero-dep CI path, pinned to
+a git+ssh ref. They are gated with
+`@unittest.skipUnless(_logs2atif_available(), ...)` plus a per-test
+pin-resolvability probe (`_hook_pin_resolvable`) -- named justifications for
+skipping, NOT mocks of logs2atif. When logs2atif is absent or the hook's git+ssh
+pin cannot resolve from this environment, they SKIP cleanly; that is expected.
 """
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
 import tempfile
 import time
 import unittest
+from functools import lru_cache
 from pathlib import Path
 
 from conftest import PLUGIN_ROOT
 
 HOOK = PLUGIN_ROOT / "hooks" / "roll-capture.sh"
 
+_HOOK_PIN_SKIP_REASON = ("logs2atif git+ssh pin not resolvable from this "
+                         "environment (needs GitHub ssh auth or a warm uv cache)")
 
-def _harbor_available() -> bool:
+
+def _logs2atif_available() -> bool:
     try:
-        import harbor  # noqa: F401
+        import logs2atif  # noqa: F401
         return True
     except Exception:
         return False
@@ -44,6 +51,59 @@ def _harbor_available() -> bool:
 
 def _jq_available() -> bool:
     return shutil.which("jq") is not None
+
+
+@lru_cache(maxsize=None)
+def _hook_dep_pin() -> str:
+    """The exact dependency string the hook hands to `uv run --with`, parsed from
+    the hook source so the resolvability probe always exercises the real pin."""
+    m = re.search(r"uv run --with '([^']+)'", HOOK.read_text())
+    return m.group(1) if m else ""
+
+
+@lru_cache(maxsize=None)
+def _real_uv_cache_dir() -> str:
+    """The uv cache dir under the REAL home (asked of uv once). The isolated
+    test HOME would otherwise point uv at an empty cache, forcing every hook run
+    through a cold git+ssh resolve. "" when uv is absent or unaskable."""
+    uv = shutil.which("uv")
+    if uv is None:
+        return ""
+    try:
+        res = subprocess.run([uv, "cache", "dir"], capture_output=True,
+                             text=True, timeout=30)
+    except Exception:
+        return ""
+    return res.stdout.strip() if res.returncode == 0 else ""
+
+
+@lru_cache(maxsize=None)
+def _hook_pin_resolvable() -> bool:
+    """Probe (once per test run) whether the hook's inner
+    `uv run --with '<git+ssh pin>'` can resolve from this environment.
+
+    logs2atif is pinned to a git+ssh ref, so resolution needs GitHub ssh auth or
+    an already-warm uv cache; the e2e tests that run the real hook SKIP with a
+    named reason when neither is available (external dependency absent -- never
+    mocked). A successful probe also warms the uv cache under the real HOME's
+    ssh setup, which the isolated-HOME hook runs then reuse via UV_CACHE_DIR.
+    BatchMode/ConnectTimeout keep an authless or offline probe from hanging."""
+    pin = _hook_dep_pin()
+    uv = shutil.which("uv")
+    if not pin or uv is None:
+        return False
+    env = dict(os.environ)
+    env.setdefault("GIT_SSH_COMMAND",
+                   "ssh -o StrictHostKeyChecking=accept-new -o BatchMode=yes "
+                   "-o ConnectTimeout=10")
+    try:
+        res = subprocess.run(
+            [uv, "run", "--with", pin, "python", "-c", "import logs2atif"],
+            capture_output=True, text=True, timeout=240, env=env,
+            cwd=tempfile.gettempdir())  # neutral cwd: no project to sync
+    except Exception:
+        return False
+    return res.returncode == 0
 
 
 def _wait_for(path: Path, seconds: float, interval: float = 0.2) -> bool:
@@ -66,7 +126,7 @@ def _assert_absent_for(test, path: Path, seconds: float, interval: float = 0.2):
 
 # A tiny valid Claude Code JSONL transcript: one assistant turn so the converter
 # yields at least one step (avoids an empty-trajectory error confounding the run).
-# A planted Anthropic token lives in the assistant text so the harbor-positive
+# A planted Anthropic token lives in the assistant text so the logs2atif-positive
 # case can prove the store holds only the REDACTED artifact.
 PLANTED_TOKEN = "sk-ant-" + "A" * 40
 
@@ -131,9 +191,19 @@ class RollCaptureHookBase(unittest.TestCase):
         return self.driver / "capture" / "sessions" / session_id
 
     def _run(self, payload, *, path=None, env_overrides=None):
-        """Run the hook with `payload` as JSON stdin under the isolated HOME."""
+        """Run the hook with `payload` as JSON stdin under the isolated HOME.
+
+        The isolated HOME hides the real uv cache and ~/.ssh, both of which the
+        hook's inner `uv run --with '<git+ssh logs2atif pin>'` needs to resolve:
+        point uv back at the real cache (UV_CACHE_DIR) and auto-accept unknown
+        host keys (the fake HOME has no known_hosts). Whether auth/cache
+        actually suffice is probed by _hook_pin_resolvable; unresolvable
+        environments skip the real-roll e2e tests by name."""
         env = dict(os.environ)
         env["HOME"] = str(self.home)
+        if "UV_CACHE_DIR" not in env and _real_uv_cache_dir():
+            env["UV_CACHE_DIR"] = _real_uv_cache_dir()
+        env.setdefault("GIT_SSH_COMMAND", "ssh -o StrictHostKeyChecking=accept-new")
         if path is not None:
             env["PATH"] = path
         if env_overrides:
@@ -154,7 +224,7 @@ class RollCaptureHookBase(unittest.TestCase):
 
 
 class TestRollCaptureGatesAndFailOpen(RollCaptureHookBase):
-    """Config gate, fail-open, and graceful degrade -- all stdlib-only (no harbor)."""
+    """Config gate, fail-open, and graceful degrade -- all stdlib-only (no logs2atif)."""
 
     def test_disabled_when_rolling_capture_unset(self):
         # No rolling_capture key -> gate closed -> exit 0, nothing written.
@@ -295,14 +365,16 @@ class TestRollCaptureGatesAndFailOpen(RollCaptureHookBase):
         return str(bindir)
 
 
-@unittest.skipUnless(_harbor_available(), "harbor not installed")
-class TestRollCaptureHarborPositive(RollCaptureHookBase):
+@unittest.skipUnless(_logs2atif_available(), "logs2atif not installed (external dep)")
+class TestRollCaptureLogs2atifPositive(RollCaptureHookBase):
     """Above-threshold + enabled against a REAL fixture transcript: the backgrounded
     Stop roll publishes a redacted-only store atomically."""
 
     def test_above_threshold_publishes_redacted_only_store(self):
         if shutil.which("uv") is None:
             self.skipTest("uv not installed -- roll path needs uv")
+        if not _hook_pin_resolvable():
+            self.skipTest(_HOOK_PIN_SKIP_REASON)
         self._write_config(rolling_capture=True)
         sid = self._sid("above")
         # No prior roll-state -> first roll fires once the transcript clears the
@@ -329,7 +401,7 @@ class TestRollCaptureHarborPositive(RollCaptureHookBase):
         self.assertEqual(leftovers, [], f"unredacted/temp intermediates remain: {leftovers}")
 
 
-@unittest.skipUnless(_harbor_available(), "harbor not installed")
+@unittest.skipUnless(_logs2atif_available(), "logs2atif not installed (external dep)")
 class TestRollCaptureSessionEndFinalize(RollCaptureHookBase):
     """A SessionEnd event forces a roll even below threshold and writes the store
     SYNCHRONOUSLY (foreground) -- the store exists the instant subprocess.run returns."""
@@ -337,6 +409,8 @@ class TestRollCaptureSessionEndFinalize(RollCaptureHookBase):
     def test_session_end_forces_synchronous_roll(self):
         if shutil.which("uv") is None:
             self.skipTest("uv not installed -- roll path needs uv")
+        if not _hook_pin_resolvable():
+            self.skipTest(_HOOK_PIN_SKIP_REASON)
         self._write_config(rolling_capture=True)
         sid = self._sid("sessionend")
         t = self._write_transcript(sid, with_token=True, n_turns=1)
@@ -386,7 +460,7 @@ class TestRollCaptureNetworkFree(RollCaptureHookBase):
 # Per-roll branch-keyed enrich (update_index_from_store): the authoritative
 # index writer that runs after do_roll. These drive the REAL hook against a
 # pre-seeded redacted-store fixture so ONLY the enrich tail is exercised (the
-# harbor convert is made a no-op by a stub `uv` on PATH that exits nonzero,
+# logs2atif convert is made a no-op by a stub `uv` on PATH that exits nonzero,
 # leaving the pre-seeded store intact) -- no module mocks, real index.json,
 # real git repos for the branch derivation.
 # ---------------------------------------------------------------------------
@@ -402,7 +476,7 @@ class RollCaptureEnrichBase(RollCaptureHookBase):
     """Scaffolding to exercise update_index_from_store against a store fixture.
 
     A stub `uv` (a real on-disk script that exits 1) keeps `command -v uv`
-    satisfied while forcing do_roll's harbor convert to fail -- so a pre-seeded
+    satisfied while forcing do_roll's logs2atif convert to fail -- so a pre-seeded
     redacted store survives and the enrich tail reads it. This simulates an
     environment condition (convert unavailable) with a real executable, not a
     mock of any internal module.
@@ -657,15 +731,17 @@ class TestRollCaptureEnrichOffGit(RollCaptureEnrichBase):
                          "off-git (ungrouped) roll must not write an index entry")
 
 
-@unittest.skipUnless(_harbor_available(), "harbor not installed")
+@unittest.skipUnless(_logs2atif_available(), "logs2atif not installed (external dep)")
 @unittest.skipUnless(_git_available(), "git not installed")
-class TestRollCaptureEnrichHarborReal(RollCaptureEnrichBase):
-    """A REAL roll (harbor convert + redact) enriches a seeded branch:x entry with
-    real counts/cost derived from the converted store's final_metrics."""
+class TestRollCaptureEnrichLogs2atifReal(RollCaptureEnrichBase):
+    """A REAL roll (logs2atif convert + redact) enriches a seeded branch:x entry
+    with real counts/cost derived from the converted store's final_metrics."""
 
     def test_real_roll_enriches_branch_entry(self):
         if shutil.which("uv") is None:
             self.skipTest("uv not installed -- roll path needs uv")
+        if not _hook_pin_resolvable():
+            self.skipTest(_HOOK_PIN_SKIP_REASON)
         self._write_config(rolling_capture=True)
         repo = self._git_repo("x")
         sid = self._sid("realenrich")
@@ -682,7 +758,7 @@ class TestRollCaptureEnrichHarborReal(RollCaptureEnrichBase):
             "record_count": None, "total_cost_usd": None, "prev_session_id": None}}})
         payload = {"session_id": sid, "transcript_path": str(tpath),
                    "hook_event_name": "SessionEnd", "cwd": repo}
-        res = self._run(payload)  # real uv/harbor, foreground SessionEnd finalize
+        res = self._run(payload)  # real uv/logs2atif, foreground SessionEnd finalize
         self.assertEqual(res.returncode, 0, msg=res.stderr)
         redacted = self._store_dir(sid) / "trajectory.redacted.json"
         self.assertTrue(redacted.exists(),

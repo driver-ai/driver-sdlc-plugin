@@ -2,8 +2,8 @@
 multi-session capture index).
 
 Pure core: values in, values out — no I/O, time, randomness, or shared
-mutable state, and no `import harbor`. The shell (hooks/roll-capture.sh) performs
-all file I/O and calls these.
+mutable state, and no `import logs2atif`. The shell (hooks/roll-capture.sh)
+performs all file I/O and calls these.
 """
 from __future__ import annotations
 

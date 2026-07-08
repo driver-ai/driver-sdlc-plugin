@@ -1,6 +1,6 @@
 """Register an ATIF trajectory.json as an Opik trace with nested spans.
 
-Replicates the documented Opik<-Harbor mapping:
+Replicates the documented Opik<-ATIF mapping:
   trajectory          -> one trace
   each step           -> one nested span (llm span for agent steps, general otherwise)
   tool_calls          -> child "tool" spans under their step span

@@ -120,7 +120,7 @@ class SessionStartHookBase(unittest.TestCase):
 
 
 class TestSessionStartGate(SessionStartHookBase):
-    """rolling_capture gate + source gate + fail-open, all stdlib (no harbor)."""
+    """rolling_capture gate + source gate + fail-open, all stdlib (no logs2atif)."""
 
     def test_disabled_when_rolling_capture_unset(self):
         # No rolling_capture key -> gate closed -> exit 0, index untouched.

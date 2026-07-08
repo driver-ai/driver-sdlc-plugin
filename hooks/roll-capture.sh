@@ -75,13 +75,13 @@ fi
 # artifact, PUBLISHED ATOMICALLY (write a $$-suffixed temp in the store dir, then mv),
 # so an overlapping roll or a concurrent flush never sees a torn file. roll-state is
 # advanced whether or not the convert succeeds, so a persistently-failing convert
-# backs off instead of re-spawning harbor every turn. The mktemp template ends in the
-# X-run (no suffix) so it is portable on BSD/macOS mktemp.
+# backs off instead of re-spawning logs2atif every turn. The mktemp template ends in
+# the X-run (no suffix) so it is portable on BSD/macOS mktemp.
 do_roll() {
   mkdir -p "$STORE_DIR" 2>/dev/null || return 0
   TMP="$(mktemp "${TMPDIR:-/tmp}/driver-roll-$SID.XXXXXX")" || return 0
   # --session-dir locates subagent sidechains at <dir>/<session_id>/subagents/.
-  if uv run --with 'harbor~=0.16' python "$PLUGIN_ROOT/scripts/capture/cc_to_atif.py" \
+  if uv run --with 'logs2atif @ git+ssh://git@github.com/driver-ai/logs2atif.git@3364a76' python "$PLUGIN_ROOT/scripts/capture/cc_to_atif.py" \
         "$TRANSCRIPT" --session-dir "$(dirname "$TRANSCRIPT")" --out "$TMP" >/dev/null 2>&1; then
     RTMP="$STORE_DIR/.redacted.$$.tmp"
     FTMP="$STORE_DIR/.flags.$$.tmp"

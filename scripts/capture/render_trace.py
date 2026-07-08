@@ -11,7 +11,7 @@ pass: emails, IPs, JWTs, high-entropy tokens, secret-ish keywords) and surfaces
 findings at the top, so the human can catch what regex redaction missed -- the
 approval gate is the primary control; this is its review surface.
 
-Pure stdlib, no opik/harbor needed:
+Pure stdlib, no opik/logs2atif needed:
     python3 render_trace.py <trajectory.json> [--out report.html] [--no-open]
 """
 from __future__ import annotations

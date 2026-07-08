@@ -97,7 +97,7 @@ class TestStepFromAtif(unittest.TestCase):
 
 
 def _step(step_id, *, source="agent", message="", tool_calls=None, results=None):
-    """Build a serialized-trajectory step dict (the harbor JSON shape the viewer
+    """Build a serialized-trajectory step dict (the ATIF JSON shape the viewer
     consumes): tool_calls carry tool_call_id/function_name/arguments; observation
     results carry source_call_id/content and an optional subagent_trajectory_ref."""
     step = {"step_id": step_id, "source": source, "message": message}

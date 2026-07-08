@@ -1,7 +1,8 @@
 """ATIF trajectory -> ATIF Trajectory Viewer (local React app).
 
-Bridges a (redacted) Harbor ATIF trajectory produced by `cc_to_atif.py` into the
-data layout the ATIF Trajectory Viewer reads from `public/`:
+Bridges a (redacted) ATIF trajectory produced by `cc_to_atif.py` (which converts
+via logs2atif) into the data layout the ATIF Trajectory Viewer reads from
+`public/`:
 
   - public/dataset.json        (one vendor / agent / task / run, no inline steps)
   - public/runs/<runId>.json   ({"steps": [...]}, lazy-loaded by the viewer)
@@ -9,7 +10,7 @@ data layout the ATIF Trajectory Viewer reads from `public/`:
 The viewer is vendored clone-on-demand to ~/.drvr/viewer (override --viewer-dir).
 First run git-clones it and `npm install`s; subsequent runs reuse the checkout.
 
-The viewer natively understands Harbor ATIF — its own scripts/ingest.py has a
+The viewer natively understands ATIF — its own scripts/ingest.py has a
 `step_from_atif`. We port the same step/mutation mapping here (rather than import
 its ingest, which is wired to its own benchmark sources) so the file-stage,
 mutations, and tool calls render identically.

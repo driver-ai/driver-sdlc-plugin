@@ -1,7 +1,7 @@
 """Unit tests for the rolling-capture store + throttle pure core (capture_store_core).
 
 Pure-core tests: import `capture_store_core` ONLY (its `import cc_to_atif_core`
-resolves off the inserted path). No harbor, no mocks. Values in, values out —
+resolves off the inserted path). No logs2atif, no mocks. Values in, values out —
 mtimes and counts are passed as arguments, never read from a clock or disk.
 Stdlib `unittest` only.
 """
