@@ -442,14 +442,15 @@ class TestSubagentLabel(unittest.TestCase):
                  "steps": [_step(1, "agent", message="c")]},
             ],
         }
-        labels = [prefix for tid, prefix, _ in render_trace._walk_labeled(traj)
-                  if tid is not None]
+        # The label surfaces in the public HTML step headers (render()).
+        html = render_trace.render(traj, [])
         # agent.name is the label.
-        self.assertEqual(labels[0], "subagent code-reviewer · ")
-        # agent.name wins when both are present.
-        self.assertEqual(labels[1], "subagent from-agent · ")
+        self.assertIn("subagent code-reviewer", html)
+        # agent.name wins when both are present -- the extra value is not used.
+        self.assertIn("subagent from-agent", html)
+        self.assertNotIn("subagent from-extra", html)
         # Pre-swap artifact (extra.subagent_type only) keeps its label.
-        self.assertEqual(labels[2], "subagent explorer · ")
+        self.assertIn("subagent explorer", html)
 
 
 if __name__ == "__main__":

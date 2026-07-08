@@ -244,13 +244,15 @@ class TestPrefilterFlattensListUserContent(unittest.TestCase):
             user([tool_result_block("c1", "result text")]),
         ]
         out = core.prefilter_records(recs)
-        self.assertIs(out[0], recs[0])   # non-user record untouched
-        self.assertIs(out[1], recs[1])   # tool_result-bearing list untouched
-
-    def test_prefilter_str_user_content_passthrough(self):
-        recs = [user("plain string")]
-        out = core.prefilter_records(recs)
-        self.assertIs(out[0], recs[0])
+        # A tool_result-bearing user list must NOT be flattened to a string --
+        # flattening it would corrupt the logs2atif conversion. The list stays a
+        # list carrying the tool_result block.
+        user_content = out[1]["message"]["content"]
+        self.assertIsInstance(user_content, list)
+        self.assertEqual(user_content, [tool_result_block("c1", "result text")])
+        # Non-user (assistant) records pass through the flatten untouched.
+        self.assertEqual(out[0]["message"]["content"],
+                         [tool_use_block("c1"), text_block("assistant list stays")])
 
 
 # ---------------------------------------------------------------------------

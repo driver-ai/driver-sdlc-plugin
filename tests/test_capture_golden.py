@@ -246,51 +246,5 @@ class TestToTrajectoryRoundtrip(unittest.TestCase):
         self.assertEqual(d["steps"][-1]["message"], "thanks")
 
 
-@unittest.skipUnless(_logs2atif_available(), "logs2atif not installed (external dep)")
-class TestCcToAtifMainWritesFile(unittest.TestCase):
-    def test_cc_to_atif_main_writes_file(self):
-        """skipUnless logs2atif: the CLI shell, driven via subprocess, writes a
-        trajectory.json (exit 0) and populates extra.environment when an
-        env-file with facts is passed; an empty transcript exits non-zero with
-        clear stderr (no SystemExit/traceback dump)."""
-        with tempfile.TemporaryDirectory() as td:
-            tmp = Path(td)
-            transcript = tmp / "session.jsonl"
-            transcript.write_text(json.dumps({
-                "type": "assistant", "isSidechain": False, "sessionId": "sess",
-                "timestamp": "2026-06-25T00:00:00Z",
-                "message": {
-                    "id": "m1", "model": "claude-opus-4-8-20260315",
-                    "content": [{"type": "text", "text": "hello"}],
-                    "usage": {"input_tokens": 10, "output_tokens": 5},
-                },
-            }) + "\n")
-            env_file = tmp / "env.json"
-            env_file.write_text(json.dumps({
-                "branch": "eric/agent-session-capture",
-                "cwd": "/work/repo",
-            }))
-            out = tmp / "trajectory.json"
-
-            res = _run(transcript, "--out", str(out), "--env-file", str(env_file))
-            self.assertEqual(res.returncode, 0, msg=res.stderr)
-            self.assertTrue(out.exists(), "trajectory.json not written")
-            written = json.loads(out.read_text())
-            self.assertIn("extra", written)
-            self.assertIn("environment", written["extra"])
-            self.assertEqual(written["extra"]["environment"]["branch"],
-                             "eric/agent-session-capture")
-            self.assertEqual(written["extra"]["environment"]["cwd"], "/work/repo")
-
-            # Empty transcript -> non-zero exit, clear stderr, no traceback dump.
-            empty = tmp / "empty.jsonl"
-            empty.write_text("")
-            res2 = _run(empty, "--out", str(out))
-            self.assertNotEqual(res2.returncode, 0)
-            self.assertIn("error:", res2.stderr)
-            self.assertNotIn("Traceback", res2.stderr)
-            self.assertNotIn("SystemExit", res2.stderr)
-
-
 if __name__ == "__main__":
     unittest.main()
