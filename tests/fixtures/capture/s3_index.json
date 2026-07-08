@@ -1,0 +1,39 @@
+{
+  "branch:eric/agent-session-capture": {
+    "11111111-1111-4111-8111-111111111111": {
+      "session_id": "11111111-1111-4111-8111-111111111111",
+      "group_key": "branch:eric/agent-session-capture",
+      "cwd": "/Users/dev/PycharmProjects/DriverAI/driver-sdlc-plugin",
+      "store_path": "/Users/dev/.driver/capture/sessions/11111111-1111-4111-8111-111111111111/trajectory.redacted.json",
+      "first_seen": "2026-07-01T19:35:18.191345+00:00",
+      "last_seen": "2026-07-01T19:39:04.842883+00:00",
+      "record_count": 16,
+      "total_cost_usd": 0.975789,
+      "prev_session_id": null
+    },
+    "22222222-2222-4222-8222-222222222222": {
+      "session_id": "22222222-2222-4222-8222-222222222222",
+      "group_key": "branch:eric/agent-session-capture",
+      "cwd": "/Users/dev/PycharmProjects/DriverAI/driver-sdlc-plugin",
+      "store_path": "/Users/dev/.driver/capture/sessions/22222222-2222-4222-8222-222222222222/trajectory.redacted.json",
+      "first_seen": "2026-07-02T10:00:00.000000+00:00",
+      "last_seen": "2026-07-02T10:30:00.000000+00:00",
+      "record_count": 40,
+      "total_cost_usd": 1.5,
+      "prev_session_id": "11111111-1111-4111-8111-111111111111"
+    }
+  },
+  "ungrouped": {
+    "33333333-3333-4333-8333-333333333333": {
+      "session_id": "33333333-3333-4333-8333-333333333333",
+      "group_key": "ungrouped",
+      "cwd": "/tmp/scratch-repo",
+      "store_path": "/Users/dev/.driver/capture/sessions/33333333-3333-4333-8333-333333333333/trajectory.redacted.json",
+      "first_seen": "2026-07-03T00:00:00.000000+00:00",
+      "last_seen": "2026-07-03T00:05:00.000000+00:00",
+      "record_count": 5,
+      "total_cost_usd": 0.05,
+      "prev_session_id": null
+    }
+  }
+}

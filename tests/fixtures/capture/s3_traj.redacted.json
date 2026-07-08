@@ -1,0 +1,42 @@
+{
+  "schema_version": "ATIF-v1.7",
+  "session_id": "11111111-1111-4111-8111-111111111111",
+  "agent": {"name": "claude-code", "version": "cc-jsonl-adapter-0.1", "model_name": "claude-opus-4-8"},
+  "extra": {"source_client": "claude-code"},
+  "final_metrics": {
+    "total_prompt_tokens": 12000,
+    "total_completion_tokens": 800,
+    "total_cached_tokens": 9000,
+    "total_cost_usd": 0.975789,
+    "total_steps": 4
+  },
+  "steps": [
+    {
+      "step_id": 1,
+      "source": "user",
+      "message": "Please sync my redacted captures to S3.",
+      "timestamp": "2026-07-01T19:35:18Z"
+    },
+    {
+      "step_id": 2,
+      "source": "agent",
+      "model_name": "claude-opus-4-8",
+      "message": "Reading the redacted trajectory. The reviewer email was [REDACTED:email].",
+      "timestamp": "2026-07-01T19:35:20Z",
+      "tool_calls": [
+        {"tool_call_id": "call_1", "function_name": "Read",
+         "arguments": {"path": "/Users/dev/.driver/capture/index.json"}}
+      ],
+      "observation": {"results": [{"source_call_id": "call_1", "content": "index loaded: 2 sessions"}]},
+      "metrics": {"prompt_tokens": 6000, "completion_tokens": 400, "cost_usd": 0.5}
+    },
+    {
+      "step_id": 3,
+      "source": "agent",
+      "model_name": "claude-opus-4-8",
+      "message": "Done reviewing; nothing sensitive remains after redaction.",
+      "timestamp": "2026-07-01T19:39:00Z",
+      "metrics": {"prompt_tokens": 6000, "completion_tokens": 400, "cost_usd": 0.475789}
+    }
+  ]
+}
