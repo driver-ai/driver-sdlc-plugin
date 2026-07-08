@@ -357,6 +357,58 @@ class TestPlanSpans(unittest.TestCase):
         self.assertEqual(null_span["name"], "step 1 (agent)")
 
 
+class TestPlanSpansContentFlatten(unittest.TestCase):
+    """list[ContentPart] messages/observations flatten to display text in span
+    input/output via the shared flatten_content — never a Python list-repr."""
+
+    def test_plan_spans_flattens_list_message_and_observation(self):
+        trace_id = _trace_id()
+        traj = {
+            "steps": [
+                _step(1,
+                      message=[
+                          {"type": "text", "text": "pasted context"},
+                          {"type": "image",
+                           "source": {"media_type": "image/png",
+                                      "path": "/tmp/shot.png"}},
+                      ],
+                      tool_calls=[{"tool_call_id": "c1", "function_name": "Read",
+                                   "arguments": "{}"}],
+                      results=[{"source_call_id": "c1",
+                                "content": [
+                                    {"type": "text", "text": "file body"},
+                                    {"type": "image",
+                                     "source": {"media_type": "image/jpeg",
+                                                "path": "/tmp/o.jpg"}},
+                                ]}]),
+            ],
+        }
+        spans = atif_to_opik.plan_spans(traj, trace_id)
+        step_span, tool_span = spans[0], spans[1]
+        self.assertEqual(step_span["input"]["message"],
+                         "pasted context\n[image: image/png /tmp/shot.png]")
+        self.assertEqual(tool_span["output"]["result"],
+                         "file body\n[image: image/jpeg /tmp/o.jpg]")
+        for text in (step_span["input"]["message"], tool_span["output"]["result"]):
+            self.assertNotIn("{'type'", text)  # no Python list-repr leaks
+
+    def test_plan_spans_str_content_backward_compat(self):
+        # Backward compat: a pre-swap artifact (plain str content) is untouched.
+        trace_id = _trace_id()
+        traj = {
+            "steps": [
+                _step(1, message="plain message",
+                      tool_calls=[{"tool_call_id": "c1", "function_name": "Read",
+                                   "arguments": "{}"}],
+                      results=[{"source_call_id": "c1",
+                                "content": "plain result"}]),
+            ],
+        }
+        spans = atif_to_opik.plan_spans(traj, trace_id)
+        self.assertEqual(spans[0]["input"]["message"], "plain message")
+        self.assertEqual(spans[1]["output"]["result"], "plain result")
+
+
 class TestPlanTrace(unittest.TestCase):
     """The pure trace planner mirrors plan_spans: trajectory -> client.trace(**kw)
     kwargs, so the trace metadata (incl. the arc group key) is asserted with NO

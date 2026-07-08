@@ -382,5 +382,75 @@ class TestScanSubagents(unittest.TestCase):
         self.assertEqual(len(aws), 1)
 
 
+class TestListContentMessages(unittest.TestCase):
+    """render_trace is the human review surface: list[ContentPart] messages must
+    be scannable (a secret inside a text part is a finding) and displayed
+    (flattened via the shared flatten_content), never invisible."""
+
+    def test_scan_sees_secrets_inside_list_message(self):
+        secret = "AKIAIOSFODNN7EXAMPLE"
+        traj = {"steps": [_step(1, "agent", message=[
+            {"type": "text", "text": f"leaked {secret}"},
+            {"type": "image",
+             "source": {"media_type": "image/png", "path": "/tmp/shot.png"}},
+        ])]}
+        findings = render_trace.scan(traj)
+        aws = [f for f in findings if f["type"] == "AWS access key id"]
+        self.assertEqual(len(aws), 1,
+                         "a secret inside a list-form message must be scannable")
+
+    def test_render_displays_list_message_flattened(self):
+        traj = {
+            "session_id": "sess-1",
+            "steps": [_step(1, "agent", message=[
+                {"type": "text", "text": "hello from a list part"},
+                {"type": "image",
+                 "source": {"media_type": "image/png", "path": "/tmp/shot.png"}},
+            ])],
+        }
+        out = render_trace.render(traj, [])
+        self.assertIn("hello from a list part", out)
+        self.assertIn("[image: image/png /tmp/shot.png]", out)
+        # No (HTML-escaped) Python list-repr of ContentPart dicts.
+        self.assertNotIn("&#x27;type&#x27;", out)
+
+    def test_str_message_scans_and_renders_as_today(self):
+        # Backward compat: a pre-swap artifact (plain str message) is untouched.
+        secret = "AKIAIOSFODNN7EXAMPLE"
+        traj = {"session_id": "sess-1",
+                "steps": [_step(1, "agent", message=f"plain {secret}")]}
+        findings = render_trace.scan(traj)
+        aws = [f for f in findings if f["type"] == "AWS access key id"]
+        self.assertEqual(len(aws), 1)
+        self.assertIn("plain", render_trace.render(traj, findings))
+
+
+class TestSubagentLabel(unittest.TestCase):
+    """Subagent labels read the converter-filled agent.name first, falling back
+    to extra.subagent_type so pre-swap artifacts keep rendering."""
+
+    def test_subagent_label_reads_agent_name_with_fallback(self):
+        traj = {
+            "steps": [],
+            "subagent_trajectories": [
+                {"trajectory_id": "s/a", "agent": {"name": "code-reviewer"},
+                 "steps": [_step(1, "agent", message="a")]},
+                {"trajectory_id": "s/b", "agent": {"name": "from-agent"},
+                 "extra": {"subagent_type": "from-extra"},
+                 "steps": [_step(1, "agent", message="b")]},
+                {"trajectory_id": "s/c", "extra": {"subagent_type": "explorer"},
+                 "steps": [_step(1, "agent", message="c")]},
+            ],
+        }
+        labels = [prefix for tid, prefix, _ in render_trace._walk_labeled(traj)
+                  if tid is not None]
+        # agent.name is the label.
+        self.assertEqual(labels[0], "subagent code-reviewer · ")
+        # agent.name wins when both are present.
+        self.assertEqual(labels[1], "subagent from-agent · ")
+        # Pre-swap artifact (extra.subagent_type only) keeps its label.
+        self.assertEqual(labels[2], "subagent explorer · ")
+
+
 if __name__ == "__main__":
     unittest.main()

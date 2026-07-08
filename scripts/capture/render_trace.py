@@ -25,6 +25,8 @@ import re
 import subprocess
 import sys
 
+from cc_to_atif_core import flatten_content  # shared ContentPart-list -> text
+
 # Broader than redact.py on purpose: this FLAGS for human eyes, it does not mask.
 SCAN = [
     ("AWS access key id", re.compile(r"\bAKIA[0-9A-Z]{16}\b")),
@@ -76,7 +78,10 @@ def _walk_labeled(traj: dict):
     for step in traj.get("steps") or []:
         yield (None, "", step)
     for sub in traj.get("subagent_trajectories") or []:
-        stype = (sub.get("extra") or {}).get("subagent_type") or "agent"
+        # Label from the converter-filled agent.name; extra.subagent_type keeps
+        # artifacts from the previous converter rendering.
+        stype = ((sub.get("agent") or {}).get("name")
+                 or (sub.get("extra") or {}).get("subagent_type") or "agent")
         tid = sub.get("trajectory_id")
         for step in sub.get("steps") or []:
             yield (tid, f"subagent {stype} · ", step)
@@ -90,8 +95,10 @@ def _iter_strings(step: dict, prefix: str = ""):
     across same-numbered parent/subagent steps.
     """
     sid = step.get("step_id")
-    msg = step.get("message")
-    if isinstance(msg, str):
+    # Flatten so the scan sees text inside list-form messages too (a secret in
+    # a ContentPart text block must be reviewable, not invisible).
+    msg = flatten_content(step.get("message"))
+    if msg:
         yield (f"{prefix}step {sid} message", msg)
     if step.get("reasoning_content"):
         yield (f"{prefix}step {sid} reasoning", step["reasoning_content"])
@@ -174,8 +181,8 @@ def render(traj: dict, findings: list[dict]) -> str:
             parts.append(f'<span class="meta">{m.get("prompt_tokens",0):,} in / '
                          f'{m.get("completion_tokens",0):,} out · ${m.get("cost_usd",0)}</span>')
         parts.append("</div>")
-        msg = step.get("message")
-        if isinstance(msg, str) and msg.strip():
+        msg = flatten_content(step.get("message"))  # list-form messages display too
+        if msg.strip():
             parts.append(f'<div class="msg">{_hl(msg)}</div>')
         if step.get("reasoning_content"):
             parts.append(f'<details><summary>reasoning</summary><pre>{_hl(step["reasoning_content"])}</pre></details>')

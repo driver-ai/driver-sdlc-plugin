@@ -27,6 +27,8 @@ import time
 from datetime import datetime
 from urllib.parse import urlsplit
 
+from cc_to_atif_core import flatten_content  # shared ContentPart-list -> text
+
 # Default to local self-hosted Opik unless the caller already configured it.
 # Dep-free (just env defaults) so the module imports without opik installed.
 os.environ.setdefault("OPIK_URL_OVERRIDE", "http://localhost:5173/api")
@@ -184,7 +186,7 @@ def plan_spans(traj: dict, trace_id: str) -> list[dict]:
             step_span_id = _span_id(trace_id, f"{prefix}step{sid}")
             step_kw = {"id": step_span_id, "name": f"step {sid} ({src})",
                        "type": "llm" if src == "agent" else "general",
-                       "input": {"message": _truncate(str(step.get("message", "")))},
+                       "input": {"message": _truncate(flatten_content(step.get("message")))},
                        "output": {"reasoning": _truncate(str(step.get("reasoning_content") or ""))}
                        if step.get("reasoning_content") else None,
                        "metadata": {"source": src, "timestamp": ts},
@@ -206,7 +208,7 @@ def plan_spans(traj: dict, trace_id: str) -> list[dict]:
                 spans.append({"id": tool_span_id, "parent_span_id": step_span_id,
                               "name": f"tool: {tc.get('function_name')}", "type": "tool",
                               "input": {"arguments": tc.get("arguments")},
-                              "output": {"result": _truncate(str(obs_by_call.get(cid, "")))},
+                              "output": {"result": _truncate(flatten_content(obs_by_call.get(cid)))},
                               "metadata": {"tool_call_id": cid},
                               "start_time": sdt, "end_time": sdt})
                 r = res_by_call.get(cid)               # placement via tool_calls -> first matching result

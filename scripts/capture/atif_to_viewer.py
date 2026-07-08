@@ -34,6 +34,7 @@ import sys
 from datetime import datetime, timezone
 
 import redact  # the one shared masking core (typed [REDACTED:label] tokens)
+from cc_to_atif_core import flatten_content  # shared ContentPart-list -> text
 
 DEFAULT_REPO = "https://github.com/Slimshilin/ATIF-trajectory-viewer"
 # Pin so a clone-on-demand stays reproducible. Bump deliberately.
@@ -144,7 +145,11 @@ def step_from_atif(s: dict, idx: int) -> dict:
     if isinstance(obs, dict):
         results = obs.get("results")
         if isinstance(results, list):
-            obs = "\n\n".join(str(r.get("content", r)) for r in results)
+            # Flatten each result's content (str passthrough; ContentPart lists
+            # -> display text) BEFORE the _cap/_scrub below sees it.
+            obs = "\n\n".join(
+                flatten_content(r.get("content")) if "content" in r else str(r)
+                for r in results)
         else:
             obs = json.dumps(obs, ensure_ascii=False)
     elif isinstance(obs, list):
@@ -152,7 +157,9 @@ def step_from_atif(s: dict, idx: int) -> dict:
     metrics = s.get("metrics") or {}
     return {
         "index": idx, "role": role,
-        "text": _cap(s.get("message")) if role != "tool" else None,
+        # Flatten BEFORE _cap/_scrub so the defense-in-depth re-scrub always
+        # sees a string (a list message would otherwise pass through unmasked).
+        "text": _cap(flatten_content(s.get("message"))) if role != "tool" else None,
         "reasoning": _cap(s.get("reasoning_content")),
         "toolCalls": tcs or None,
         "observation": _cap(obs) if (role == "tool" or obs) else None,
@@ -179,7 +186,10 @@ def flatten_with_subagents(traj: dict) -> list[dict]:
     placed: set = set()
 
     def marker(sub: dict, depth: int, note: str = "") -> dict:
-        stype = (sub.get("extra") or {}).get("subagent_type") or "agent"
+        # Label from the converter-filled agent.name; extra.subagent_type keeps
+        # artifacts from the previous converter rendering.
+        stype = ((sub.get("agent") or {}).get("name")
+                 or (sub.get("extra") or {}).get("subagent_type") or "agent")
         return {"source": "system", "step_id": None, "_boundary": True,
                 "message": f"↳ subagent {stype} (depth {depth}{note})"}
 

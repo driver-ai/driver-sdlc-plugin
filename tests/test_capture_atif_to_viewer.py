@@ -261,6 +261,91 @@ class TestFlattenWithSubagents(unittest.TestCase):
         self.assertEqual(out[-1]["message"], "sparse")
 
 
+class TestSubagentMarkerLabel(unittest.TestCase):
+    """Boundary-marker labels read the converter-filled agent.name first, falling
+    back to extra.subagent_type so pre-swap artifacts keep rendering."""
+
+    def test_marker_reads_agent_name_with_extra_fallback(self):
+        traj = {
+            "steps": [],
+            "subagent_trajectories": [
+                {"trajectory_id": "s/a", "agent": {"name": "code-reviewer"},
+                 "steps": [_step(1, message="a")]},
+                {"trajectory_id": "s/b", "agent": {"name": "from-agent"},
+                 "extra": {"subagent_type": "from-extra"},
+                 "steps": [_step(1, message="b")]},
+                {"trajectory_id": "s/c", "extra": {"subagent_type": "explorer"},
+                 "steps": [_step(1, message="c")]},
+            ],
+        }
+        out = atif_to_viewer.flatten_with_subagents(traj)
+        markers = [s["message"] for s in out if s.get("_boundary")]
+        self.assertEqual(len(markers), 3)
+        # agent.name is the label.
+        self.assertIn("subagent code-reviewer", markers[0])
+        # agent.name wins when both are present.
+        self.assertIn("subagent from-agent", markers[1])
+        self.assertNotIn("from-extra", markers[1])
+        # Pre-swap artifact (extra.subagent_type only) keeps its label.
+        self.assertIn("subagent explorer", markers[2])
+
+
+class TestListContentFlatten(unittest.TestCase):
+    """list[ContentPart] messages/observations flatten to display text via the
+    shared flatten_content — and the flatten runs BEFORE _cap/_scrub, so the
+    defense-in-depth re-scrub always sees a string."""
+
+    def test_step_from_atif_flattens_list_message_before_scrub(self):
+        step = {
+            "step_id": 1, "source": "agent",
+            "message": [
+                {"type": "text", "text": f"pasted {SECRET_A}"},
+                {"type": "image",
+                 "source": {"media_type": "image/png", "path": "/tmp/shot.png"}},
+            ],
+        }
+        out = atif_to_viewer.step_from_atif(step, 0)
+        self.assertIsInstance(out["text"], str)
+        self.assertIn("[image: image/png /tmp/shot.png]", out["text"])
+        # Flatten-before-scrub: a secret inside a text part is still masked. If
+        # the scrub ran first it would pass the list through untouched and the
+        # raw secret would survive the flatten.
+        self.assertIn(TYPED, out["text"])
+        self.assertNotIn(SECRET_A, out["text"])
+        # No Python list-repr of ContentPart dicts.
+        self.assertNotIn("{'type'", out["text"])
+
+    def test_observation_list_content_flattened(self):
+        step = {
+            "step_id": 1, "source": "agent", "message": "did a thing",
+            "observation": {"results": [
+                {"source_call_id": "c1",
+                 "content": [
+                     {"type": "text", "text": "tool said hi"},
+                     {"type": "image",
+                      "source": {"media_type": "image/jpeg", "path": "/tmp/o.jpg"}},
+                 ]},
+                {"source_call_id": "c2", "content": "plain str result"},
+            ]},
+        }
+        out = atif_to_viewer.step_from_atif(step, 0)
+        self.assertIn("tool said hi", out["observation"])
+        self.assertIn("[image: image/jpeg /tmp/o.jpg]", out["observation"])
+        self.assertIn("plain str result", out["observation"])  # str content joined as today
+        self.assertNotIn("{'type'", out["observation"])
+
+    def test_str_message_and_observation_render_as_today(self):
+        # Backward compat: a pre-swap artifact (plain str content) is untouched.
+        step = {
+            "step_id": 1, "source": "agent", "message": "plain message",
+            "observation": {"results": [
+                {"source_call_id": "c1", "content": "plain result"}]},
+        }
+        out = atif_to_viewer.step_from_atif(step, 0)
+        self.assertEqual(out["text"], "plain message")
+        self.assertEqual(out["observation"], "plain result")
+
+
 class TestBuildDataset(unittest.TestCase):
     def _traj(self):
         return {
