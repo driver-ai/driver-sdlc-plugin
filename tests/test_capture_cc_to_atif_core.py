@@ -1,8 +1,19 @@
-"""Unit tests for the harbor-free `normalize` kernel (cc_to_atif_core).
+"""Unit tests for the slim pure capture core (cc_to_atif_core).
 
-Pure-core tests: import `cc_to_atif_core` ONLY (its `import pricing` resolves off
-the inserted path). No harbor, no mocks. Stdlib `unittest` only.
+The record walk (grouping, tool_result folding, usage/cost math, subagent
+embedding) is the upstream logs2atif converter's contract, exercised by the
+gated wrapper tests at our boundary. This module tests the pure helpers we keep
+around that converter: the pre-filter (marker truncation / exclusions / user
+content flatten), the shared content flattener, the serialized-dict enrichment
+passes (token rollup, nested ref re-link, extra injection), the subagent
+staging line cleaner, and the path-segment guard.
+
+Pure-core tests: import `cc_to_atif_core` ONLY. No external deps, no mocks.
+Stdlib `unittest` only. Crafted records carry valid ISO 8601 timestamps so the
+fixtures stay portable to the gated wrapper suites (upstream drops
+invalid-timestamp records silently).
 """
+import json
 import os
 import sys
 import unittest
@@ -10,30 +21,21 @@ import unittest
 from conftest import PLUGIN_ROOT
 
 sys.path.insert(0, str(PLUGIN_ROOT / "scripts" / "capture"))  # before importing the core
-import cc_to_atif_core as core   # its `import pricing` resolves off the inserted path
+import cc_to_atif_core as core
 
 
 # ---------------------------------------------------------------------------
 # Tiny record-fixture builders (inline JSONL-record dicts)
 # ---------------------------------------------------------------------------
 
-USAGE = {
-    "input_tokens": 100,
-    "cache_creation_input_tokens": 10,
-    "cache_read_input_tokens": 20,
-    "output_tokens": 50,
-}
 
-
-def asst(content, *, msg_id=None, model="claude-opus-4-8-20260315", usage=None,
+def asst(content, *, msg_id=None, model="claude-opus-4-8-20260315",
          session_id="sess", ts="2026-06-25T00:00:00Z", sidechain=False):
     msg = {"content": content}
     if msg_id is not None:
         msg["id"] = msg_id
     if model is not None:
         msg["model"] = model
-    if usage is not None:
-        msg["usage"] = usage
     return {"type": "assistant", "isSidechain": sidechain, "sessionId": session_id,
             "timestamp": ts, "message": msg}
 
@@ -58,679 +60,463 @@ def tool_result_block(call_id, content, is_error=False):
     return b
 
 
-def normalize(records, **kw):
-    kw.setdefault("session_id", "sess")
-    kw.setdefault("task_id", None)
-    kw.setdefault("spec_id", None)
-    kw.setdefault("intent", None)
-    kw.setdefault("exclude_session_id", None)
-    return core.normalize(records, **kw)
-
-
 # ---------------------------------------------------------------------------
-# Tests
+# prefilter_records: marker truncation (whole-command-token match)
 # ---------------------------------------------------------------------------
 
-class TestMessageIdGrouping(unittest.TestCase):
-    def test_normalize_message_id_grouping(self):
-        # Several assistant records sharing one message.id, REPEATING usage.
-        recs = [
-            asst([text_block("first block")], msg_id="m1", usage=USAGE),
-            asst([{"type": "thinking", "thinking": "reasoning"}], msg_id="m1", usage=USAGE),
-            asst([tool_use_block("c1")], msg_id="m1", usage=USAGE),
-        ]
-        n = normalize(recs)
-        # ONE step.
-        self.assertEqual(len(n.steps), 1)
-        step = n.steps[0]
-        self.assertEqual(step.source, "agent")
-        self.assertIn("first block", step.message)
-        self.assertEqual(step.reasoning_content, "reasoning")
-        self.assertEqual(len(step.tool_calls), 1)
-        # Usage counted ONCE — not 3x.
-        self.assertEqual(step.metrics["prompt_tokens"], 100 + 10 + 20)
-        self.assertEqual(step.metrics["completion_tokens"], 50)
-        self.assertEqual(n.final_metrics["total_prompt_tokens"], 130)
-        self.assertEqual(n.final_metrics["total_completion_tokens"], 50)
 
-
-class TestUsageOnLaterRecord(unittest.TestCase):
-    def test_normalize_usage_on_later_record_of_group(self):
-        # First record of the same-id group lacks usage; a LATER one carries it (H6).
-        recs = [
-            asst([text_block("a")], msg_id="m1", usage=None),
-            asst([tool_use_block("c1")], msg_id="m1", usage=USAGE),
-        ]
-        n = normalize(recs)
-        self.assertEqual(len(n.steps), 1)
-        step = n.steps[0]
-        self.assertIsNotNone(step.metrics)
-        self.assertEqual(step.metrics["prompt_tokens"], 130)
-        self.assertEqual(step.metrics["completion_tokens"], 50)
-        # Counted once.
-        self.assertEqual(n.final_metrics["total_prompt_tokens"], 130)
-
-
-class TestNoMessageId(unittest.TestCase):
-    def test_normalize_no_message_id(self):
-        # Two consecutive assistant records, BOTH lacking message.id → NOT merged (L3).
-        recs = [
-            asst([text_block("a")], msg_id=None, usage=USAGE),
-            asst([text_block("b")], msg_id=None, usage=USAGE),
-        ]
-        n = normalize(recs)
-        self.assertEqual(len(n.steps), 2)
-        # Each counted.
-        self.assertEqual(n.final_metrics["total_prompt_tokens"], 260)
-        self.assertEqual(n.final_metrics["total_completion_tokens"], 100)
-
-
-class TestToolResultFolding(unittest.TestCase):
-    def test_normalize_tool_result_folding(self):
-        recs = [
-            asst([tool_use_block("c1")], msg_id="m1", usage=USAGE),
-            user([tool_result_block("c1", "result text")]),
-            # Orphan result: no matching tool_use → dropped.
-            user([tool_result_block("c-orphan", "orphan text")]),
-        ]
-        n = normalize(recs)
-        # Folded result does NOT create a new step.
-        self.assertEqual(len(n.steps), 1)
-        step = n.steps[0]
-        self.assertEqual(len(step.observation_results), 1)
-        obs = step.observation_results[0]
-        self.assertEqual(obs["source_call_id"], "c1")
-        self.assertEqual(obs["content"], "result text")
-
-
-class TestDuplicateToolResult(unittest.TestCase):
-    def test_normalize_duplicate_tool_result(self):
-        # Two results with the SAME tool_use_id both fold in (M11 — keep both).
-        recs = [
-            asst([tool_use_block("c1")], msg_id="m1", usage=USAGE),
-            user([tool_result_block("c1", "first")]),
-            user([tool_result_block("c1", "second")]),
-        ]
-        n = normalize(recs)
-        self.assertEqual(len(n.steps), 1)
-        step = n.steps[0]
-        self.assertEqual(len(step.observation_results), 2)
-        self.assertEqual({o["source_call_id"] for o in step.observation_results}, {"c1"})
-        self.assertEqual({o["content"] for o in step.observation_results}, {"first", "second"})
-
-
-class TestUnansweredToolCall(unittest.TestCase):
-    def test_normalize_unanswered_tool_call(self):
-        # tool_use with no matching result (L4): keep the tool_call, observation empty.
-        recs = [asst([tool_use_block("c1")], msg_id="m1", usage=USAGE)]
-        n = normalize(recs)
-        self.assertEqual(len(n.steps), 1)
-        step = n.steps[0]
-        self.assertEqual(len(step.tool_calls), 1)
-        self.assertEqual(step.observation_results, [])
-
-
-class TestToolResultImageContent(unittest.TestCase):
-    def test_normalize_tool_result_image_content(self):
-        # tool_result content is an image/array block → [image] placeholder (M8).
-        img = [{"type": "image", "source": {"data": "..."}}]
-        recs = [
-            asst([tool_use_block("c1")], msg_id="m1", usage=USAGE),
-            user([tool_result_block("c1", img)]),
-        ]
-        n = normalize(recs)
-        step = n.steps[0]
-        self.assertEqual(len(step.observation_results), 1)
-        self.assertEqual(step.observation_results[0]["content"], "[image]")
-
-
-class TestHumanTurn(unittest.TestCase):
-    def test_normalize_human_turn(self):
-        recs = [user([text_block("hello there")])]
-        n = normalize(recs)
-        self.assertEqual(len(n.steps), 1)
-        step = n.steps[0]
-        self.assertEqual(step.source, "user")
-        self.assertEqual(step.message, "hello there")
-
-
-class TestSkipsNewerRecordTypes(unittest.TestCase):
-    def test_normalize_skips_newer_record_types(self):
-        newer_types = ["mode", "last-prompt", "ai-title", "attachment",
-                       "file-history-snapshot", "queue-operation"]
-        # Interleave a newer-type record between a tool_use and its tool_result (M13).
-        recs = [asst([tool_use_block("c1")], msg_id="m1", usage=USAGE)]
-        for t in newer_types:
-            recs.append({"type": t, "isSidechain": False, "sessionId": "sess",
-                         "timestamp": "2026-06-25T00:00:00Z", "message": {}})
-        recs.append(user([tool_result_block("c1", "still folds")]))
-        n = normalize(recs)
-        # Only the agent step survives; the fold still lands.
-        self.assertEqual(len(n.steps), 1)
-        step = n.steps[0]
-        self.assertEqual(len(step.observation_results), 1)
-        self.assertEqual(step.observation_results[0]["content"], "still folds")
-
-
-class TestUnpricedModel(unittest.TestCase):
-    def test_normalize_unpriced_model(self):
-        # Model absent from the pricing table → extra["unpriced_models"] has its name.
-        recs = [asst([text_block("hi")], msg_id="m1",
-                     model="some-future-model-9000", usage=USAGE)]
-        n = normalize(recs)
-        self.assertIn("unpriced_models", n.extra)
-        self.assertIn("some-future-model-9000", n.extra["unpriced_models"])
-
-    def test_normalize_priced_session_omits_key(self):
-        recs = [asst([text_block("hi")], msg_id="m1",
-                     model="claude-opus-4-8-20260315", usage=USAGE)]
-        n = normalize(recs)
-        self.assertNotIn("unpriced_models", n.extra)
-
-
-class TestExcludeMarker(unittest.TestCase):
+class TestPrefilterMarkerTruncation(unittest.TestCase):
     MARKER = "/drvr:capture-session"
 
-    def test_truncates_at_last_matching_command_turn(self):
+    def test_prefilter_truncates_at_last_marker_token(self):
         recs = [
-            user([text_block("real human turn one")]),
-            asst([text_block("agent reply")], msg_id="m1", usage=USAGE),
-            user([text_block(self.MARKER + " arg")]),  # the capture invocation
-            asst([text_block("should be dropped")], msg_id="m2", usage=USAGE),
+            user("real human turn one"),
+            asst([text_block("agent reply")], msg_id="m1"),
+            user(self.MARKER + " arg"),                 # the capture invocation
+            asst([text_block("should be dropped")], msg_id="m2"),
         ]
-        n = normalize(recs, exclude_marker=self.MARKER)
-        # Cut at the marker turn → only the first two steps survive.
-        self.assertEqual(len(n.steps), 2)
-        self.assertEqual(n.steps[0].source, "user")
-        self.assertEqual(n.steps[0].message, "real human turn one")
-        self.assertEqual(n.steps[1].source, "agent")
+        out = core.prefilter_records(recs, exclude_marker=self.MARKER)
+        # Cut at the marker turn: only the records before it survive.
+        self.assertEqual(out, recs[:2])
 
-    def test_last_matching_turn_when_multiple(self):
+    def test_prefilter_last_matching_turn_when_multiple(self):
         recs = [
-            user([text_block(self.MARKER)]),                # earlier invocation
-            asst([text_block("mid")], msg_id="m1", usage=USAGE),
-            user([text_block(self.MARKER)]),                # LAST invocation = cut point
-            asst([text_block("dropped")], msg_id="m2", usage=USAGE),
+            user(self.MARKER),                          # earlier invocation
+            asst([text_block("mid")], msg_id="m1"),
+            user(self.MARKER),                          # LAST invocation = cut point
+            asst([text_block("dropped")], msg_id="m2"),
         ]
-        n = normalize(recs, exclude_marker=self.MARKER)
-        # Cut at the LAST marker turn → records[0:2] remain → one user + one agent.
-        self.assertEqual(len(n.steps), 2)
-        self.assertEqual(n.steps[0].source, "user")
-        self.assertEqual(n.steps[1].source, "agent")
+        out = core.prefilter_records(recs, exclude_marker=self.MARKER)
+        # Cut at the LAST marker turn -> records[0:2] remain.
+        self.assertEqual(out, recs[:2])
 
-    def test_prose_mention_does_not_truncate(self):
+    def test_prefilter_prose_mention_does_not_truncate(self):
         recs = [
-            user([text_block("I want to run " + self.MARKER + " later")]),
-            asst([text_block("ok")], msg_id="m1", usage=USAGE),
+            user("I want to run " + self.MARKER + " later"),
+            asst([text_block("ok")], msg_id="m1"),
         ]
-        n = normalize(recs, exclude_marker=self.MARKER)
+        out = core.prefilter_records(recs, exclude_marker=self.MARKER)
         # Prose mention (not the first command token) does NOT cut.
-        self.assertEqual(len(n.steps), 2)
+        self.assertEqual(out, recs)
 
-    def test_marker_inside_assistant_or_tool_result_does_not_truncate(self):
+    def test_prefilter_longer_command_does_not_truncate(self):
+        # A LONGER command token must NOT match (whole-token equality).
         recs = [
-            user([text_block("human turn")]),
+            user(self.MARKER + "-foo bar"),
+            asst([text_block("kept")], msg_id="m1"),
+        ]
+        out = core.prefilter_records(recs, exclude_marker=self.MARKER)
+        self.assertEqual(out, recs)
+
+    def test_prefilter_marker_inside_assistant_or_tool_result_does_not_truncate(self):
+        recs = [
+            user("human turn"),
             asst([text_block("here is the " + self.MARKER + " command")],
-                 msg_id="m1", usage=USAGE),
-            asst([tool_use_block("c1")], msg_id="m2", usage=USAGE),
+                 msg_id="m1"),
+            asst([tool_use_block("c1")], msg_id="m2"),
             user([tool_result_block("c1", self.MARKER + " inside a result")]),
         ]
-        n = normalize(recs, exclude_marker=self.MARKER)
-        # Marker only inside assistant/tool_result → no truncation; both agent steps stay.
-        self.assertEqual(len(n.steps), 3)
-        sources = [s.source for s in n.steps]
-        self.assertEqual(sources, ["user", "agent", "agent"])
+        out = core.prefilter_records(recs, exclude_marker=self.MARKER)
+        # Marker only inside assistant/tool_result content -> no truncation.
+        self.assertEqual(out, recs)
 
-    def test_longer_command_does_not_truncate(self):
-        # A LONGER command token must NOT match (whole-token equality, not startswith).
+    def test_prefilter_marker_at_record_zero_empties(self):
+        # Marker as the very first record: everything is cut. The shell maps an
+        # empty filtered list to exit 1 (hook backoff contract).
         recs = [
-            user([text_block(self.MARKER + "-foo bar")]),
-            asst([text_block("kept")], msg_id="m1", usage=USAGE),
+            user(self.MARKER),
+            asst([text_block("after")], msg_id="m1"),
         ]
-        n = normalize(recs, exclude_marker=self.MARKER)
-        self.assertEqual(len(n.steps), 2)
-        self.assertEqual(n.steps[0].message, self.MARKER + "-foo bar")
+        out = core.prefilter_records(recs, exclude_marker=self.MARKER)
+        self.assertEqual(out, [])
 
-    def test_marker_at_record_zero_raises(self):
+    def test_prefilter_marker_ignores_sidechain_user_records(self):
+        # A sidechain user record carrying the marker is never a cut point (and
+        # is itself dropped by the sidechain guard).
         recs = [
-            user([text_block(self.MARKER)]),
-            asst([text_block("after")], msg_id="m1", usage=USAGE),
+            user("real turn"),
+            asst([text_block("reply")], msg_id="m1"),
+            user(self.MARKER, sidechain=True),
+            asst([text_block("kept")], msg_id="m2"),
         ]
-        with self.assertRaises(core.EmptyTranscriptError):
-            normalize(recs, exclude_marker=self.MARKER)
+        out = core.prefilter_records(recs, exclude_marker=self.MARKER)
+        self.assertEqual(out, [recs[0], recs[1], recs[3]])
 
-
-class TestExcludeSessionEmpties(unittest.TestCase):
-    def test_normalize_exclude_session_empties(self):
-        # Every record carries the excluded sessionId → all skipped (M10).
+    def test_prefilter_marker_unwraps_command_name_tag(self):
+        # A literal <command-name> tag prefixing the command is unwrapped
+        # before the whole-token match, so the tagged invocation still cuts.
         recs = [
-            asst([text_block("a")], msg_id="m1", usage=USAGE, session_id="capsess"),
-            user([text_block("b")], session_id="capsess"),
+            user("real turn"),
+            asst([text_block("reply")], msg_id="m1"),
+            user("<command-name>" + self.MARKER + " arg"),
+            asst([text_block("dropped")], msg_id="m2"),
         ]
-        with self.assertRaises(core.EmptyTranscriptError):
-            normalize(recs, exclude_session_id="capsess")
+        out = core.prefilter_records(recs, exclude_marker=self.MARKER)
+        self.assertEqual(out, recs[:2])
 
-
-class TestEmptyRaisesDomainError(unittest.TestCase):
-    def test_no_records(self):
-        with self.assertRaises(core.EmptyTranscriptError):
-            normalize([])
-
-    def test_sidechain_only(self):
-        recs = [
-            asst([text_block("sub")], msg_id="m1", usage=USAGE, sidechain=True),
-            user([text_block("sub user")], sidechain=True),
+        # Known pre-existing limit, carried over: the unwrap does not fire on
+        # the modern <command-message>-first record shape (the first token is
+        # the <command-message> tag), so only bare-typed commands truncate.
+        modern = ("<command-message>capture-session is running</command-message>\n"
+                  "<command-name>" + self.MARKER + "</command-name>")
+        recs2 = [
+            user("real turn"),
+            asst([text_block("reply")], msg_id="m1"),
+            user(modern),
+            asst([text_block("kept")], msg_id="m2"),
         ]
-        with self.assertRaises(core.EmptyTranscriptError):
-            normalize(recs)
-
-    def test_is_value_error_not_systemexit(self):
-        # Domain error subclasses ValueError, NOT SystemExit.
-        self.assertTrue(issubclass(core.EmptyTranscriptError, ValueError))
-        with self.assertRaises(ValueError):
-            normalize([])
-
-
-class TestFinalMetricsTotals(unittest.TestCase):
-    def test_normalize_final_metrics_totals(self):
-        recs = [
-            asst([text_block("a")], msg_id="m1", usage=USAGE),
-            user([text_block("human")]),
-            asst([text_block("b")], msg_id="m2", usage=USAGE),
-        ]
-        n = normalize(recs)
-        # final_metrics totals == sum of per-step metrics.
-        exp_prompt = sum((s.metrics or {}).get("prompt_tokens", 0) for s in n.steps)
-        exp_compl = sum((s.metrics or {}).get("completion_tokens", 0) for s in n.steps)
-        exp_cached = sum((s.metrics or {}).get("cached_tokens", 0) for s in n.steps)
-        exp_cost = round(sum((s.metrics or {}).get("cost_usd", 0.0) for s in n.steps), 6)
-        self.assertEqual(n.final_metrics["total_prompt_tokens"], exp_prompt)
-        self.assertEqual(n.final_metrics["total_completion_tokens"], exp_compl)
-        self.assertEqual(n.final_metrics["total_cached_tokens"], exp_cached)
-        self.assertEqual(n.final_metrics["total_cost_usd"], exp_cost)
-        self.assertEqual(n.final_metrics["total_steps"], len(n.steps))
+        out2 = core.prefilter_records(recs2, exclude_marker=self.MARKER)
+        self.assertEqual(out2, recs2)
 
 
 # ---------------------------------------------------------------------------
-# Subagent representation: skip_sidechain gate + normalize_session + linker + rollup
+# prefilter_records: session-id / sidechain exclusions + identity
 # ---------------------------------------------------------------------------
-#
-# Subagent records on disk are all isSidechain:true and carry their own sessionId.
-# Spawning calls in the parent (or another subagent) are tool_use blocks named
-# "Agent". Meta sidecars come in three shapes, all exercised below:
-#   {agentType, description, toolUseId}              (current real shape)
-#   {agentType, description, spawnDepth, toolUseId}  (current real shape)
-#   {agentType, spawnDepth}                          (forward-compat, no toolUseId)
-# Kernel tests set meta["trajectory_id"] inline (the shell sets it in production).
 
 
-def sub_meta(*, trajectory_id, agent_type="explorer", description="explore the code",
-             tool_use_id=None, spawn_depth=None, include_description=True):
-    """Build a subagent meta sidecar dict.
-
-    Defaults mirror the {agentType, description, toolUseId} real shape. Pass
-    spawn_depth to add the spawnDepth field; pass include_description=False and
-    tool_use_id=None for the forward-compat {agentType, spawnDepth} shape.
-    """
-    meta = {"agentType": agent_type, "trajectory_id": trajectory_id}
-    if include_description:
-        meta["description"] = description
-    if tool_use_id is not None:
-        meta["toolUseId"] = tool_use_id
-    if spawn_depth is not None:
-        meta["spawnDepth"] = spawn_depth
-    return meta
-
-
-def sub_records(*, call_id=None, content="sub step text", spawn=None):
-    """Build a minimal isSidechain:true subagent transcript (one agent step).
-
-    Pass call_id to give the step a tool_use it can be addressed by; pass
-    spawn=(child_call_id) to add a spawning Agent tool_use (so this subagent can
-    itself parent another).
-    """
-    blocks = [text_block(content)]
-    if call_id is not None:
-        blocks.append(tool_use_block(call_id, name="Bash"))
-    if spawn is not None:
-        blocks.append(tool_use_block(spawn, name="Agent"))
-    recs = [asst(blocks, msg_id="sm1", usage=USAGE, sidechain=True)]
-    if call_id is not None:
-        recs.append(user([tool_result_block(call_id, "sub result")], sidechain=True))
-    return recs
-
-
-class TestSkipSidechainGate(unittest.TestCase):
-    def test_skip_sidechain_false_keeps_sidechain_records(self):
-        # skip_sidechain=False normalizes isSidechain:true records into steps.
+class TestPrefilterExclusions(unittest.TestCase):
+    def test_prefilter_drops_exclude_session_id_records(self):
         recs = [
-            asst([text_block("sub")], msg_id="m1", usage=USAGE, sidechain=True),
-            user([text_block("sub user")], sidechain=True),
+            asst([text_block("cap a")], msg_id="m1", session_id="capsess"),
+            user("cap b", session_id="capsess"),
+            asst([text_block("keep")], msg_id="m2", session_id="sess"),
         ]
-        n = normalize(recs, skip_sidechain=False)
-        self.assertEqual(len(n.steps), 2)
-        self.assertEqual(n.steps[0].source, "agent")
-        self.assertEqual(n.steps[1].source, "user")
+        out = core.prefilter_records(recs, exclude_session_id="capsess")
+        self.assertEqual(out, [recs[2]])
 
-    def test_skip_sidechain_true_is_default_and_skips(self):
-        # Default (skip_sidechain=True) drops sidechain records → empty transcript.
+    def test_prefilter_drops_inline_sidechain_records(self):
+        # isSidechain:true records never survive, even with no exclusion args:
+        # subagent work reaches the trajectory only via the subagent files, so
+        # an inline copy can never double-count (structural guard).
         recs = [
-            asst([text_block("sub")], msg_id="m1", usage=USAGE, sidechain=True),
-            user([text_block("sub user")], sidechain=True),
+            asst([text_block("sub")], msg_id="m1", sidechain=True),
+            user("sub user", sidechain=True),
+            user("main user"),
         ]
-        with self.assertRaises(core.EmptyTranscriptError):
-            normalize(recs)  # default skip_sidechain=True
+        out = core.prefilter_records(recs)
+        self.assertEqual(out, [recs[2]])
 
-    def test_skip_sidechain_false_keeps_main_records_too(self):
-        # Non-sidechain records still normalize when skip_sidechain=False.
-        recs = [asst([text_block("main")], msg_id="m1", usage=USAGE)]
-        n = normalize(recs, skip_sidechain=False)
-        self.assertEqual(len(n.steps), 1)
-
-
-def normalize_session(main_records, subagents, **kw):
-    kw.setdefault("session_id", "sess")
-    kw.setdefault("task_id", None)
-    kw.setdefault("spec_id", None)
-    kw.setdefault("intent", None)
-    kw.setdefault("exclude_session_id", None)
-    return core.normalize_session(main_records, subagents, **kw)
-
-
-class TestNormalizeSessionSingleSubagent(unittest.TestCase):
-    def test_single_subagent_embedded_and_linked(self):
-        # Parent spawns one subagent via an Agent call "spawn-a"; meta carries
-        # toolUseId == "spawn-a" so the ref links to the subagent.
-        main = [
-            asst([text_block("main turn"), tool_use_block("spawn-a", name="Agent")],
-                 msg_id="m1", usage=USAGE),
-            user([tool_result_block("spawn-a", "subagent finished")]),
+    def test_prefilter_keeps_order_and_unmatched_records(self):
+        # No marker/exclusions -> identity: same records, same order, same
+        # objects (nothing rewritten). Non-user/assistant record types pass
+        # through too (upstream owns skipping them).
+        recs = [
+            user("one"),
+            asst([text_block("two")], msg_id="m1"),
+            {"type": "file-history-snapshot", "isSidechain": False,
+             "sessionId": "sess", "timestamp": "2026-06-25T00:00:00Z",
+             "message": {}},
+            user("three"),
         ]
-        meta = sub_meta(trajectory_id="sess/agent-a", tool_use_id="spawn-a")
-        n = normalize_session(main, [(meta, sub_records(call_id="sc1"))])
-        # Exactly one embedded subagent.
-        self.assertEqual(len(n.subagent_trajectories), 1)
-        self.assertEqual(n.subagent_trajectories[0].trajectory_id, "sess/agent-a")
-        # The ref is on the ObservationResult whose source_call_id == the Agent call.
-        spawn_step = next(s for s in n.steps if any(
-            tc["tool_call_id"] == "spawn-a" for tc in s.tool_calls))
-        linked = [r for r in spawn_step.observation_results
-                  if r.get("source_call_id") == "spawn-a"]
-        self.assertEqual(len(linked), 1)
-        self.assertEqual(linked[0]["subagent_trajectory_ref"],
-                         [{"trajectory_id": "sess/agent-a"}])
+        out = core.prefilter_records(recs)
+        self.assertEqual(out, recs)
+        for got, orig in zip(out, recs):
+            self.assertIs(got, orig)
 
 
-class TestNormalizeSessionDepth2(unittest.TestCase):
-    def test_depth2_linked_on_subagent_A_not_parent(self):
-        # main -> A -> B. A's isSidechain steps contain the Agent call "spawn-b";
-        # B's meta.toolUseId == "spawn-b". B must be flat in subagent_trajectories
-        # AND its ref must land on A's ObservationResult, never the parent's.
-        main = [
-            asst([text_block("main"), tool_use_block("spawn-a", name="Agent")],
-                 msg_id="m1", usage=USAGE),
-            user([tool_result_block("spawn-a", "A done")]),
+# ---------------------------------------------------------------------------
+# prefilter_records: list-form user content flatten
+# ---------------------------------------------------------------------------
+
+
+class TestPrefilterFlattensListUserContent(unittest.TestCase):
+    def test_prefilter_flattens_list_user_content(self):
+        # Text parts joined with newlines; the pasted-screenshot image block
+        # becomes an [image] placeholder -- its base64 payload never survives.
+        b64 = "iVBORw0KGgoAAAANSUhEUg" + "A" * 64
+        recs = [user([
+            text_block("look at this"),
+            {"type": "image",
+             "source": {"type": "base64", "media_type": "image/png", "data": b64}},
+            text_block("what do you think?"),
+        ])]
+        out = core.prefilter_records(recs)
+        content = out[0]["message"]["content"]
+        self.assertEqual(content, "look at this\n[image]\nwhat do you think?")
+        self.assertNotIn(b64, json.dumps(out))
+        # Pure: the input record was not mutated.
+        self.assertIsInstance(recs[0]["message"]["content"], list)
+
+    def test_prefilter_tool_result_lists_and_non_user_records_untouched(self):
+        recs = [
+            asst([tool_use_block("c1"), text_block("assistant list stays")],
+                 msg_id="m1"),
+            user([tool_result_block("c1", "result text")]),
         ]
-        # A spawns B: A's step has the Agent call "spawn-b" and folds its result.
-        a_records = [
-            asst([text_block("A turn"), tool_use_block("spawn-b", name="Agent")],
-                 msg_id="am1", usage=USAGE, sidechain=True),
-            user([tool_result_block("spawn-b", "B done")], sidechain=True),
-        ]
-        b_records = sub_records(call_id="bc1", content="B turn")
-        meta_a = sub_meta(trajectory_id="sess/agent-a", tool_use_id="spawn-a")
-        meta_b = sub_meta(trajectory_id="sess/agent-b", tool_use_id="spawn-b")
-        n = normalize_session(main, [(meta_a, a_records), (meta_b, b_records)])
-        # Both subagents are flat (depth-agnostic — no nesting).
-        ids = {s.trajectory_id for s in n.subagent_trajectories}
-        self.assertEqual(ids, {"sess/agent-a", "sess/agent-b"})
-        sub_a = next(s for s in n.subagent_trajectories
-                     if s.trajectory_id == "sess/agent-a")
-        # B's ref is on A's step, not the parent's.
-        a_linked = [r for st in sub_a.steps for r in st.observation_results
-                    if r.get("subagent_trajectory_ref")]
-        self.assertEqual(len(a_linked), 1)
-        self.assertEqual(a_linked[0]["subagent_trajectory_ref"],
+        out = core.prefilter_records(recs)
+        self.assertIs(out[0], recs[0])   # non-user record untouched
+        self.assertIs(out[1], recs[1])   # tool_result-bearing list untouched
+
+    def test_prefilter_str_user_content_passthrough(self):
+        recs = [user("plain string")]
+        out = core.prefilter_records(recs)
+        self.assertIs(out[0], recs[0])
+
+
+# ---------------------------------------------------------------------------
+# flatten_content: shared message/observation content -> display text
+# ---------------------------------------------------------------------------
+
+
+class TestFlattenContent(unittest.TestCase):
+    def test_flatten_content_str_passthrough(self):
+        self.assertEqual(core.flatten_content("plain text"), "plain text")
+
+    def test_flatten_content_joins_text_parts(self):
+        parts = [{"type": "text", "text": "first"},
+                 {"type": "text", "text": "second"}]
+        self.assertEqual(core.flatten_content(parts), "first\nsecond")
+
+    def test_flatten_content_renders_image_placeholder(self):
+        # Image fields are read from the NESTED source block (the real ATIF
+        # ContentPart shape), not from the part itself.
+        parts = [{"type": "text", "text": "see:"},
+                 {"type": "image",
+                  "source": {"media_type": "image/png", "path": "images/img_001.png"}}]
+        self.assertEqual(core.flatten_content(parts),
+                         "see:\n[image: image/png images/img_001.png]")
+
+    def test_flatten_content_non_dict_and_unknown_parts(self):
+        parts = [{"type": "document"}, 42, "raw"]
+        self.assertEqual(core.flatten_content(parts), "[document]\n42\nraw")
+
+    def test_flatten_content_none_empty(self):
+        self.assertEqual(core.flatten_content(None), "")
+        self.assertEqual(core.flatten_content([]), "")
+
+
+# ---------------------------------------------------------------------------
+# rollup_subagent_tokens: subagent-inclusive parent token totals
+# ---------------------------------------------------------------------------
+
+
+class TestRollupSubagentTokens(unittest.TestCase):
+    def _traj(self):
+        # Mirrors the REAL upstream serialized shape: subagent final_metrics is
+        # cost-only (token totals are dropped by exclude_none); tokens live in
+        # each subagent step's per-step metrics.
+        return {
+            "schema_version": "ATIF-v1.7",
+            "session_id": "sess",
+            "final_metrics": {
+                "total_prompt_tokens": 1000, "total_completion_tokens": 200,
+                "total_cached_tokens": 300, "total_cost_usd": 1.25,
+                "total_steps": 4,
+            },
+            "subagent_trajectories": [
+                {
+                    "trajectory_id": "sess/agent-a",
+                    "final_metrics": {"total_cost_usd": 0.40},
+                    "steps": [
+                        {"step_id": 1, "source": "agent", "message": "s1",
+                         "metrics": {"prompt_tokens": 10, "completion_tokens": 5,
+                                     "cached_tokens": 2, "cost_usd": 0.40}},
+                        {"step_id": 2, "source": "user", "message": "s2"},
+                    ],
+                },
+                {
+                    "trajectory_id": "sess/agent-b",
+                    "final_metrics": {"total_cost_usd": 0.10},
+                    "steps": [
+                        {"step_id": 1, "source": "agent", "message": "s3",
+                         "metrics": {"prompt_tokens": 7, "completion_tokens": 3}},
+                    ],
+                },
+            ],
+        }
+
+    def test_rollup_sums_subagent_step_metrics_into_parent(self):
+        traj = self._traj()
+        out = core.rollup_subagent_tokens(traj)
+        self.assertIs(out, traj)   # in place, returned for chaining
+        fm = traj["final_metrics"]
+        # Token totals are subagent-inclusive (absent step metrics/keys count 0).
+        self.assertEqual(fm["total_prompt_tokens"], 1000 + 10 + 7)
+        self.assertEqual(fm["total_completion_tokens"], 200 + 5 + 3)
+        self.assertEqual(fm["total_cached_tokens"], 300 + 2)
+        # Cost (already subtree-inclusive upstream) and step count untouched.
+        self.assertEqual(fm["total_cost_usd"], 1.25)
+        self.assertEqual(fm["total_steps"], 4)
+        # Subagent final_metrics stay cost-only (never rewritten).
+        for sub in traj["subagent_trajectories"]:
+            self.assertEqual(set(sub["final_metrics"]), {"total_cost_usd"})
+
+    def test_rollup_creates_absent_parent_totals(self):
+        traj = self._traj()
+        traj["final_metrics"] = {"total_cost_usd": 0.90}   # unpriced-token parent
+        core.rollup_subagent_tokens(traj)
+        fm = traj["final_metrics"]
+        self.assertEqual(fm["total_prompt_tokens"], 17)
+        self.assertEqual(fm["total_completion_tokens"], 8)
+        self.assertEqual(fm["total_cached_tokens"], 2)
+        self.assertEqual(fm["total_cost_usd"], 0.90)
+        self.assertNotIn("total_steps", fm)
+
+        no_fm = self._traj()
+        del no_fm["final_metrics"]
+        core.rollup_subagent_tokens(no_fm)
+        self.assertEqual(no_fm["final_metrics"]["total_prompt_tokens"], 17)
+        self.assertNotIn("total_cost_usd", no_fm["final_metrics"])
+
+    def test_rollup_no_subagents_identity(self):
+        traj = {"session_id": "sess",
+                "final_metrics": {"total_prompt_tokens": 5, "total_steps": 1}}
+        before = json.dumps(traj, sort_keys=True)
+        out = core.rollup_subagent_tokens(traj)
+        self.assertIs(out, traj)
+        self.assertEqual(json.dumps(traj, sort_keys=True), before)
+
+
+# ---------------------------------------------------------------------------
+# link_nested_subagent_refs: depth-agnostic ref re-link on the serialized dict
+# ---------------------------------------------------------------------------
+
+
+class TestLinkNestedSubagentRefs(unittest.TestCase):
+    def _traj(self):
+        # Serialized shape: results nest under step["observation"]["results"].
+        # Upstream links the parent's ref only; the grandchild (spawned by the
+        # child) is embedded but unreferenced.
+        child = {
+            "trajectory_id": "sess/agent-a",
+            "agent": {"name": "explorer",
+                      "extra": {"toolUseId": "spawn-a", "spawnDepth": 1}},
+            "steps": [
+                {"step_id": 1, "source": "agent", "message": "A",
+                 "tool_calls": [{"tool_call_id": "spawn-b",
+                                 "function_name": "Agent", "arguments": {}}],
+                 "observation": {"results": [
+                     {"source_call_id": "spawn-b", "content": "B done"}]}},
+                # Same source_call_id in a DIFFERENT step (no tool_call here):
+                # the within-step rule must leave it unlinked.
+                {"step_id": 2, "source": "agent", "message": "stray",
+                 "observation": {"results": [
+                     {"source_call_id": "spawn-b", "content": "stray copy"}]}},
+            ],
+        }
+        grandchild = {
+            "trajectory_id": "sess/agent-b",
+            "agent": {"name": "worker",
+                      "extra": {"toolUseId": "spawn-b", "spawnDepth": 2}},
+            "steps": [{"step_id": 1, "source": "agent", "message": "B"}],
+        }
+        return {
+            "session_id": "sess",
+            "steps": [
+                {"step_id": 1, "source": "agent", "message": "main",
+                 "tool_calls": [{"tool_call_id": "spawn-a",
+                                 "function_name": "Agent", "arguments": {}}],
+                 "observation": {"results": [
+                     {"source_call_id": "spawn-a", "content": "A done",
+                      "subagent_trajectory_ref": [
+                          {"trajectory_id": "sess/agent-a"}]}]}},
+            ],
+            "subagent_trajectories": [child, grandchild],
+        }
+
+    def test_link_nested_subagent_refs_depth2(self):
+        traj = self._traj()
+        out = core.link_nested_subagent_refs(traj)
+        self.assertIs(out, traj)   # in place, returned for chaining
+        child, grandchild = traj["subagent_trajectories"]
+        # The grandchild's ref is attached under the CHILD step's results entry
+        # with the matching source_call_id (the within-step rule).
+        linked = child["steps"][0]["observation"]["results"][0]
+        self.assertEqual(linked["subagent_trajectory_ref"],
                          [{"trajectory_id": "sess/agent-b"}])
-        # The parent only links A, not B (guards the parent-only dangling bug).
-        parent_refs = [r["subagent_trajectory_ref"] for st in n.steps
-                       for r in st.observation_results
-                       if r.get("subagent_trajectory_ref")]
-        self.assertEqual(parent_refs, [[{"trajectory_id": "sess/agent-a"}]])
+        # The stray same-id result in a step WITHOUT the tool_call stays bare.
+        stray = child["steps"][1]["observation"]["results"][0]
+        self.assertNotIn("subagent_trajectory_ref", stray)
+        # The parent's upstream-attached ref is not duplicated.
+        parent_result = traj["steps"][0]["observation"]["results"][0]
+        self.assertEqual(parent_result["subagent_trajectory_ref"],
+                         [{"trajectory_id": "sess/agent-a"}])
+        # The grandchild itself gains nothing (no spawning calls inside it).
+        self.assertNotIn("observation", grandchild["steps"][0])
+
+    def test_link_is_idempotent(self):
+        traj = core.link_nested_subagent_refs(self._traj())
+        once = json.dumps(traj, sort_keys=True)
+        core.link_nested_subagent_refs(traj)
+        self.assertEqual(json.dumps(traj, sort_keys=True), once)
+
+    def test_link_unmatched_ids_no_op(self):
+        traj = {
+            "session_id": "sess",
+            "steps": [
+                {"step_id": 1, "source": "agent", "message": "main",
+                 "tool_calls": [{"tool_call_id": "no-such",
+                                 "function_name": "Agent", "arguments": {}}],
+                 "observation": {"results": [
+                     {"source_call_id": "no-such", "content": "done"}]}},
+            ],
+            "subagent_trajectories": [
+                {"trajectory_id": "sess/agent-x",
+                 "agent": {"name": "worker", "extra": {"toolUseId": "other-id"}},
+                 "steps": [{"step_id": 1, "source": "agent", "message": "x"}]},
+            ],
+        }
+        before = json.dumps(traj, sort_keys=True)
+        core.link_nested_subagent_refs(traj)
+        self.assertEqual(json.dumps(traj, sort_keys=True), before)
 
 
-class TestNormalizeSessionDepth3(unittest.TestCase):
-    def test_depth3_synthetic_linked_on_subagent_B(self):
-        # Synthetic main -> A -> B -> C. C's ref must land on B's step. One flat
-        # toolUseId map handles all depths (no per-depth code path).
-        main = [
-            asst([text_block("main"), tool_use_block("spawn-a", name="Agent")],
-                 msg_id="m1", usage=USAGE),
-            user([tool_result_block("spawn-a", "A done")]),
-        ]
-        a_records = [
-            asst([text_block("A"), tool_use_block("spawn-b", name="Agent")],
-                 msg_id="am1", usage=USAGE, sidechain=True),
-            user([tool_result_block("spawn-b", "B done")], sidechain=True),
-        ]
-        b_records = [
-            asst([text_block("B"), tool_use_block("spawn-c", name="Agent")],
-                 msg_id="bm1", usage=USAGE, sidechain=True),
-            user([tool_result_block("spawn-c", "C done")], sidechain=True),
-        ]
-        c_records = sub_records(call_id="cc1", content="C turn")
-        meta_a = sub_meta(trajectory_id="sess/agent-a", tool_use_id="spawn-a")
-        meta_b = sub_meta(trajectory_id="sess/agent-b", tool_use_id="spawn-b")
-        meta_c = sub_meta(trajectory_id="sess/agent-c", tool_use_id="spawn-c")
-        n = normalize_session(main, [(meta_a, a_records),
-                                     (meta_b, b_records),
-                                     (meta_c, c_records)])
-        sub_b = next(s for s in n.subagent_trajectories
-                     if s.trajectory_id == "sess/agent-b")
-        b_linked = [r for st in sub_b.steps for r in st.observation_results
-                    if r.get("subagent_trajectory_ref")]
-        self.assertEqual(len(b_linked), 1)
-        self.assertEqual(b_linked[0]["subagent_trajectory_ref"],
-                         [{"trajectory_id": "sess/agent-c"}])
+# ---------------------------------------------------------------------------
+# sanitize_jsonl_lines: staging tolerance for subagent files
+# ---------------------------------------------------------------------------
 
 
-class TestRollupSubagentMetrics(unittest.TestCase):
-    def test_rollup_sums_tokens_and_cost_no_double_count(self):
-        # Parent + 2 subs, each one agent step with the same known USAGE.
-        main = [asst([text_block("main")], msg_id="m1", usage=USAGE)]
-        meta1 = sub_meta(trajectory_id="sess/agent-1", tool_use_id="t1")
-        meta2 = sub_meta(trajectory_id="sess/agent-2", tool_use_id="t2")
-        subs = [(meta1, sub_records(content="s1")), (meta2, sub_records(content="s2"))]
-        n = normalize_session(main, subs)
-
-        per_prompt = USAGE["input_tokens"] + USAGE["cache_creation_input_tokens"] + \
-            USAGE["cache_read_input_tokens"]
-        per_compl = USAGE["output_tokens"]
-        per_cached = USAGE["cache_read_input_tokens"]
-        # Parent totals = parent step + both subagent steps (flat union).
-        self.assertEqual(n.final_metrics["total_prompt_tokens"], per_prompt * 3)
-        self.assertEqual(n.final_metrics["total_completion_tokens"], per_compl * 3)
-        self.assertEqual(n.final_metrics["total_cached_tokens"], per_cached * 3)
-        # total_steps stays parent-only.
-        self.assertEqual(n.final_metrics["total_steps"], 1)
-        # Cost is the rounded sum of parent + both subs; no double-count.
-        sub1, sub2 = n.subagent_trajectories
-        expected_cost = round(
-            normalize([asst([text_block("main")], msg_id="m1", usage=USAGE)]
-                      ).final_metrics["total_cost_usd"]
-            + sub1.final_metrics["total_cost_usd"]
-            + sub2.final_metrics["total_cost_usd"], 6)
-        self.assertEqual(n.final_metrics["total_cost_usd"], expected_cost)
-        # Each subagent keeps its own final_metrics (its own single step).
-        self.assertEqual(sub1.final_metrics["total_prompt_tokens"], per_prompt)
-        self.assertEqual(sub1.final_metrics["total_steps"], 1)
-        self.assertEqual(sub2.final_metrics["total_prompt_tokens"], per_prompt)
-        self.assertEqual(sub2.final_metrics["total_steps"], 1)
+class TestSanitizeJsonlLines(unittest.TestCase):
+    def test_sanitize_jsonl_lines(self):
+        # Upstream tolerates unparseable lines but crashes the whole conversion
+        # on valid-JSON non-dict lines -- both kinds must be dropped here, and
+        # kept dict lines must survive byte-identical (odd spacing included).
+        dict_line = '{"type": "assistant",  "sessionId": "sess"}'
+        lines = [dict_line, "null", '"str"', "[1]", "{not json", "",
+                 '{"a": 1}']
+        self.assertEqual(core.sanitize_jsonl_lines(lines),
+                         [dict_line, '{"a": 1}'])
+        self.assertEqual(core.sanitize_jsonl_lines([]), [])
 
 
-class TestNormalizeSessionNoSubagents(unittest.TestCase):
-    def test_no_subagents_reduces_to_normalize(self):
-        main = [
-            asst([text_block("a")], msg_id="m1", usage=USAGE),
-            user([text_block("human")]),
-            asst([text_block("b")], msg_id="m2", usage=USAGE),
-        ]
-        n = normalize_session(main, [])
-        self.assertEqual(n.subagent_trajectories, [])
-        # Behaves exactly like normalize on the main transcript.
-        base = normalize([
-            asst([text_block("a")], msg_id="m1", usage=USAGE),
-            user([text_block("human")]),
-            asst([text_block("b")], msg_id="m2", usage=USAGE),
-        ])
-        self.assertEqual(len(n.steps), len(base.steps))
-        self.assertEqual([s.source for s in n.steps], [s.source for s in base.steps])
-        self.assertEqual([s.message for s in n.steps], [s.message for s in base.steps])
-        self.assertEqual(n.final_metrics, base.final_metrics)
+# ---------------------------------------------------------------------------
+# inject_capture_extra: environment / SDLC identity on the serialized artifact
+# ---------------------------------------------------------------------------
 
 
-class TestNormalizeSessionUnlinkedSubagent(unittest.TestCase):
-    def test_meta_without_tool_use_id_is_embedded_unlinked(self):
-        # Forward-compat shape {agentType, spawnDepth} (no toolUseId, no description).
-        main = [
-            asst([text_block("main"), tool_use_block("spawn-a", name="Agent")],
-                 msg_id="m1", usage=USAGE),
-            user([tool_result_block("spawn-a", "done")]),
-        ]
-        meta = sub_meta(trajectory_id="sess/agent-x", agent_type="mystery",
-                        include_description=False, spawn_depth=1)  # no toolUseId
-        n = normalize_session(main, [(meta, sub_records())])
-        # Embedded.
-        self.assertEqual(len(n.subagent_trajectories), 1)
-        sub = n.subagent_trajectories[0]
-        # subagent_type present, subagent_description absent.
-        self.assertEqual(sub.extra["subagent_type"], "mystery")
-        self.assertNotIn("subagent_description", sub.extra)
-        # No ref attached anywhere (unlinked).
-        all_refs = [r for tr in [n, *n.subagent_trajectories]
-                    for st in tr.steps for r in st.observation_results
-                    if r.get("subagent_trajectory_ref")]
-        self.assertEqual(all_refs, [])
+class TestInjectCaptureExtra(unittest.TestCase):
+    def test_inject_capture_extra_sets_env_and_sdlc_keys_absent_when_none(self):
+        traj = {"session_id": "sess", "extra": {"agent_ids": ["a1"]}}
+        out = core.inject_capture_extra(
+            traj, environment={"branch": "b", "cwd": "/w"},
+            task_id="T1", spec_id=None, intent=None)
+        self.assertIs(out, traj)   # in place, returned for chaining
+        extra = traj["extra"]
+        self.assertEqual(extra["environment"], {"branch": "b", "cwd": "/w"})
+        self.assertEqual(extra["sdlc_task_id"], "T1")
+        # Absent facts stay absent -- never null.
+        self.assertNotIn("sdlc_spec_id", extra)
+        self.assertNotIn("sdlc_intent", extra)
+        # Upstream extra keys preserved.
+        self.assertEqual(extra["agent_ids"], ["a1"])
+
+    def test_inject_truthy_gating_and_extra_creation(self):
+        # Falsy values ("" / {}) are not injected; `extra` is created when the
+        # upstream trajectory has none and something is set.
+        traj = {"session_id": "sess"}
+        core.inject_capture_extra(traj, environment={}, task_id="",
+                                  spec_id="S1", intent=None)
+        self.assertEqual(traj["extra"], {"sdlc_spec_id": "S1"})
+        # Nothing truthy -> trajectory unchanged (no empty extra invented).
+        traj2 = {"session_id": "sess"}
+        core.inject_capture_extra(traj2, environment=None, task_id=None,
+                                  spec_id=None, intent=None)
+        self.assertNotIn("extra", traj2)
 
 
-class TestEmbeddedTrajectoryIdNonNull(unittest.TestCase):
-    def test_every_embedded_subagent_has_non_null_trajectory_id(self):
-        main = [asst([text_block("main")], msg_id="m1", usage=USAGE)]
-        subs = [
-            (sub_meta(trajectory_id="sess/agent-1", tool_use_id="t1"),
-             sub_records(content="s1")),
-            (sub_meta(trajectory_id="sess/agent-2", tool_use_id="t2"),
-             sub_records(content="s2")),
-        ]
-        n = normalize_session(main, subs)
-        for sub in n.subagent_trajectories:
-            self.assertIsNotNone(sub.trajectory_id)
-            self.assertTrue(sub.trajectory_id)
-
-
-class TestNormalizeSessionExcludeSessionNotAppliedToSubagents(unittest.TestCase):
-    def test_exclude_session_id_does_not_drop_subagents(self):
-        # Subagent records carry the captured session's own sessionId. Passing
-        # that same id as exclude_session_id must NOT drop the subagent — the
-        # exclusion is a parent-transcript concern only.
-        main = [
-            asst([text_block("main"), tool_use_block("spawn-a", name="Agent")],
-                 msg_id="m1", usage=USAGE, session_id="keepsess"),
-            user([tool_result_block("spawn-a", "done")], session_id="keepsess"),
-        ]
-        # Subagent records use a DIFFERENT id ("capsess") which we also exclude;
-        # if exclusion were applied to subagents, the subagent would vanish.
-        sub_recs = [
-            asst([text_block("sub")], msg_id="sm1", usage=USAGE,
-                 sidechain=True, session_id="capsess"),
-        ]
-        meta = sub_meta(trajectory_id="capsess/agent-a", tool_use_id="spawn-a")
-        n = normalize_session(main, [(meta, sub_recs)],
-                              exclude_session_id="capsess")
-        # Parent intact, subagent survived despite the exclusion.
-        self.assertTrue(len(n.steps) >= 1)
-        self.assertEqual(len(n.subagent_trajectories), 1)
-        self.assertEqual(n.subagent_trajectories[0].trajectory_id, "capsess/agent-a")
-
-
-class TestNormalizeSessionDuplicateToolResultRef(unittest.TestCase):
-    def test_ref_attached_to_both_duplicate_results(self):
-        # One spawning Agent call with TWO tool_results (same source_call_id).
-        # The ref must attach to both.
-        main = [
-            asst([text_block("main"), tool_use_block("spawn-a", name="Agent")],
-                 msg_id="m1", usage=USAGE),
-            user([tool_result_block("spawn-a", "first")]),
-            user([tool_result_block("spawn-a", "second")]),
-        ]
-        meta = sub_meta(trajectory_id="sess/agent-a", tool_use_id="spawn-a")
-        n = normalize_session(main, [(meta, sub_records())])
-        spawn_step = next(s for s in n.steps if any(
-            tc["tool_call_id"] == "spawn-a" for tc in s.tool_calls))
-        linked = [r for r in spawn_step.observation_results
-                  if r.get("source_call_id") == "spawn-a"]
-        self.assertEqual(len(linked), 2)
-        for r in linked:
-            self.assertEqual(r["subagent_trajectory_ref"],
-                             [{"trajectory_id": "sess/agent-a"}])
-
-
-class TestNormalizeSessionEmbedUnlinkedOnTruncation(unittest.TestCase):
-    MARKER = "/drvr:capture-session"
-
-    def test_truncated_spawn_call_yields_embedded_but_unlinked(self):
-        # The spawning Agent call lives AFTER the capture-invocation turn, so the
-        # exclude_marker truncation cuts it away. The subagent is still present on
-        # disk → embedded, but with NO ref anywhere (the spawning call is gone).
-        main = [
-            user([text_block("real human turn")]),
-            asst([text_block("agent reply")], msg_id="m1", usage=USAGE),
-            user([text_block(self.MARKER)]),                 # capture invocation = cut
-            asst([text_block("dropped"), tool_use_block("spawn-a", name="Agent")],
-                 msg_id="m2", usage=USAGE),
-            user([tool_result_block("spawn-a", "dropped result")]),
-        ]
-        meta = sub_meta(trajectory_id="sess/agent-a", tool_use_id="spawn-a")
-        n = normalize_session(main, [(meta, sub_records())],
-                              exclude_marker=self.MARKER)
-        # Parent intact (only the pre-marker steps).
-        self.assertEqual(len(n.steps), 2)
-        # Subagent still embedded.
-        self.assertEqual(len(n.subagent_trajectories), 1)
-        # ZERO refs anywhere (the spawning call was truncated away).
-        all_refs = [r for tr in [n, *n.subagent_trajectories]
-                    for st in tr.steps for r in st.observation_results
-                    if r.get("subagent_trajectory_ref")]
-        self.assertEqual(all_refs, [])
-
-
-class TestRefResolvabilityInvariant(unittest.TestCase):
-    def test_every_ref_resolves_to_an_embedded_subagent(self):
-        # Depth-2 fixture: gather every emitted ref across parent + subs and assert
-        # each trajectory_id resolves to an embedded subagent's trajectory_id.
-        main = [
-            asst([text_block("main"), tool_use_block("spawn-a", name="Agent")],
-                 msg_id="m1", usage=USAGE),
-            user([tool_result_block("spawn-a", "A done")]),
-        ]
-        a_records = [
-            asst([text_block("A"), tool_use_block("spawn-b", name="Agent")],
-                 msg_id="am1", usage=USAGE, sidechain=True),
-            user([tool_result_block("spawn-b", "B done")], sidechain=True),
-        ]
-        b_records = sub_records(content="B")
-        meta_a = sub_meta(trajectory_id="sess/agent-a", tool_use_id="spawn-a")
-        meta_b = sub_meta(trajectory_id="sess/agent-b", tool_use_id="spawn-b")
-        n = normalize_session(main, [(meta_a, a_records), (meta_b, b_records)])
-        embedded_ids = {s.trajectory_id for s in n.subagent_trajectories}
-        emitted = [ref["trajectory_id"]
-                   for tr in [n, *n.subagent_trajectories]
-                   for st in tr.steps
-                   for r in st.observation_results
-                   for ref in r.get("subagent_trajectory_ref", [])]
-        self.assertTrue(emitted)  # there ARE refs to check
-        for tid in emitted:
-            self.assertIn(tid, embedded_ids)
+# ---------------------------------------------------------------------------
+# is_safe_path_component: path-segment guard (ported unchanged)
+# ---------------------------------------------------------------------------
 
 
 class TestIsSafePathComponent(unittest.TestCase):
@@ -753,30 +539,6 @@ class TestIsSafePathComponent(unittest.TestCase):
     def test_non_str_rejected(self):
         for sid in (None, 123, ["x"]):
             self.assertFalse(core.is_safe_path_component(sid), sid)
-
-
-class TestNormalizeSessionEmptySubagentOmitted(unittest.TestCase):
-    def test_zero_step_subagent_omitted_parent_intact(self):
-        # A subagent whose records yield no steps is dropped via EmptyTranscriptError
-        # caught inside normalize_session; the parent is unaffected.
-        main = [
-            asst([text_block("main"), tool_use_block("spawn-a", name="Agent")],
-                 msg_id="m1", usage=USAGE),
-            user([tool_result_block("spawn-a", "done")]),
-        ]
-        good_meta = sub_meta(trajectory_id="sess/agent-good", tool_use_id="spawn-a")
-        empty_meta = sub_meta(trajectory_id="sess/agent-empty", tool_use_id="t-empty")
-        # The empty subagent has only newer-type records → zero steps.
-        empty_records = [{"type": "mode", "isSidechain": True, "sessionId": "sess",
-                          "timestamp": "2026-06-25T00:00:00Z", "message": {}}]
-        n = normalize_session(
-            main,
-            [(good_meta, sub_records()), (empty_meta, empty_records)])
-        # Only the non-empty subagent survives.
-        ids = {s.trajectory_id for s in n.subagent_trajectories}
-        self.assertEqual(ids, {"sess/agent-good"})
-        # Parent intact.
-        self.assertTrue(len(n.steps) >= 1)
 
 
 # ---------------------------------------------------------------------------
