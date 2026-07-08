@@ -814,6 +814,28 @@ class TestRollCaptureHookRegistration(unittest.TestCase):
                 "SessionStart capture entry must declare a timeout",
             )
 
+    def test_session_start_invokes_banner_with_timeout(self):
+        """data["hooks"]["SessionStart"] must invoke session-start-banner.sh via
+        ${CLAUDE_PLUGIN_ROOT} and declare a timeout (read the nested
+        data["hooks"]["SessionStart"] path, not a top-level key)."""
+        banner_entries = [
+            e for e in self._entries("SessionStart")
+            if "session-start-banner.sh" in e.get("command", "")
+        ]
+        self.assertTrue(
+            banner_entries,
+            'data["hooks"]["SessionStart"] does not invoke session-start-banner.sh',
+        )
+        for entry in banner_entries:
+            self.assertIn(
+                "${CLAUDE_PLUGIN_ROOT}", entry["command"],
+                "SessionStart banner command must reference ${CLAUDE_PLUGIN_ROOT}",
+            )
+            self.assertIn(
+                "timeout", entry,
+                "SessionStart banner entry must declare a timeout",
+            )
+
 
 if __name__ == "__main__":
     unittest.main()
