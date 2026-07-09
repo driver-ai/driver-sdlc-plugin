@@ -36,6 +36,7 @@
     "./commands/un-driverize.md",
     "./commands/review.md",
     "./commands/capture-session.md",
-    "./commands/capture-sync.md"
+    "./commands/capture-sync.md",
+    "./commands/capture-viewer.md"
   ]
 }

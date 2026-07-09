@@ -287,7 +287,7 @@ class TestCommandQualification(unittest.TestCase):
         "feature", "assess", "context", "dry-run-plan",
         "docs-artifacts", "open-pr", "orchestrate", "retro", "setup",
         "driverize", "un-driverize", "review", "capture-session",
-        "capture-sync",
+        "capture-sync", "capture-viewer",
     ]
 
     SCAN_DIRS = ["commands", "skills", "agents", "docs", "hooks", "templates"]
@@ -569,6 +569,161 @@ class TestCaptureSyncGovernance(unittest.TestCase):
         self.assertLess(
             gate_idx, upload_idx,
             "AskUserQuestion gate must appear BEFORE the real-upload atif_to_s3.py invocation",
+        )
+
+
+class TestCaptureViewerGovernance(unittest.TestCase):
+    """Registration + egress-control governance for /drvr:capture-viewer.
+
+    Mirrors TestCaptureSyncGovernance's registration pin, with one structural
+    difference: the approval gate this command relies on lives in the BROWSER
+    — the viewer UI's confirm click — not in an AskUserQuestion step of the
+    command body, so there is no in-doc gate-before-egress ordering to pin.
+    What is pinned instead:
+
+    1. the command doc states the honest-gate posture with the EXACT
+       pre-agreed marker sentences (the UPLOAD_MARKER mechanic applied to the
+       gate posture),
+    2. the server module carries no direct egress surface of its own — egress
+       is reachable only via ``atif_to_s3.sync_sessions`` behind
+       ``capture_viewer_core.validate_sync_request`` — and
+    3. the server binds 127.0.0.1 only.
+    """
+
+    GATE_MARKER_CONFIRM_CLICK = "the confirm click in the viewer UI is the gate"
+    GATE_MARKER_REFUSES = "refuses any sync without `confirm: true`"
+
+    @classmethod
+    def setUpClass(cls):
+        plugin_json_path = PLUGIN_CONFIG_DIR / "plugin.json"
+        with open(plugin_json_path, encoding="utf-8") as f:
+            cls.plugin_data = json.load(f)
+        cls.command_path = PLUGIN_ROOT / "commands" / "capture-viewer.md"
+        cls.server_path = (
+            PLUGIN_ROOT / "scripts" / "capture" / "capture_viewer_server.py"
+        )
+
+    def test_capture_viewer_registered(self):
+        """capture-viewer must be registered in plugin.json + COMMANDS, have valid
+        frontmatter (allowed-tools a comma-separated string including Bash and
+        the get_caller_identity MCP tool), and reference itself
+        fully-qualified as /drvr:capture-viewer in its body."""
+        # Registered in plugin.json commands array. This assertion is the
+        # anti-silent-skip pin: the generic iterators resolve paths FROM
+        # plugin.json, so an unregistered doc would pass them vacuously.
+        self.assertIn(
+            "./commands/capture-viewer.md",
+            self.plugin_data.get("commands", []),
+            "capture-viewer not registered in plugin.json commands array",
+        )
+        # Registered in the qualified-name scanner's COMMANDS list
+        self.assertIn(
+            "capture-viewer",
+            TestCommandQualification.COMMANDS,
+            "capture-viewer not added to COMMANDS list",
+        )
+        # Command file exists
+        self.assertTrue(
+            self.command_path.is_file(),
+            f"command file does not exist: {self.command_path}",
+        )
+
+        fm = parse_frontmatter(self.command_path)
+        # Three required frontmatter fields
+        for field in ("description", "argument-hint", "allowed-tools"):
+            self.assertIn(field, fm, f"capture-viewer missing frontmatter '{field}'")
+
+        # allowed-tools must be a comma-separated STRING (not a YAML list)
+        self.assertEqual(
+            fm.get("allowed-tools-format"), "string",
+            "capture-viewer allowed-tools must be a comma-separated string, not a YAML list",
+        )
+        tools = fm.get("allowed-tools", [])
+        # The command launches the server as a background Bash task.
+        self.assertIn(
+            "Bash", tools,
+            "capture-viewer must allow Bash to launch the viewer server",
+        )
+        # The identity lookup scopes the S3 keys — its MCP tool must be allowed.
+        self.assertIn(
+            "mcp__driver-mcp__get_caller_identity", tools,
+            "capture-viewer must allow mcp__driver-mcp__get_caller_identity for identity resolution",
+        )
+
+        # Body references the command fully-qualified
+        body = get_md_body(self.command_path)
+        self.assertIn(
+            "/drvr:capture-viewer", body,
+            "capture-viewer body must reference the command fully-qualified as /drvr:capture-viewer",
+        )
+
+    def test_command_doc_pins_gate(self):
+        """The command doc must state the honest-gate posture with the EXACT
+        pre-agreed marker sentences — the gate lives in the viewer UI, and the
+        doc is where the launching agent learns not to gate or upload itself."""
+        self.assertTrue(
+            self.command_path.is_file(),
+            f"command file does not exist: {self.command_path}",
+        )
+        body = get_md_body(self.command_path)
+        self.assertIn(
+            self.GATE_MARKER_CONFIRM_CLICK, body,
+            "capture-viewer.md must contain the exact gate marker "
+            f"{self.GATE_MARKER_CONFIRM_CLICK!r}",
+        )
+        self.assertIn(
+            self.GATE_MARKER_REFUSES, body,
+            "capture-viewer.md must contain the exact gate marker "
+            f"{self.GATE_MARKER_REFUSES!r}",
+        )
+
+    def test_server_has_no_direct_egress(self):
+        """The server module must carry no direct egress surface of its own:
+        no aws-CLI / boto / s3 tokens (it legitimately shells out to nothing
+        but git/npm). Egress is reachable only via atif_to_s3.sync_sessions
+        behind capture_viewer_core.validate_sync_request."""
+        source = self.server_path.read_text(encoding="utf-8")
+
+        for token in ("put-object", "s3api", "s3://"):
+            self.assertNotIn(
+                token, source,
+                f"capture_viewer_server.py must not contain the egress token {token!r}",
+            )
+        self.assertNotIn(
+            "boto", source.casefold(),
+            "capture_viewer_server.py must not mention boto — its egress goes "
+            "through atif_to_s3, which owns the S3 client invocation",
+        )
+        # Case-sensitive scan for the QUOTED five-char token "aws" (an argv
+        # literal like ["aws", ...]) — deliberately NOT a lowercased substring
+        # scan, which would false-positive on legitimate prose such as "AWS".
+        self.assertNotIn(
+            '"aws"', source,
+            'capture_viewer_server.py must not carry an "aws" argv literal '
+            "(the server shells out to nothing but git/npm)",
+        )
+
+        # The one egress path: the atif_to_s3 seam behind the pure-core gate.
+        self.assertIn(
+            "validate_sync_request", source,
+            "sync must be gated by capture_viewer_core.validate_sync_request",
+        )
+        self.assertIn(
+            "atif_to_s3.sync_sessions", source,
+            "sync must reuse atif_to_s3.sync_sessions (no second egress path)",
+        )
+
+    def test_server_binds_localhost(self):
+        """The server source must pin 127.0.0.1 as the bind host constant and
+        bind with it — never 0.0.0.0 (the store is personal data)."""
+        source = self.server_path.read_text(encoding="utf-8")
+        self.assertIn(
+            '_BIND_HOST = "127.0.0.1"', source,
+            "capture_viewer_server.py must pin the bind host constant to 127.0.0.1",
+        )
+        self.assertIn(
+            "(_BIND_HOST, port)", source,
+            "make_server must bind (_BIND_HOST, port) — the pinned localhost constant",
         )
 
 
