@@ -440,6 +440,186 @@ class TestValidateSyncRequest(unittest.TestCase):
         self.assertEqual(ids, ["sid-up", "sid-up2"])
 
 
+class TestValidateAnnotations(unittest.TestCase):
+    def test_validate_annotations(self):
+        validate = capture_viewer_core.validate_annotations
+
+        def _step_label(**kw):
+            lab = {"decision": "correct",
+                   "anchor": {"trajId": "sess-1", "stepId": 3}}
+            lab.update(kw)
+            return lab
+
+        # Well-formed doc accepted (stepLabels need an anchor; runLabels don't).
+        ok, err = validate({
+            "stepLabels": [_step_label()],
+            "runLabels": [{"decision": "unsure", "note": "hmm"}],
+            "tags": ["flaky", "revisit"],
+        })
+        self.assertTrue(ok)
+        self.assertIsNone(err)
+        # Fully-omitted collections are fine (defaults are empty lists).
+        ok, err = validate({})
+        self.assertTrue(ok)
+        self.assertIsNone(err)
+
+        # Body must be a JSON object.
+        for body in (None, [], "doc", 42):
+            with self.subTest(body=body):
+                ok, err = validate(body)
+                self.assertFalse(ok)
+                self.assertIsInstance(err, str)
+
+        # stepLabels / runLabels must be lists of objects.
+        for key in ("stepLabels", "runLabels"):
+            with self.subTest(key=key, case="not-a-list"):
+                ok, _ = validate({key: "nope"})
+                self.assertFalse(ok)
+            with self.subTest(key=key, case="entry-not-a-dict"):
+                ok, _ = validate({key: ["scalar"]})
+                self.assertFalse(ok)
+
+        # decision is REQUIRED on every label and must be a known value (DEC-026).
+        with self.subTest(case="run-label-no-decision"):
+            ok, _ = validate({"runLabels": [{"note": "n"}]})
+            self.assertFalse(ok)
+        with self.subTest(case="run-label-unknown-decision"):
+            ok, _ = validate({"runLabels": [{"decision": "maybe"}]})
+            self.assertFalse(ok)
+        with self.subTest(case="step-label-no-decision"):
+            ok, _ = validate({"stepLabels": [{
+                "anchor": {"trajId": "sess-1", "stepId": 3}}]})
+            self.assertFalse(ok)
+        # The full decision enum is accepted.
+        for decision in ("correct", "incorrect", "unsure"):
+            with self.subTest(decision=decision):
+                ok, err = validate({"runLabels": [{"decision": decision}]})
+                self.assertTrue(ok, msg=err)
+
+        # stepLabel anchors must be {trajId, stepId} with both keys present (DEC-025).
+        for anchor in (None, "str", 5, {}, {"foo": 1},
+                       {"trajId": "sess-1"}, {"stepId": 3}):
+            with self.subTest(anchor=anchor):
+                ok, _ = validate({"stepLabels": [{
+                    "decision": "correct", "anchor": anchor}]})
+                self.assertFalse(ok)
+        # Missing anchor key entirely is also rejected.
+        with self.subTest(case="step-label-missing-anchor"):
+            ok, _ = validate({"stepLabels": [{"decision": "correct"}]})
+            self.assertFalse(ok)
+        # Both keys present (values may even be null) -> valid.
+        for anchor in ({"trajId": "sess-1", "stepId": 3},
+                       {"trajId": "sess-1", "stepId": None}):
+            with self.subTest(anchor=anchor):
+                ok, err = validate({"stepLabels": [{
+                    "decision": "correct", "anchor": anchor}]})
+                self.assertTrue(ok, msg=err)
+
+        # tags must be a list of strings.
+        with self.subTest(case="tags-not-a-list"):
+            ok, _ = validate({"tags": "flaky"})
+            self.assertFalse(ok)
+        with self.subTest(case="tags-non-str-entry"):
+            ok, _ = validate({"tags": ["ok", 7]})
+            self.assertFalse(ok)
+
+
+class TestBuildAnnotationsDoc(unittest.TestCase):
+    def test_build_annotations_doc_stamps(self):
+        build = capture_viewer_core.build_annotations_doc
+        body = {
+            "stepLabels": [
+                # A label WITH a client author + createdAt: both preserved.
+                {"decision": "correct",
+                 "anchor": {"trajId": "sess-1", "stepId": 3},
+                 "note": "keep <this@example.com> unscrubbed",
+                 "author": "alice", "createdAt": "2026-07-01T00:00:00Z"},
+                # A label WITHOUT author/createdAt: both defaulted to server/now.
+                {"decision": "unsure",
+                 "anchor": {"trajId": "sess-1", "stepId": 4}},
+            ],
+            "runLabels": [
+                {"decision": "incorrect", "author": "bob",
+                 "createdAt": "2026-06-30T00:00:00Z"},
+            ],
+            "tags": ["revisit"],
+        }
+        doc = build(body, session_id="sess-1", author="server-carol",
+                    now="2026-07-09T12:00:00Z")
+
+        # Identity/version/time stamped by the server.
+        self.assertEqual(doc["version"], 1)
+        self.assertEqual(doc["sessionId"], "sess-1")
+        self.assertEqual(doc["tags"], ["revisit"])
+
+        step_authored, step_default = doc["stepLabels"]
+        # A DIFFERENT server author does NOT overwrite the label's own author.
+        self.assertEqual(step_authored["author"], "alice")
+        self.assertEqual(step_authored["createdAt"], "2026-07-01T00:00:00Z")
+        # updatedAt is always the injected now.
+        self.assertEqual(step_authored["updatedAt"], "2026-07-09T12:00:00Z")
+        # Note text is NOT scrubbed (user-authored, local -- DEC-020).
+        self.assertEqual(step_authored["note"], "keep <this@example.com> unscrubbed")
+
+        # A label missing author/createdAt defaults to server author / injected now.
+        self.assertEqual(step_default["author"], "server-carol")
+        self.assertEqual(step_default["createdAt"], "2026-07-09T12:00:00Z")
+        self.assertEqual(step_default["updatedAt"], "2026-07-09T12:00:00Z")
+
+        run_label = doc["runLabels"][0]
+        self.assertEqual(run_label["author"], "bob")           # client-authoritative
+        self.assertEqual(run_label["createdAt"], "2026-06-30T00:00:00Z")
+        self.assertEqual(run_label["updatedAt"], "2026-07-09T12:00:00Z")
+
+    def test_build_annotations_doc_empty(self):
+        # An empty body still yields a well-formed stamped doc.
+        doc = capture_viewer_core.build_annotations_doc(
+            {}, session_id="sess-x", author="you", now="2026-07-09T12:00:00Z")
+        self.assertEqual(doc, {"version": 1, "sessionId": "sess-x",
+                               "stepLabels": [], "runLabels": [], "tags": []})
+
+
+class TestParseAnnotations(unittest.TestCase):
+    def test_parse_annotations_tolerant(self):
+        parse = capture_viewer_core.parse_annotations
+
+        # None (missing file) -> default doc carrying sessionId.
+        doc = parse(None, session_id="sess-1")
+        self.assertEqual(doc, {**capture_viewer_core.DEFAULT_ANNOTATIONS,
+                               "sessionId": "sess-1"})
+        self.assertEqual(doc["sessionId"], "sess-1")
+
+        # Corrupt JSON -> default (never raises).
+        self.assertEqual(parse("{not json", session_id="sess-1")["sessionId"],
+                         "sess-1")
+        self.assertEqual(parse("{not json", session_id="sess-1")["stepLabels"], [])
+
+        # Non-dict JSON (list / scalar) -> default.
+        for text in ("[1, 2, 3]", "42", '"a string"'):
+            with self.subTest(text=text):
+                doc = parse(text, session_id="sess-1")
+                self.assertEqual(doc["sessionId"], "sess-1")
+                self.assertEqual(doc["stepLabels"], [])
+
+        # A valid doc missing sessionId gets it backfilled; content preserved.
+        import json as _json
+        stored = {"version": 1, "stepLabels": [{"decision": "correct"}],
+                  "runLabels": [], "tags": ["t"]}
+        doc = parse(_json.dumps(stored), session_id="sess-1")
+        self.assertEqual(doc["sessionId"], "sess-1")
+        self.assertEqual(doc["stepLabels"], [{"decision": "correct"}])
+        self.assertEqual(doc["tags"], ["t"])
+
+        # An explicit-null sessionId is also backfilled.
+        doc = parse(_json.dumps({**stored, "sessionId": None}), session_id="sess-1")
+        self.assertEqual(doc["sessionId"], "sess-1")
+
+        # A doc that already names its session is left as-is.
+        doc = parse(_json.dumps({**stored, "sessionId": "other"}),
+                    session_id="sess-1")
+        self.assertEqual(doc["sessionId"], "other")
+
+
 class TestRoute(unittest.TestCase):
     def test_route_dispatch(self):
         route = capture_viewer_core.route
@@ -500,6 +680,35 @@ class TestRoute(unittest.TestCase):
                      "/api/sessions//scan"):
             with self.subTest(path=path):
                 self.assertEqual(route("GET", path)[0], "api_404")
+
+    def test_route_annotations_kinds(self):
+        route = capture_viewer_core.route
+
+        # GET/POST /api/sessions/<id>/annotations -> annotations_get/annotations_post.
+        self.assertEqual(route("GET", "/api/sessions/abc-123/annotations"),
+                         ("annotations_get", {"session_id": "abc-123"}))
+        self.assertEqual(route("POST", "/api/sessions/abc-123/annotations"),
+                         ("annotations_post", {"session_id": "abc-123"}))
+        # HEAD routes like GET.
+        self.assertEqual(route("HEAD", "/api/sessions/abc-123/annotations"),
+                         ("annotations_get", {"session_id": "abc-123"}))
+        # route normalizes the raw path (query strip, slash collapse) first.
+        self.assertEqual(route("GET", "/api/sessions/abc-123/annotations?x=1"),
+                         ("annotations_get", {"session_id": "abc-123"}))
+
+        # No collision with /scan: the annotations endpoint is a distinct endswith.
+        self.assertEqual(route("GET", "/api/sessions/abc-123/scan"),
+                         ("scan", {"session_id": "abc-123"}))
+
+        # Unsafe / traversal-bearing ids degrade to api_404 (never reach disk),
+        # on both GET and POST.
+        for method in ("GET", "POST"):
+            for path in ("/api/sessions/../x/annotations",
+                         "/api/sessions/..%2Fx/annotations",
+                         "/api/sessions//annotations",
+                         "/api/sessions/.hidden/annotations"):
+                with self.subTest(method=method, path=path):
+                    self.assertEqual(route(method, path)[0], "api_404")
 
 
 if __name__ == "__main__":

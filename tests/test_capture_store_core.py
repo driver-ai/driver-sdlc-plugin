@@ -42,6 +42,33 @@ class TestStorePathFor(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
+# annotations_path_for
+# ---------------------------------------------------------------------------
+
+class TestAnnotationsPathFor(unittest.TestCase):
+    def test_valid_session_id_full_path(self):
+        base = "/var/capture"
+        sid = "8f5a3cf6-4988-4beb-a861-3163dfac3371"
+        path = store.annotations_path_for(base, sid)
+        expected = os.path.join(base, "sessions", sid, "annotations.json")
+        self.assertEqual(path, expected)
+        # Sidecar lives alongside the trajectory in the same session dir.
+        self.assertEqual(os.path.dirname(path),
+                         os.path.dirname(store.store_path_for(base, sid)))
+
+    def test_unsafe_session_id_raises_value_error(self):
+        # traversal guard mirrors store_path_for: a URL-supplied id can't traverse.
+        for sid in ("../etc", "", ".", "a/b", ".hidden"):
+            with self.subTest(sid=sid):
+                with self.assertRaises(ValueError):
+                    store.annotations_path_for("/var/capture", sid)
+
+    def test_non_str_session_id_raises_value_error(self):
+        with self.assertRaises(ValueError):
+            store.annotations_path_for("/var/capture", 123)
+
+
+# ---------------------------------------------------------------------------
 # should_roll
 # ---------------------------------------------------------------------------
 

@@ -28,6 +28,19 @@ def store_path_for(base_dir: str, session_id: str,
     return os.path.join(base_dir, "sessions", session_id, "trajectory.redacted.json")
 
 
+def annotations_path_for(base_dir: str, session_id: str) -> str:
+    """Pure: the per-session annotations sidecar path.
+
+    Returns "<base_dir>/sessions/<session_id>/annotations.json" -- alongside the
+    session's rolled trajectory. Raises ValueError when session_id is not a safe
+    single path segment (mirrors store_path_for's guard), so a URL-supplied id can
+    never traverse out of base_dir.
+    """
+    if not is_safe_path_component(session_id):
+        raise ValueError(f"unsafe session_id path component: {session_id!r}")
+    return os.path.join(base_dir, "sessions", session_id, "annotations.json")
+
+
 @dataclass(frozen=True)
 class RollThreshold:
     min_record_delta: int = 20    # roll after >= this many new transcript lines

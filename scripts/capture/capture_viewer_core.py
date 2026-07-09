@@ -24,6 +24,7 @@ composed from the same imported pieces (`flatten_with_subagents`, `MAX_STEPS`,
 """
 from __future__ import annotations
 
+import json
 import os
 import re
 import urllib.parse
@@ -240,6 +241,77 @@ def validate_sync_request(body: object, runs_by_id: dict) -> tuple[list[str], st
     return list(ids), None
 
 
+DEFAULT_ANNOTATIONS = {"version": 1, "sessionId": None,
+                       "stepLabels": [], "runLabels": [], "tags": []}
+_DECISIONS = {"correct", "incorrect", "unsure"}
+
+
+def validate_annotations(body: object) -> tuple[bool, str | None]:
+    """Pure shape/enum check for a client-posted annotations doc.
+
+    Returns (True, None) on a well-formed doc, else (False, reason). `decision` is
+    REQUIRED on every step/run label and must be a known value (capture-viewer
+    DEC-026); a stepLabel's `anchor` must be an object carrying both `trajId` and
+    `stepId` keys (values may be null -- trajId=session_id for roots, stepId is
+    number|null; capture-viewer DEC-025). Absent collections default to empty.
+    """
+    if not isinstance(body, dict):
+        return False, "request body must be a JSON object"
+    for key in ("stepLabels", "runLabels"):
+        labels = body.get(key, [])
+        if not isinstance(labels, list):
+            return False, f"{key} must be a list"
+        for lab in labels:
+            if not isinstance(lab, dict):
+                return False, f"{key} entries must be objects"
+            if lab.get("decision") not in _DECISIONS:   # decision REQUIRED on every label
+                return False, f"invalid decision in {key}"
+            if key == "stepLabels":                     # anchor must be {trajId, stepId}
+                anchor = lab.get("anchor")               # (keys present; values may be null --
+                if (not isinstance(anchor, dict)         #  trajId=session_id for roots,
+                        or "trajId" not in anchor        #  stepId is number|null) --
+                        or "stepId" not in anchor):      #  capture-viewer DEC-025
+                    return False, "stepLabels entries need an anchor {trajId, stepId}"
+    tags = body.get("tags", [])
+    if not isinstance(tags, list) or not all(isinstance(t, str) for t in tags):
+        return False, "tags must be a list of strings"
+    return True, None
+
+
+def build_annotations_doc(body: dict, *, session_id: str, author: str, now: str) -> dict:
+    """Pure: validated client doc -> stored doc. Stamps version/sessionId + per-label
+    updatedAt=now; PRESERVES client createdAt AND client per-label author (both
+    client-authoritative under LWW full-doc PUT -- capture-viewer DEC-021/DEC-026),
+    defaulting each to the current server value only when the client omits it. This
+    keeps attribution stable when a *different* reviewer re-posts the doc (plan-06
+    cross-machine S3 sync would otherwise rewrite every prior label's author). Notes
+    NOT scrubbed (user-authored, local -- capture-viewer DEC-020)."""
+    def stamp(lab):
+        return {**lab, "author": lab.get("author") or author,
+                "createdAt": lab.get("createdAt") or now, "updatedAt": now}
+    return {"version": 1, "sessionId": session_id,
+            "stepLabels": [stamp(l) for l in body.get("stepLabels", [])],
+            "runLabels": [stamp(l) for l in body.get("runLabels", [])],
+            "tags": list(body.get("tags", []))}
+
+
+def parse_annotations(text: str | None, *, session_id: str) -> dict:
+    """Pure: sidecar JSON text (or None for a missing file) -> a doc. None/corrupt/
+    non-dict -> default doc stamped with sessionId (tolerant -- a corrupt LOCAL
+    annotations file degrades to empty, never 500; capture-viewer DEC-019)."""
+    if not text:
+        return {**DEFAULT_ANNOTATIONS, "sessionId": session_id}
+    try:
+        doc = json.loads(text)
+    except (ValueError, TypeError):
+        return {**DEFAULT_ANNOTATIONS, "sessionId": session_id}
+    if not isinstance(doc, dict):
+        return {**DEFAULT_ANNOTATIONS, "sessionId": session_id}
+    if not doc.get("sessionId"):            # backfill a missing OR explicit-null sessionId
+        doc["sessionId"] = session_id
+    return doc
+
+
 def normalize_path(raw: str) -> str:
     """Pure: a raw request path -> the routing path.
 
@@ -255,21 +327,30 @@ def normalize_path(raw: str) -> str:
 
 
 def route(method: str, raw_path: str) -> tuple[str, dict]:
-    """Pure: (method, RAW path) -> ('dataset'|'run'|'scan'|'sync'|'api_404'|'static', params).
+    """Pure: (method, RAW path) -> (kind, params), kind in
+    'dataset'|'run'|'scan'|'sync'|'annotations_get'|'annotations_post'|'api_404'|'static'.
 
     Normalizes the raw path internally via `normalize_path` before matching.
-    HEAD routes like GET (a headers-only reply is the shell's job). POST to
-    anything but /api/sync -> api_404, as does any other non-GET method.
-    Unknown /api/ paths are api_404, never static (the SPA fallback must not
-    shadow the API). run/scan ids must be safe single path components
-    (`is_safe_path_component`) or the route degrades to api_404 -- a
+    HEAD routes like GET (a headers-only reply is the shell's job). POST matches
+    /api/sync and /api/sessions/<id>/annotations; any other POST -> api_404, as
+    does any other non-GET method. `/api/sessions/<id>/annotations` is a distinct
+    `endswith` from `/scan` (no prefix collision) and the GET branch sits BEFORE
+    the /api/ catch-all so the SPA fallback never shadows it. Unknown /api/ paths
+    are api_404, never static. run/scan/annotations ids must be safe single path
+    components (`is_safe_path_component`) or the route degrades to api_404 -- a
     URL-supplied id can never traverse; the id reaches the shell only inside
     `params["session_id"]`.
     """
     path = normalize_path(raw_path)
     verb = "GET" if method == "HEAD" else method
     if verb == "POST":
-        return ("sync", {}) if path == "/api/sync" else ("api_404", {})
+        if path == "/api/sync":
+            return ("sync", {})
+        if path.startswith("/api/sessions/") and path.endswith("/annotations"):
+            sid = path[len("/api/sessions/"):-len("/annotations")]
+            if is_safe_path_component(sid):
+                return ("annotations_post", {"session_id": sid})
+        return ("api_404", {})
     if verb != "GET":
         return ("api_404", {})
     if path == "/dataset.json":
@@ -284,6 +365,11 @@ def route(method: str, raw_path: str) -> tuple[str, dict]:
         if is_safe_path_component(sid):
             return ("scan", {"session_id": sid})
         return ("api_404", {})
-    if path.startswith("/api/"):
+    if path.startswith("/api/sessions/") and path.endswith("/annotations"):
+        sid = path[len("/api/sessions/"):-len("/annotations")]
+        if is_safe_path_component(sid):
+            return ("annotations_get", {"session_id": sid})
         return ("api_404", {})
+    if path.startswith("/api/"):            # catch-all -- MUST stay AFTER the
+        return ("api_404", {})              # annotations GET branch above
     return ("static", {})
