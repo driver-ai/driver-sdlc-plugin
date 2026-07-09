@@ -66,6 +66,11 @@ BRANCH_KEY = "branch:eric/agent-session-capture"
 IDENTITY = {"principal_id": "auth0|user123", "principal_type": "user",
             "org_id": "org_ABC123"}
 
+# The server-resolved default author threaded through ServerContext -- a label
+# that omits its own author is stamped with this (per-label client author is
+# preserved; capture-viewer DEC-018/DEC-026).
+SERVER_AUTHOR = "capture-viewer-tester"
+
 
 # -- store fixtures (pattern copied from test_capture_atif_to_s3.py -- its
 #    helpers are module-private, so the pattern is duplicated, not imported) --
@@ -135,7 +140,8 @@ class _ViewerServerBase(unittest.TestCase):
         return cvs.ServerContext(
             base_dir=self.base, viewer_dir=os.path.join(self.tmp, "viewer"),
             dist_dir=self.dist, identity=dict(IDENTITY),
-            bucket="test-bucket", profile="test-profile")
+            bucket="test-bucket", profile="test-profile",
+            author=SERVER_AUTHOR)
 
     def _start(self):
         cvs = _import_server()
@@ -859,6 +865,232 @@ class TestEnsureBuilt(unittest.TestCase):
             self.assertEqual(dist, os.path.join(vd, "dist"))
             self.assertEqual(state["calls"], [])
             ev.assert_not_called()
+
+
+class TestAnnotationsEndpoint(_ViewerServerBase):
+    """GET/POST /api/sessions/<id>/annotations: the sidecar store served over
+    the same route-table/Host/Content-Type/single-flight machinery as sync, but
+    on a DEDICATED lock and gated on session EXISTENCE only (not the trajectory
+    artifact -- capture-viewer DEC-017/DEC-019/DEC-024/DEC-026)."""
+
+    # -- annotations HTTP drivers ---------------------------------------------
+
+    def _post_ann(self, sid, payload, *, ct="application/json", host=None,
+                  timeout=10):
+        data = (payload if isinstance(payload, (bytes, bytearray))
+                else json.dumps(payload).encode())
+        headers = {"Content-Type": ct} if ct is not None else {}
+        return self._request(f"/api/sessions/{sid}/annotations", method="POST",
+                             data=data, headers=headers, host=host,
+                             timeout=timeout)
+
+    def _get_ann(self, sid, **kw):
+        return self._request(f"/api/sessions/{sid}/annotations", **kw)
+
+    def _ann_path(self, sid):
+        return os.path.join(self.base, "sessions", sid, "annotations.json")
+
+    # -- tests -----------------------------------------------------------------
+
+    def test_annotations_get_roundtrip(self):
+        e1 = self._seed(SID_1)
+        _write_index(self.base, [e1])
+        self._start()
+
+        doc = {"stepLabels": [{"decision": "correct",
+                               "anchor": {"trajId": SID_1, "stepId": 1},
+                               "author": "alice",
+                               "note": "user@example.com note"}],
+               "runLabels": [{"decision": "unsure"}],
+               "tags": ["reviewed"]}
+        status, headers, raw = self._post_ann(SID_1, doc)
+        self.assertEqual(status, 200)
+        self.assertEqual(headers.get("Cache-Control"), "no-store")
+        stored = json.loads(raw)
+        self.assertEqual(stored["sessionId"], SID_1)
+        self.assertEqual(stored["version"], 1)
+        # Per-label client author preserved; note stored UNSCRUBBED (DEC-020/26).
+        self.assertEqual(stored["stepLabels"][0]["author"], "alice")
+        self.assertEqual(stored["stepLabels"][0]["note"], "user@example.com note")
+        # An omitted author defaults to the server-resolved author.
+        self.assertEqual(stored["runLabels"][0]["author"], SERVER_AUTHOR)
+        self.assertEqual(stored["tags"], ["reviewed"])
+
+        # GET returns the SAME stored doc, no-store, carrying sessionId.
+        status, headers, raw = self._get_ann(SID_1)
+        self.assertEqual(status, 200)
+        self.assertEqual(headers.get("Cache-Control"), "no-store")
+        self.assertEqual(json.loads(raw), stored)
+
+    def test_annotations_post_content_type_400(self):
+        e1 = self._seed(SID_1)
+        _write_index(self.base, [e1])
+        self._start()
+        doc = {"stepLabels": [], "runLabels": [], "tags": []}
+        # Non-JSON Content-Type is rejected BEFORE any validation or write.
+        status, _h, raw = self._post_ann(SID_1, doc, ct="text/plain")
+        self.assertEqual(status, 400)
+        self.assertIn("error", json.loads(raw))
+        self.assertFalse(os.path.exists(self._ann_path(SID_1)))
+
+    def test_annotations_post_invalid_shape_400(self):
+        e1 = self._seed(SID_1)
+        _write_index(self.base, [e1])
+        self._start()
+        # Well-formed JSON, shape/enum-invalid body -> 400, nothing written
+        # (validate_annotations wired to the handler -- DEC-025/DEC-026).
+        bad_bodies = {
+            "decision-less step label":
+                {"stepLabels": [{"anchor": {"trajId": SID_1, "stepId": 1}}]},
+            "unknown decision":
+                {"stepLabels": [{"decision": "maybe",
+                                 "anchor": {"trajId": SID_1, "stepId": 1}}]},
+            "anchor empty {}":
+                {"stepLabels": [{"decision": "correct", "anchor": {}}]},
+            "anchor missing stepId":
+                {"stepLabels": [{"decision": "correct",
+                                 "anchor": {"trajId": SID_1}}]},
+            "anchor missing entirely":
+                {"stepLabels": [{"decision": "correct"}]},
+            "run label decision-less":
+                {"runLabels": [{"note": "no decision"}]},
+            "tags not a list of strings": {"tags": [123]},
+        }
+        for name, body in bad_bodies.items():
+            with self.subTest(name):
+                status, _h, raw = self._post_ann(SID_1, body)
+                self.assertEqual(status, 400)
+                self.assertIn("error", json.loads(raw))
+                self.assertFalse(os.path.exists(self._ann_path(SID_1)),
+                                 f"{name}: nothing must be written on a 400")
+
+    def test_annotations_post_host_403(self):
+        e1 = self._seed(SID_1)
+        _write_index(self.base, [e1])
+        self._start()
+        doc = {"stepLabels": [], "runLabels": [], "tags": []}
+        # A rebound DNS name -> 403 on the annotations POST too, no write.
+        status, _h, raw = self._post_ann(SID_1, doc, host="evil.example")
+        self.assertEqual(status, 403)
+        self.assertIn("error", json.loads(raw))
+        self.assertFalse(os.path.exists(self._ann_path(SID_1)))
+
+    def test_annotations_post_single_flight_409(self):
+        e1 = self._seed(SID_1)
+        _write_index(self.base, [e1])
+        cvs = self._start()
+        doc = {"stepLabels": [{"decision": "correct",
+                               "anchor": {"trajId": SID_1, "stepId": 1}}],
+               "runLabels": [], "tags": []}
+
+        # Holding the DEDICATED annotations lock -> a concurrent POST gets 409.
+        self.assertTrue(cvs._ANNOTATIONS_LOCK.acquire(blocking=False))
+        try:
+            status, _h, raw = self._post_ann(SID_1, doc)
+            self.assertEqual(status, 409)
+            self.assertEqual(json.loads(raw),
+                             {"error": "annotation write already in progress"})
+            # A lock refusal writes nothing.
+            self.assertFalse(os.path.exists(self._ann_path(SID_1)))
+        finally:
+            cvs._ANNOTATIONS_LOCK.release()
+
+        # Lock INDEPENDENCE (DEC-017): a slow in-flight sync holds _SYNC_LOCK,
+        # but that must NOT 409 an annotation save -- annotations use their OWN
+        # lock, so this POST proceeds to a 200.
+        self.assertTrue(cvs._SYNC_LOCK.acquire(blocking=False))
+        try:
+            status, _h, raw = self._post_ann(SID_1, doc)
+            self.assertEqual(status, 200)
+            self.assertEqual(json.loads(raw)["sessionId"], SID_1)
+        finally:
+            cvs._SYNC_LOCK.release()
+
+    def test_annotations_get_unknown_session_404(self):
+        e1 = self._seed(SID_1)
+        _write_index(self.base, [e1])
+        self._start()
+        # SID_UNKNOWN is route-safe but not in the index -> not in shas -> 404.
+        # The gate is on the SESSION ID (existence), never the artifact.
+        status, _h, raw = self._get_ann(SID_UNKNOWN)
+        self.assertEqual(status, 404)
+        self.assertIn("error", json.loads(raw))
+        # POST to an unknown session is likewise existence-gated to 404.
+        doc = {"stepLabels": [], "runLabels": [], "tags": []}
+        status, _h, _raw = self._post_ann(SID_UNKNOWN, doc)
+        self.assertEqual(status, 404)
+        self.assertFalse(os.path.exists(self._ann_path(SID_UNKNOWN)))
+
+    def test_annotations_missing_artifact_still_annotatable(self):
+        e_missing = self._seed(SID_MISSING)
+        _write_index(self.base, [e_missing])
+        # Known session, artifact absent -> shas[sid] is None BUT sid in shas.
+        os.remove(_artifact_path(self.base, SID_MISSING))
+        self._start()
+
+        # GET: the sidecar is decoupled from the trajectory 404 rule (DEC-024)
+        # -> a default doc, 200, NOT the artifact-missing 404 that /runs gives.
+        status, _h, raw = self._get_ann(SID_MISSING)
+        self.assertEqual(status, 200)
+        body = json.loads(raw)
+        self.assertEqual(body["sessionId"], SID_MISSING)
+        self.assertEqual(body["stepLabels"], [])
+
+        # POST: still annotatable -> 200 and written to disk.
+        doc = {"stepLabels": [{"decision": "incorrect",
+                               "anchor": {"trajId": SID_MISSING,
+                                          "stepId": None}}],
+               "runLabels": [], "tags": []}
+        status, _h, raw = self._post_ann(SID_MISSING, doc)
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(raw)["sessionId"], SID_MISSING)
+        self.assertTrue(os.path.exists(self._ann_path(SID_MISSING)))
+
+    def test_annotations_get_corrupt_file_tolerant_200(self):
+        e1 = self._seed(SID_1)
+        _write_index(self.base, [e1])
+        # A present-but-corrupt sidecar next to a readable trajectory.
+        ann = self._ann_path(SID_1)
+        os.makedirs(os.path.dirname(ann), exist_ok=True)
+        with open(ann, "w") as fh:
+            fh.write("{ not valid json ]")
+        self._start()
+        # Tolerant read (DEC-019): corrupt -> default doc (200), never 500.
+        status, _h, raw = self._get_ann(SID_1)
+        self.assertEqual(status, 200)
+        body = json.loads(raw)
+        self.assertEqual(body["sessionId"], SID_1)
+        self.assertEqual(body["stepLabels"], [])
+        self.assertEqual(body["runLabels"], [])
+        self.assertEqual(body["tags"], [])
+
+
+class TestResolveAuthor(unittest.TestCase):
+    """_resolve_author precedence: --author -> git config user.name -> $USER ->
+    'you' (capture-viewer DEC-018). _probe/os.environ mocked per tier."""
+
+    def test_resolve_author(self):
+        cvs = _import_server()
+
+        # Tier 1: an explicit --author wins and is stripped (probe not consulted).
+        with mock.patch.object(cvs, "_probe", return_value="Git Name"):
+            self.assertEqual(cvs._resolve_author("  Alice  "), "Alice")
+
+        # Tier 2: no/blank override -> git config user.name.
+        with mock.patch.object(cvs, "_probe", return_value="Git Name") as probe:
+            self.assertEqual(cvs._resolve_author(None), "Git Name")
+            self.assertEqual(cvs._resolve_author("   "), "Git Name")
+            probe.assert_called_with(["git", "config", "user.name"])
+
+        # Tier 3: no git config -> $USER.
+        with mock.patch.object(cvs, "_probe", return_value=None), \
+             mock.patch.dict(os.environ, {"USER": "envuser"}, clear=True):
+            self.assertEqual(cvs._resolve_author(None), "envuser")
+
+        # Tier 4: nothing resolvable -> 'you'.
+        with mock.patch.object(cvs, "_probe", return_value=None), \
+             mock.patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(cvs._resolve_author(None), "you")
 
 
 if __name__ == "__main__":

@@ -56,6 +56,7 @@ from functools import partial
 
 import atif_to_s3
 import atif_to_viewer
+import capture_store_core
 import capture_viewer_core
 
 # The only bind host, ever. Never 0.0.0.0 -- the store is personal data.
@@ -71,24 +72,57 @@ _MAX_BODY_BYTES = 1 << 20
 # 409 every later sync).
 _SYNC_LOCK = threading.Lock()
 
+# Single-flight annotation write (process-global): a DEDICATED lock, NEVER
+# _SYNC_LOCK -- a slow in-flight S3 sync must not 409 a fast local annotation
+# save (capture-viewer DEC-017). Non-blocking acquire -> 409 on contention;
+# released in try/finally on every exit path.
+_ANNOTATIONS_LOCK = threading.Lock()
+
 
 @dataclasses.dataclass(frozen=True)
 class ServerContext:
     """Frozen launch config threaded to handlers: base_dir, viewer_dir,
     dist_dir, identity {principal_id, principal_type, org_id}, bucket,
-    profile."""
+    profile, author (the DEFAULT annotation author -- used only when a posted
+    label omits its own author; capture-viewer DEC-018)."""
     base_dir: str
     viewer_dir: str
     dist_dir: str
     identity: dict
     bucket: str
     profile: str
+    author: str
 
 
 def _utc_now_iso() -> str:
     """Shell: current UTC timestamp for generatedAt (the clock stays out of
     the pure core)."""
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def read_annotations(path: str, session_id: str) -> dict:
+    """Shell: sidecar text -> a doc via the pure parser. A MISSING file ->
+    default doc; a present-but-corrupt file -> default (tolerant --
+    capture-viewer DEC-019). An OSError on a PRESENT file is NOT swallowed: it
+    propagates to the handler's blanket 500 (a readable path that suddenly fails
+    to read is a real fault, never empty annotations)."""
+    if not os.path.exists(path):
+        return capture_viewer_core.parse_annotations(None, session_id=session_id)
+    with open(path) as fh:                     # OSError on a present file -> 500
+        text = fh.read()
+    return capture_viewer_core.parse_annotations(text, session_id=session_id)
+
+
+def write_annotations(path: str, doc: dict) -> None:
+    """Shell: atomic sidecar write -- temp file in the same dir + os.replace, so
+    a reader sees old-or-new but never a torn doc. Creates the session dir if
+    absent (a session with a pruned trajectory may have no dir yet --
+    capture-viewer DEC-024)."""
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = path + f".tmp.{os.getpid()}"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump(doc, fh, ensure_ascii=False)
+    os.replace(tmp, path)
 
 
 class ViewerRequestHandler(http.server.SimpleHTTPRequestHandler):
@@ -156,6 +190,8 @@ class ViewerRequestHandler(http.server.SimpleHTTPRequestHandler):
                 self._handle_run(params["session_id"])
             elif kind == "scan":
                 self._handle_scan(params["session_id"])
+            elif kind == "annotations_get":
+                self._handle_annotations_get(params["session_id"])
             elif kind == "api_404":
                 self._send_json(404, {"error": "not found"})
             else:
@@ -168,11 +204,13 @@ class ViewerRequestHandler(http.server.SimpleHTTPRequestHandler):
             if not self._host_allowed():
                 self._send_json(403, {"error": "forbidden Host header"})
                 return
-            kind, _params = capture_viewer_core.route(self.command, self.path)
-            if kind != "sync":
+            kind, params = capture_viewer_core.route(self.command, self.path)
+            if kind == "sync":
+                self._handle_sync()
+            elif kind == "annotations_post":
+                self._handle_annotations_post(params["session_id"])
+            else:
                 self._send_json(404, {"error": "not found"})
-                return
-            self._handle_sync()
         except Exception as e:
             self._fail_safe(e)
 
@@ -256,9 +294,10 @@ class ViewerRequestHandler(http.server.SimpleHTTPRequestHandler):
 
     # -- POST /api/sync --------------------------------------------------------
 
-    def _read_sync_body(self):
+    def _read_json_body(self):
         """(body, error): Content-Type media-type + Content-Length checks, then
-        the JSON parse. Any error string means 400 -- BEFORE the gate runs."""
+        the JSON parse. Any error string means 400 -- BEFORE the gate/validator
+        runs. Shared by POST /api/sync and the annotations POST."""
         ctype = (self.headers.get("Content-Type") or "")
         if ctype.split(";", 1)[0].strip().casefold() != "application/json":
             return None, "Content-Type must be application/json"
@@ -280,7 +319,7 @@ class ViewerRequestHandler(http.server.SimpleHTTPRequestHandler):
         return body, None
 
     def _handle_sync(self) -> None:
-        body, err = self._read_sync_body()
+        body, err = self._read_json_body()
         if err is not None:
             self._send_json(400, {"error": err})
             return
@@ -322,6 +361,58 @@ class ViewerRequestHandler(http.server.SimpleHTTPRequestHandler):
         finally:
             _SYNC_LOCK.release()   # every exit path: 503/500/200 alike
 
+    # -- annotations (GET/POST /api/sessions/<id>/annotations) ----------------
+    # The existence gate is `sid not in shas` (UNKNOWN session -> 404), NOT the
+    # `shas.get(sid) is None` artifact-readability check used by /runs and /scan:
+    # annotations are a sidecar INDEPENDENT of the trajectory, so a known session
+    # whose trajectory is missing/pruned (syncStatus:"missing") stays annotatable
+    # -- annotations never 404 on a missing artifact, only on an unknown id
+    # (capture-viewer DEC-024).
+
+    def _handle_annotations_get(self, sid: str) -> None:
+        _index, _ledger, shas, _paths = self._store()
+        if sid not in shas:                          # UNKNOWN session only
+            self._send_json(404, {"error": "unknown session"})
+            return
+        path = capture_store_core.annotations_path_for(self.ctx.base_dir, sid)
+        # A corrupt/missing sidecar degrades to a default doc; an OSError on a
+        # PRESENT file propagates to the blanket 500 (capture-viewer DEC-019).
+        self._send_json(200, read_annotations(path, sid))
+
+    def _handle_annotations_post(self, sid: str) -> None:
+        # Order: body -> shape (incl. anchor {trajId, stepId} + required
+        # decision) -> existence gate -> lock -> atomic write (capture-viewer
+        # DEC-024/DEC-025/DEC-026). Everything up to the lock is a pure decision;
+        # nothing is written on any 400/404.
+        body, err = self._read_json_body()
+        if err is not None:
+            self._send_json(400, {"error": err})
+            return
+        ok, verr = capture_viewer_core.validate_annotations(body)
+        if not ok:
+            self._send_json(400, {"error": verr})
+            return
+        _index, _ledger, shas, _paths = self._store()
+        if sid not in shas:                          # UNKNOWN session only
+            self._send_json(404, {"error": "unknown session"})
+            return
+        # Dedicated single-flight lock -- acquired OUTSIDE the try, released in
+        # finally on every exit path (capture-viewer DEC-017).
+        if not _ANNOTATIONS_LOCK.acquire(blocking=False):
+            self._send_json(409,
+                            {"error": "annotation write already in progress"})
+            return
+        try:
+            doc = capture_viewer_core.build_annotations_doc(
+                body, session_id=sid, author=self.ctx.author,
+                now=_utc_now_iso())
+            write_annotations(
+                capture_store_core.annotations_path_for(self.ctx.base_dir, sid),
+                doc)
+            self._send_json(200, doc)
+        finally:
+            _ANNOTATIONS_LOCK.release()
+
 
 def make_server(port: int, ctx: ServerContext) -> http.server.ThreadingHTTPServer:
     """Binds ('127.0.0.1', port) ONLY -- never 0.0.0.0. port=0 -> ephemeral
@@ -351,6 +442,17 @@ def _probe(argv: list) -> str | None:
     if proc.returncode != 0:
         return None
     return (proc.stdout or "").strip() or None
+
+
+def _resolve_author(explicit: str | None) -> str:
+    """Shell: the DEFAULT annotation author, resolved once at launch --
+    --author override, else `git config user.name`, else $USER, else 'you'
+    (capture-viewer DEC-018). Used only when a posted label omits its own author;
+    the per-label client author is always preserved (capture-viewer DEC-026)."""
+    if explicit and explicit.strip():
+        return explicit.strip()
+    return (_probe(["git", "config", "user.name"])
+            or os.environ.get("USER") or "you")
 
 
 def _run_step(argv: list, *, cwd: str | None, what: str, hint: str) -> None:
@@ -467,6 +569,11 @@ def _build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--principal-type", required=True,
                     choices=["user", "machine"])
     ap.add_argument("--org-id", required=True)
+    # Optional default annotation author -- else git config user.name / $USER /
+    # "you" (capture-viewer DEC-018); per-label client author is preserved.
+    ap.add_argument("--author",
+                    help="default annotation author (falls back to git config "
+                         "user.name, then $USER, then 'you')")
     ap.add_argument("--no-build", dest="build", action="store_false",
                     default=True,
                     help="pure serve mode: skip checkout/install/build entirely")
@@ -503,7 +610,8 @@ def main(argv=None) -> int:
                         identity={"principal_id": args.principal_id,
                                   "principal_type": args.principal_type,
                                   "org_id": args.org_id},
-                        bucket=args.bucket, profile=args.profile)
+                        bucket=args.bucket, profile=args.profile,
+                        author=_resolve_author(args.author))
     try:
         server = make_server(args.port, ctx)
     except OSError as e:
