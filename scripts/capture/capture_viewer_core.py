@@ -30,7 +30,12 @@ import urllib.parse
 from datetime import datetime
 
 from atif_to_s3 import branch_from_group_key, is_synced, strip_branch_owner
-from atif_to_viewer import MAX_STEPS, flatten_with_subagents, step_from_atif
+from atif_to_viewer import (
+    MAX_STEPS,
+    build_agent_graph,
+    flatten_with_subagents,
+    step_from_atif,
+)
 from cc_to_atif_core import is_safe_path_component
 
 # Sync-status wire strings: the viewer's status chips switch on these exact
@@ -82,7 +87,8 @@ def session_run(entry: dict, *, status: str, uploadable: bool) -> dict:
     overview contract: syncStatus/uploadable (computed by the caller --
     build_sessions_dataset owns the predicate), branch (owner-stripped, None
     for ungrouped), codebase (basename(cwd), None when empty), firstSeen/
-    lastSeen, and costUsd threaded top-level as well as under tokens.
+    lastSeen, costUsd threaded top-level as well as under tokens, and groupKey
+    (the raw index thread key for plan-05 grouping -- capture-viewer DEC-023).
     """
     sid = entry.get("session_id")
     raw_branch = branch_from_group_key(entry.get("group_key"))
@@ -113,6 +119,10 @@ def session_run(entry: dict, *, status: str, uploadable: bool) -> dict:
         "firstSeen": entry.get("first_seen"),
         "lastSeen": entry.get("last_seen"),
         "costUsd": cost,
+        # Live session-run thread key for plan 05 grouping: the index entry already
+        # carries it, so read it directly (session_run lacks the task/spec/branch
+        # group_key_for would recompute from -- capture-viewer DEC-023).
+        "groupKey": entry.get("group_key"),
     }
 
 
@@ -182,13 +192,15 @@ def build_sessions_dataset(index: dict, ledger: dict, artifact_shas: dict,
 
 
 def build_run_payload(traj: dict) -> dict:
-    """Pure: a redacted ATIF traj -> {"steps": [...], "truncated": bool}.
+    """Pure: a redacted ATIF traj -> {"steps": [...], "truncated": bool, "agentGraph": {...}}.
 
     The exact `build_dataset` step transform: `flatten_with_subagents` splices
     subagent subtrees, the `MAX_STEPS` cap bounds the payload, a trailing
     dangling subagent boundary marker is popped, and each step maps through
     `step_from_atif`. `truncated` is True iff the cap trimmed steps -- the UI
-    must not present a capped transcript as complete.
+    must not present a capped transcript as complete. `agentGraph` rides here as
+    the PRIMARY (fork-consumed) home of the subagent-spawn DAG -- session_id
+    rooted so a root step's trajId joins its node (capture-viewer DEC-023).
     """
     raw_steps = flatten_with_subagents(traj)
     truncated = len(raw_steps) > MAX_STEPS
@@ -196,7 +208,8 @@ def build_run_payload(traj: dict) -> dict:
     while capped and capped[-1].get("_boundary"):  # never end on a dangling marker
         capped.pop()
     steps = [step_from_atif(s, i) for i, s in enumerate(capped)]
-    return {"steps": steps, "truncated": truncated}
+    return {"steps": steps, "truncated": truncated,
+            "agentGraph": build_agent_graph(traj)}
 
 
 def validate_sync_request(body: object, runs_by_id: dict) -> tuple[list[str], str | None]:

@@ -500,6 +500,78 @@ class TestSubagentMarkerLabel(unittest.TestCase):
         self.assertIn("subagent explorer", markers[2])
 
 
+class TestBuildAgentGraph(unittest.TestCase):
+    """The pure, deterministic subagent-spawn DAG synthesized from the traj
+    (capture-viewer DEC-023): root node id == session_id (so a root step's trajId
+    joins it), one node per subagent by trajectory_id, one edge per spawn in
+    tool_calls order, unlinked subagents parented under root."""
+
+    def test_build_agent_graph_from_refs(self):
+        # Root node: id == session_id, kind "root", label from agent.name or "main".
+        g = atif_to_viewer.build_agent_graph(_traj_main_spawns_a(session_id="sess-1"))
+        self.assertEqual(g["nodes"][0], {"id": "sess-1", "label": "main", "kind": "root"})
+        self.assertEqual(g["nodes"][0]["id"], "sess-1")        # root id == session_id
+        # One subagent node keyed by trajectory_id + a single spawn edge root -> A.
+        self.assertEqual(g["nodes"][1],
+                         {"id": "sess/agent-a", "trajId": "sess/agent-a",
+                          "kind": "subagent", "label": "code-reviewer"})
+        self.assertEqual(g["edges"], [{"from": "sess-1", "to": "sess/agent-a"}])
+
+        # Linked subagents: edges are spawn links IN TOOL_CALLS ORDER (A before B).
+        g2 = atif_to_viewer.build_agent_graph(_traj_two_subagents(session_id="sess-1"))
+        self.assertEqual([n["id"] for n in g2["nodes"]],
+                         ["sess-1", "sess/agent-a", "sess/agent-b"])
+        self.assertEqual(g2["nodes"][0]["kind"], "root")
+        self.assertEqual(g2["edges"],
+                         [{"from": "sess-1", "to": "sess/agent-a"},
+                          {"from": "sess-1", "to": "sess/agent-b"}])
+
+        # Grandchild spawn (main -> A, A -> B) yields edge A -> B, not root -> B.
+        nested = {
+            "session_id": "sess-1",
+            "steps": [_step(1, message="main", tool_calls=[_agent_call("spawn-a")],
+                            results=[_spawn_result("spawn-a", "sess/agent-a")])],
+            "subagent_trajectories": [
+                _subagent("sess/agent-a", [
+                    _step(1, message="A", tool_calls=[_agent_call("spawn-b")],
+                          results=[_spawn_result("spawn-b", "sess/agent-b")])]),
+                _subagent("sess/agent-b", [_step(1, message="B")]),
+            ],
+        }
+        g3 = atif_to_viewer.build_agent_graph(nested)
+        self.assertEqual(g3["edges"],
+                         [{"from": "sess-1", "to": "sess/agent-a"},
+                          {"from": "sess/agent-a", "to": "sess/agent-b"}])
+
+        # Unlinked subagent (dangling ref to a nonexistent id) hangs off root.
+        unlinked = {
+            "session_id": "sess-1",
+            "steps": [_step(1, message="main", tool_calls=[_agent_call("spawn-x")],
+                            results=[_spawn_result("spawn-x", "sess/missing")])],
+            "subagent_trajectories": [_subagent("sess/agent-orphan", [_step(1)])],
+        }
+        g4 = atif_to_viewer.build_agent_graph(unlinked)
+        self.assertEqual(g4["edges"], [{"from": "sess-1", "to": "sess/agent-orphan"}])
+
+        # No subagents -> empty graph (both a real traj and an empty dict).
+        self.assertEqual(
+            atif_to_viewer.build_agent_graph({"session_id": "s", "steps": [_step(1)]}),
+            {"nodes": [], "edges": []})
+        self.assertEqual(atif_to_viewer.build_agent_graph({}), {"nodes": [], "edges": []})
+
+        # session_id fallback: root id is "root" when session_id is absent (the same
+        # `session_id or "root"` fallback flatten uses -- capture-viewer DEC-022).
+        g5 = atif_to_viewer.build_agent_graph(
+            {"steps": [], "subagent_trajectories": [_subagent("s/a", [_step(1)])]})
+        self.assertEqual(g5["nodes"][0]["id"], "root")
+        self.assertEqual(g5["edges"], [{"from": "root", "to": "s/a"}])
+
+        # Deterministic: same input -> byte-equal graph across runs (no clock/random).
+        self.assertEqual(
+            atif_to_viewer.build_agent_graph(_traj_two_subagents()),
+            atif_to_viewer.build_agent_graph(_traj_two_subagents()))
+
+
 class TestListContentFlatten(unittest.TestCase):
     """list[ContentPart] messages/observations flatten to display text via the
     shared flatten_content — and the flatten runs BEFORE _cap/_scrub, so the
@@ -584,6 +656,26 @@ class TestBuildDataset(unittest.TestCase):
         self.assertEqual(dataset["runs"][0]["tokens"]["completion"], 40)
         self.assertEqual(dataset["runs"][0]["tokens"]["prompt"], 300)
         self.assertEqual(len(steps), 2)
+
+    def test_build_dataset_run_carries_agent_graph(self):
+        # The CLI run carries agentGraph (parity with the /runs payload); a
+        # subagent-free traj gets the empty graph.
+        dataset, *_ = atif_to_viewer.build_dataset(
+            self._traj(), task_id="T1", spec_id="S1", intent="",
+            generated_at="2020-01-01T00:00:00Z")
+        self.assertEqual(dataset["runs"][0]["agentGraph"], {"nodes": [], "edges": []})
+
+        # A subagent traj -> populated graph (root node id == session_id, one spawn edge).
+        dataset2, *_ = atif_to_viewer.build_dataset(
+            _traj_main_spawns_a(session_id="sess-1"), task_id="T", spec_id="S",
+            intent="", generated_at="2020-01-01T00:00:00Z")
+        graph = dataset2["runs"][0]["agentGraph"]
+        self.assertEqual(graph["nodes"][0]["id"], "sess-1")
+        self.assertEqual(graph["nodes"][0]["kind"], "root")
+        self.assertEqual(graph["edges"], [{"from": "sess-1", "to": "sess/agent-a"}])
+        # Parity: the run's graph equals the pure builder's output for the same traj.
+        self.assertEqual(graph, atif_to_viewer.build_agent_graph(
+            _traj_main_spawns_a(session_id="sess-1")))
 
 
 class TestViewerDefaults(unittest.TestCase):

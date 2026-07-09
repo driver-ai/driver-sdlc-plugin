@@ -335,6 +335,53 @@ class TestBuildRunPayload(unittest.TestCase):
         self.assertEqual(len(payload["steps"]), cap)
 
 
+class TestRunsPayloadGraph(unittest.TestCase):
+    """The /runs/<id>.json payload is the fork-consumed agentGraph home
+    (capture-viewer DEC-023): build_run_payload rides the graph alongside the v2
+    step fields."""
+
+    def test_runs_payload_carries_graph(self):
+        traj = _traj_with_subagent()
+        payload = capture_viewer_core.build_run_payload(traj)
+        graph = payload["agentGraph"]
+        # Root node id == session_id; one spawn edge to the subagent.
+        self.assertEqual(graph["nodes"][0]["id"], "sess-1")
+        self.assertEqual(graph["nodes"][0]["kind"], "root")
+        self.assertEqual(graph["edges"], [{"from": "sess-1", "to": "sess/agent-a"}])
+        # One transform, not a re-implementation: parity with the pure builder.
+        self.assertEqual(payload["agentGraph"], atif_to_viewer.build_agent_graph(traj))
+        # The v2 step fields ride alongside on every step.
+        for step in payload["steps"]:
+            for k in ("stepId", "trajId", "depth", "parentIndex", "spanKind"):
+                self.assertIn(k, step)
+        # Root step: depth 0, trajId == session_id (joins the graph root node).
+        self.assertEqual(payload["steps"][0]["depth"], 0)
+        self.assertEqual(payload["steps"][0]["trajId"], "sess-1")
+
+    def test_backward_compat_pre_v2(self):
+        # A pre-v2-shaped traj (no subagents, no v2 fields) converts cleanly through
+        # build_run_payload: flat list, depth 0, no parents, empty graph, no crash.
+        traj = {
+            "session_id": "sess-old",
+            "steps": [
+                {"step_id": 1, "source": "agent", "message": "hello"},
+                {"step_id": 2, "source": "user", "message": "hi back"},
+            ],
+        }
+        payload = capture_viewer_core.build_run_payload(traj)
+        self.assertEqual(payload["agentGraph"], {"nodes": [], "edges": []})
+        self.assertIs(payload["truncated"], False)
+        valid_kinds = {"llm", "tool", "general", "system"}
+        for step in payload["steps"]:
+            self.assertEqual(step["depth"], 0)
+            self.assertIsNone(step["parentIndex"])
+            self.assertIn(step["spanKind"], valid_kinds)
+            self.assertEqual(step["trajId"], "sess-old")     # root joins graph root
+        # The role rule holds without any _spanKind: agent -> llm, user -> general.
+        self.assertEqual(payload["steps"][0]["spanKind"], "llm")
+        self.assertEqual(payload["steps"][1]["spanKind"], "general")
+
+
 class TestValidateSyncRequest(unittest.TestCase):
     RUNS_BY_ID = {
         "sid-up": {"id": "sid-up", "uploadable": True},

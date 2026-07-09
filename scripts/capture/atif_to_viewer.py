@@ -289,6 +289,51 @@ def flatten_with_subagents(traj: dict) -> list[dict]:
     return out
 
 
+def build_agent_graph(traj: dict) -> dict:
+    """Pure: subagent-spawn tree as {nodes, edges}. Root node id = session_id (root
+    steps carry this same id as trajId, so a step joins its node); one node per
+    subagent keyed by trajectory_id; one edge per spawn (spawning step's traj ->
+    spawned subagent) in tool_calls order; a subagent never reached via a ref hangs
+    off root ('unlinked'). {"nodes": [], "edges": []} when no subagents. No I/O,
+    clock, or randomness -> deterministic. (capture-viewer DEC-023)"""
+    subs = traj.get("subagent_trajectories") or []
+    root_id = traj.get("session_id") or "root"
+    if not subs:
+        return {"nodes": [], "edges": []}
+    by_id = {s.get("trajectory_id"): s for s in subs}
+    nodes = [{"id": root_id, "label": (traj.get("agent") or {}).get("name") or "main",
+              "kind": "root"}]
+    for sub in subs:
+        tid = sub.get("trajectory_id")
+        nodes.append({"id": tid, "trajId": tid, "kind": "subagent",
+                      "label": ((sub.get("agent") or {}).get("name")
+                                or (sub.get("extra") or {}).get("subagent_type") or "agent")})
+    edges: list = []
+    linked: set = set()
+
+    def scan(steps, parent_id):
+        for step in steps:
+            results = (step.get("observation") or {}).get("results", [])
+            res_by_call: dict = {}
+            for r in results:
+                res_by_call.setdefault(r.get("source_call_id"), r)
+            for tc in step.get("tool_calls") or []:
+                r = res_by_call.get(tc.get("tool_call_id"))
+                for ref in (r.get("subagent_trajectory_ref") if r else None) or []:
+                    tid = ref.get("trajectory_id")
+                    if tid in by_id and tid not in linked:
+                        linked.add(tid)
+                        edges.append({"from": parent_id, "to": tid})
+                        scan(by_id[tid].get("steps") or [], tid)
+
+    scan(traj.get("steps") or [], root_id)
+    for sub in subs:                              # unlinked -> root
+        tid = sub.get("trajectory_id")
+        if tid not in linked:
+            edges.append({"from": root_id, "to": tid})
+    return {"nodes": nodes, "edges": edges}
+
+
 def run_artifacts(steps: list) -> list:
     seen = []
     for s in steps:
@@ -375,6 +420,9 @@ def build_dataset(traj: dict, *, task_id: str, spec_id: str, intent: str, genera
         "tokens": tokens,
         "grade": None,
         "failureReason": None,
+        # Agent-graph parity with the /runs payload (capture-viewer DEC-023); the
+        # /runs/<id>.json surface built by build_run_payload is the primary home.
+        "agentGraph": build_agent_graph(traj),
     }
     dataset = {
         "generatedAt": generated_at,
@@ -427,8 +475,11 @@ def main() -> None:
     os.makedirs(runs_dir, exist_ok=True)
     with open(os.path.join(public, "dataset.json"), "w", encoding="utf-8") as f:
         json.dump(dataset, f, ensure_ascii=False)
+    # Recompute the agent graph at the write site (pure + cheap) rather than widen
+    # build_dataset's return tuple; parity with the /runs payload (capture-viewer DEC-023).
     with open(os.path.join(runs_dir, f"{rid}.json"), "w", encoding="utf-8") as f:
-        json.dump({"steps": steps}, f, ensure_ascii=False)
+        json.dump({"steps": steps, "agentGraph": build_agent_graph(traj)},
+                  f, ensure_ascii=False)
 
     url = f"http://localhost:{args.port}/tasks/{tid}/runs/{rid}"
     print(f"OK  wrote dataset.json + runs/{rid}.json ({len(steps)} steps) to {public}")
