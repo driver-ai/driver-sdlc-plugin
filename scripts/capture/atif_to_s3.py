@@ -261,7 +261,8 @@ def mark_synced(ledger: dict, session_id: str, *, s3_key: str, etag: str,
 
 
 def select_sessions(index: dict, ledger: dict, artifact_shas: dict,
-                    session_id: str | None = None) -> list:
+                    session_id: str | None = None, *,
+                    session_ids: set[str] | None = None) -> list:
     """Pure: the index entries to sync -- flattened, un-synced, branch-only.
 
     Flattens the 2-level index ({group_key: {session_id: entry}}), skipping any
@@ -269,10 +270,16 @@ def select_sessions(index: dict, ledger: dict, artifact_shas: dict,
     sessions are never synced). Within the branch groups, an entry is selected
     unless it is already synced (`is_synced` against `artifact_shas[session_id]`,
     so a changed artifact re-selects). `session_id` narrows to that one session
-    (still subject to the synced check, keeping the explicit path idempotent). An
-    empty or missing index yields an empty selection. Each returned item is the
-    original index entry dict (retains session_id / group_key / cwd).
+    (still subject to the synced check, keeping the explicit path idempotent);
+    `session_ids` (keyword-only) narrows to that set the same way -- ids absent
+    from the index are silently unmatched (validating the request is the
+    caller's job). Passing both `session_id` and `session_ids` raises
+    ValueError. An empty or missing index yields an empty selection. Each
+    returned item is the original index entry dict (retains session_id /
+    group_key / cwd).
     """
+    if session_id is not None and session_ids is not None:
+        raise ValueError("pass session_id or session_ids, not both")
     selected: list = []
     for group_key, group in (index or {}).items():
         if not isinstance(group, dict):
@@ -281,6 +288,8 @@ def select_sessions(index: dict, ledger: dict, artifact_shas: dict,
             continue
         for sid, entry in group.items():
             if session_id is not None and sid != session_id:
+                continue
+            if session_ids is not None and sid not in session_ids:
                 continue
             if is_synced(ledger or {}, sid, (artifact_shas or {}).get(sid)):
                 continue
@@ -295,14 +304,14 @@ def select_sessions(index: dict, ledger: dict, artifact_shas: dict,
 # is invoked via subprocess with an explicit argv list.
 # ---------------------------------------------------------------------------
 
-_DEFAULT_BUCKET = "trajectory-uploads-1ddbee"
+DEFAULT_BUCKET = "trajectory-uploads-1ddbee"
 # `dev-admin` is the only SSO identity with kms:GenerateDataKey on the bucket's
 # CMK (DEC-067); the bucket applies KMS via default encryption, so put-object
 # carries NO SSE flags. A later presigned-URL path removes client-side creds.
-_DEFAULT_PROFILE = "dev-admin"
+DEFAULT_PROFILE = "dev-admin"
 _DEFAULT_BASE_DIR = "~/.driver/capture"
 _INDEX_NAME = "index.json"
-_LEDGER_NAME = "s3-sync-ledger.json"     # separate from the hook-owned index.json
+LEDGER_NAME = "s3-sync-ledger.json"      # separate from the hook-owned index.json
 
 
 def _load_json_map(path: str, *, label: str) -> dict:
@@ -367,6 +376,50 @@ def artifact_sha256(path: str) -> str | None:
         print(f"warning: cannot read artifact ({e.__class__.__name__}); "
               f"skipping: {path}", file=sys.stderr)
         return None
+
+
+def hash_candidates(index: dict, base_dir: str, *,
+                    session_id: str | None = None,
+                    session_ids: set[str] | None = None,
+                    all_groups: bool = False) -> tuple[dict, dict]:
+    """Shell (extracted from main): resolve store_path_for + sha256 artifacts.
+
+    Default (the CLI path): branch-keyed groups only; unreadable/unsafe entries
+    warn to stderr and are OMITTED from shas, so they never enter a selection or
+    an upload. all_groups=True (the dataset path): EVERY session across EVERY
+    group appears in shas with sha-or-None (unreadable/missing -> None, never
+    omitted) -- the full artifact_shas map build_sessions_dataset needs.
+    `session_id` narrows TRUTHILY (an empty string narrows nothing, exactly as
+    main() always treated --session-id ""); `session_ids` narrows to that set
+    before any hashing. Returns (shas, paths); paths holds readable artifacts
+    only."""
+    shas: dict = {}
+    paths: dict = {}
+    for group_key, group in (index or {}).items():
+        if not isinstance(group, dict):
+            continue
+        if not all_groups and branch_from_group_key(group_key) is None:
+            continue                                   # skip ungrouped/non-branch
+        for sid, entry in group.items():
+            if session_id and sid != session_id:
+                continue
+            if session_ids is not None and sid not in session_ids:
+                continue
+            try:
+                path = store_path_for(base_dir, sid)   # sibling artifact convention
+            except ValueError as e:
+                print(f"warning: skipping {sid!r} ({e})", file=sys.stderr)
+                if all_groups:
+                    shas[sid] = None
+                continue
+            sha = artifact_sha256(path)
+            if sha is None:                            # already warned
+                if all_groups:
+                    shas[sid] = None
+                continue
+            shas[sid] = sha
+            paths[sid] = path
+    return shas, paths
 
 
 def scan_sessions(selected: list) -> dict:
@@ -466,13 +519,57 @@ def _now_iso() -> str:
         "%Y-%m-%dT%H:%M:%SZ")
 
 
+def sync_sessions(selected: list, *, paths: dict, shas: dict, identity: dict,
+                  bucket: str, profile: str, ledger: dict,
+                  ledger_path: str) -> tuple[dict, list[dict]]:
+    """Shell (extracted from main's upload loop): per-session plan_upload ->
+    upload_one -> mark_synced -> save_ledger, continue-on-error. The upload runs
+    BEFORE the ledger write, and the ledger is saved PER session, so a crash
+    mid-batch just re-hashes/re-uploads this one session next run. SILENT -- no
+    printing; the caller renders results (main() to the CLI lines, a server to
+    its response body, which must never receive CLI output on its stdio).
+
+    Returns (final_ledger, results) where each result is {"session_id", "ok",
+    "s3_key"?, "etag"?, "error"?}. save_ledger raising AFTER a successful upload
+    yields ok: false with a ledger-mentioning error and the record is NOT kept
+    in the returned ledger (the session re-uploads next run -- an idempotent
+    re-PUT of identical bytes -- rather than silently reading as synced); the
+    batch continues either way. Caller runs preflight_sso first."""
+    results: list = []
+    for entry in selected:
+        sid = entry["session_id"]
+        try:
+            with open(paths[sid]) as f:
+                traj = json.load(f)                    # only redacted bytes, ever
+            plan = plan_upload(traj, entry, identity)
+            # Single-PUT put-object caps at 5 GB; an artifact above that would
+            # need a multipart upload (not implemented — captures are far smaller).
+            etag = upload_one(plan["key"], paths[sid], plan["metadata"],
+                              bucket=bucket, profile=profile)
+        except Exception as e:   # continue-on-error: one bad session never aborts
+            results.append({"session_id": sid, "ok": False, "error": str(e)})
+            continue
+        try:
+            new_ledger = mark_synced(ledger, sid, s3_key=plan["key"], etag=etag,
+                                     synced_at=_now_iso(), artifact_sha=shas[sid])
+            save_ledger(ledger_path, new_ledger)
+        except Exception as e:
+            results.append({"session_id": sid, "ok": False,
+                            "error": f"uploaded but ledger write failed: {e}"})
+            continue
+        ledger = new_ledger
+        results.append({"session_id": sid, "ok": True,
+                        "s3_key": plan["key"], "etag": etag})
+    return ledger, results
+
+
 def _build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(
         prog="atif_to_s3.py",
         description="Idempotently sync redacted capture trajectories to S3.")
     ap.add_argument("--session-id", help="sync only this session (default: all un-synced)")
-    ap.add_argument("--bucket", default=_DEFAULT_BUCKET)
-    ap.add_argument("--profile", default=_DEFAULT_PROFILE,
+    ap.add_argument("--bucket", default=DEFAULT_BUCKET)
+    ap.add_argument("--profile", default=DEFAULT_PROFILE,
                     help="AWS profile (default dev-admin — the CMK-authorized SSO identity)")
     # Identity is supplied by the command (from get_caller_identity) for ALL modes
     # — --dry-run and --scan compute keys/selection too, so they need it as well.
@@ -493,36 +590,17 @@ def main(argv=None) -> int:
 
     base_dir = os.path.expanduser(args.base_dir)
     index_path = os.path.join(base_dir, _INDEX_NAME)
-    ledger_path = os.path.join(base_dir, _LEDGER_NAME)
+    ledger_path = os.path.join(base_dir, LEDGER_NAME)
     index = load_index(index_path)
     ledger = load_ledger(ledger_path)
     identity = {"principal_id": args.principal_id,
                 "principal_type": args.principal_type,
                 "org_id": args.org_id}
 
-    # Candidate pool: branch-keyed sessions (optionally the one --session-id).
-    # Hash each candidate's redacted artifact up front; a missing/unreadable file
-    # is skipped here with a warning so it never enters the selection or an upload.
-    shas: dict = {}
-    paths: dict = {}
-    for group_key, group in (index or {}).items():
-        if branch_from_group_key(group_key) is None:   # skip ungrouped/non-branch
-            continue
-        if not isinstance(group, dict):
-            continue
-        for sid, entry in group.items():
-            if args.session_id and sid != args.session_id:
-                continue
-            try:
-                path = store_path_for(base_dir, sid)   # sibling artifact convention
-            except ValueError as e:
-                print(f"warning: skipping {sid!r} ({e})", file=sys.stderr)
-                continue
-            sha = artifact_sha256(path)
-            if sha is None:                            # already warned; skip session
-                continue
-            shas[sid] = sha
-            paths[sid] = path
+    # Candidate pool: branch-keyed sessions (optionally the one --session-id),
+    # each artifact hashed up front; a missing/unreadable file is skipped inside
+    # hash_candidates with a warning so it never enters a selection or an upload.
+    shas, paths = hash_candidates(index, base_dir, session_id=args.session_id)
 
     selected = select_sessions(index, ledger, shas, args.session_id)
     # Only sessions whose artifact we could actually hash are uploadable/scannable.
@@ -552,25 +630,17 @@ def main(argv=None) -> int:
         print(f"error: {e}", file=sys.stderr)
         return 1
 
+    _, results = sync_sessions(selected, paths=paths, shas=shas,
+                               identity=identity, bucket=args.bucket,
+                               profile=args.profile, ledger=ledger,
+                               ledger_path=ledger_path)
     exit_code = 0
-    for entry in selected:
-        sid = entry["session_id"]
-        try:
-            with open(paths[sid]) as f:
-                traj = json.load(f)                    # only redacted bytes, ever
-            plan = plan_upload(traj, entry, identity)
-            # Single-PUT put-object caps at 5 GB; an artifact above that would need
-            # a multipart upload (not implemented — captures are far smaller).
-            etag = upload_one(plan["key"], paths[sid], plan["metadata"],
-                              bucket=args.bucket, profile=args.profile)
-            # Upload BEFORE the ledger write, and save PER session, so a crash
-            # mid-batch just re-hashes/re-uploads this one session next run.
-            ledger = mark_synced(ledger, sid, s3_key=plan["key"], etag=etag,
-                                 synced_at=_now_iso(), artifact_sha=shas[sid])
-            save_ledger(ledger_path, ledger)
-            print(f"OK  {plan['key']}  (etag {etag})")
-        except Exception as e:   # continue-on-error: one bad session never aborts the batch
-            print(f"error: failed to sync {sid}: {e}", file=sys.stderr)
+    for result in results:
+        if result["ok"]:
+            print(f"OK  {result['s3_key']}  (etag {result['etag']})")
+        else:
+            print(f"error: failed to sync {result['session_id']}: "
+                  f"{result['error']}", file=sys.stderr)
             exit_code = 1
     return exit_code
 

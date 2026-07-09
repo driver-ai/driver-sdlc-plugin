@@ -25,6 +25,7 @@ import sys
 import tempfile
 import unittest
 import uuid
+from unittest import mock
 
 from conftest import PLUGIN_ROOT
 
@@ -703,6 +704,292 @@ class TestMainPartialBatch(_ShellBase):
         self.assertEqual(set(ledger), {sids[0], sids[2]})
         self.assertNotIn(sids[1], ledger)
         self.assertIn(sids[1], err)  # the failure was reported
+
+
+# ===========================================================================
+# Multi-session sync seam: select_sessions' session_ids filter, hash_candidates
+# (default CLI scope vs all_groups dataset scope), and sync_sessions
+# (per-session results + upload-before-ledger-write ordering) -- the extracted
+# surface the viewer server composes. main() stays the CLI composition of these
+# and is pinned byte-for-byte by TestMainCliParity.
+# ===========================================================================
+
+SID_3 = "44444444-4444-4444-8444-444444444444"
+
+
+def _sha_of(path):
+    with open(path, "rb") as fh:
+        return hashlib.sha256(fh.read()).hexdigest()
+
+
+class TestSelectSessionsSessionIdsFilter(unittest.TestCase):
+    """select_sessions' keyword-only session_ids set filter (the multi-select
+    the viewer's POST /api/sync drives). Pure -- plain dicts, no I/O."""
+
+    def test_select_sessions_session_ids_filter(self):
+        index = _load("s3_index.json")
+        shas = {SID_1: "sha-1", SID_2: "sha-2", SID_UNGROUPED: "sha-3"}
+
+        # The set filter selects exactly those (index order preserved).
+        selected = atif_to_s3.select_sessions(index, {}, shas,
+                                              session_ids={SID_1, SID_2})
+        self.assertEqual([e["session_id"] for e in selected], [SID_1, SID_2])
+        selected = atif_to_s3.select_sessions(index, {}, shas,
+                                              session_ids={SID_2})
+        self.assertEqual([e["session_id"] for e in selected], [SID_2])
+
+        # Composes with the synced-skip: a synced member of the set drops out.
+        ledger = {SID_1: {"s3_key": "k", "etag": "e",
+                          "synced_at": "t", "artifact_sha256": "sha-1"}}
+        selected = atif_to_s3.select_sessions(index, ledger, shas,
+                                              session_ids={SID_1, SID_2})
+        self.assertEqual([e["session_id"] for e in selected], [SID_2])
+
+        # Unknown ids are silently absent (validation is the server's job).
+        selected = atif_to_s3.select_sessions(
+            index, {}, shas, session_ids={SID_1, "not-in-the-index"})
+        self.assertEqual([e["session_id"] for e in selected], [SID_1])
+
+        # The branch-only rule still applies: an ungrouped id never selects.
+        selected = atif_to_s3.select_sessions(index, {}, shas,
+                                              session_ids={SID_UNGROUPED})
+        self.assertEqual(selected, [])
+
+        # session_id and session_ids are mutually exclusive -> ValueError.
+        with self.assertRaises(ValueError):
+            atif_to_s3.select_sessions(index, {}, shas, SID_1,
+                                       session_ids={SID_1})
+
+
+class TestHashCandidates(_ShellBase):
+    """hash_candidates -- the candidate-hashing loop extracted from main().
+    Real tmp-store files, no mocks: the function's whole job is store-path
+    resolution + hashing at the filesystem edge."""
+
+    def test_hash_candidates_scopes_and_skips(self):
+        e1 = _seed_session(self.base, SID_1, _mk_traj(SID_1))
+        e2 = _seed_session(self.base, SID_2, _mk_traj(SID_2))
+        e3 = _seed_session(self.base, SID_UNGROUPED, _mk_traj(SID_UNGROUPED),
+                           group_key="ungrouped")
+        index = _write_index(self.base, [e1, e2, e3])
+        os.remove(_artifact_path(self.base, SID_2))    # SID_2 -> unreadable
+        sha_1 = _sha_of(_artifact_path(self.base, SID_1))
+        sha_3 = _sha_of(_artifact_path(self.base, SID_UNGROUPED))
+
+        # Default (CLI path): branch-keyed groups only; the unreadable artifact
+        # warns to stderr and is OMITTED from shas entirely.
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            shas, paths = atif_to_s3.hash_candidates(index, self.base)
+        self.assertEqual(shas, {SID_1: sha_1})
+        self.assertEqual(paths, {SID_1: _artifact_path(self.base, SID_1)})
+        self.assertIn(SID_2, err.getvalue())           # the skip was warned
+
+        # session_ids narrows the pool BEFORE hashing (the excluded unreadable
+        # session is never attempted, so no warning is emitted).
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            shas, paths = atif_to_s3.hash_candidates(index, self.base,
+                                                     session_ids={SID_1})
+        self.assertEqual(shas, {SID_1: sha_1})
+        self.assertEqual(err.getvalue(), "")
+
+        # TRUTHY session_id narrowing (main()'s `if args.session_id and ...`):
+        # "" narrows nothing, so --session-id "" keeps today's hash-everything
+        # behavior and stderr parity.
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            shas, _ = atif_to_s3.hash_candidates(index, self.base,
+                                                 session_id="")
+        self.assertEqual(set(shas), {SID_1})           # same pool as no filter
+        self.assertIn(SID_2, err.getvalue())           # same warning too
+
+        # all_groups=True (dataset path): EVERY session across EVERY group is
+        # PRESENT in shas with sha-or-None -- unreadable/missing -> None, never
+        # omitted; paths still holds readable artifacts only.
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            shas, paths = atif_to_s3.hash_candidates(index, self.base,
+                                                     all_groups=True)
+        self.assertEqual(set(shas), {SID_1, SID_2, SID_UNGROUPED})
+        self.assertEqual(shas[SID_1], sha_1)
+        self.assertIsNone(shas[SID_2])
+        self.assertEqual(shas[SID_UNGROUPED], sha_3)
+        self.assertEqual(set(paths), {SID_1, SID_UNGROUPED})
+
+
+class TestSyncSessions(_ShellBase):
+    """sync_sessions -- the upload loop extracted from main(), tested ABOVE the
+    aws-CLI boundary: `upload_one` / `preflight_sso` / `save_ledger` are stubbed
+    with unittest.mock.patch on the atif_to_s3 module namespace -- a sanctioned
+    deviation from this file's documented PATH-fake-`aws` discipline. The
+    fake-`aws` tests above keep policing `upload_one` itself at the subprocess
+    boundary; what THIS seam owes its callers (the CLI's main() and the viewer's
+    POST /api/sync) is the per-session results contract and the
+    upload-before-ledger-write ordering, which live entirely above that
+    boundary."""
+
+    def _seed_batch(self, sids):
+        entries = [_seed_session(self.base, s, _mk_traj(s)) for s in sids]
+        paths = {s: _artifact_path(self.base, s) for s in sids}
+        shas = {s: _sha_of(paths[s]) for s in sids}
+        return entries, paths, shas
+
+    def _run_sync(self, entries, paths, shas, ledger_path):
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            final_ledger, results = atif_to_s3.sync_sessions(
+                entries, paths=paths, shas=shas, identity=IDENTITY,
+                bucket="test-bucket", profile="test-profile",
+                ledger={}, ledger_path=ledger_path)
+        # SILENT: no CLI lines may leak (a server POST shares this stdio).
+        self.assertEqual(out.getvalue(), "")
+        self.assertEqual(err.getvalue(), "")
+        return final_ledger, results
+
+    def test_sync_sessions_results_and_ledger_order(self):
+        sids = [SID_1, SID_2, SID_3]
+        entries, paths, shas = self._seed_batch(sids)
+        keys = {s: atif_to_s3.plan_upload(_mk_traj(s), e, IDENTITY)["key"]
+                for s, e in zip(sids, entries)}
+
+        # --- All-success: per-session result dicts in order; the ledger is
+        # written AFTER the upload and saved PER session (each upload sees
+        # exactly the PRIOR sessions' records on disk).
+        ledger_path = os.path.join(self.tmp, "ledger-ok.json")
+        ledger_keys_at_upload = []
+
+        def fake_upload(key, body_path, metadata, *, bucket, profile):
+            ledger_keys_at_upload.append(set(atif_to_s3.load_ledger(ledger_path)))
+            return "etag-" + metadata["session-id"]
+
+        with mock.patch.object(atif_to_s3, "upload_one",
+                               side_effect=fake_upload) as up, \
+             mock.patch.object(atif_to_s3, "preflight_sso") as pre:
+            final_ledger, results = self._run_sync(entries, paths, shas,
+                                                   ledger_path)
+        self.assertEqual(
+            results,
+            [{"session_id": s, "ok": True, "s3_key": keys[s],
+              "etag": "etag-" + s} for s in sids])
+        self.assertEqual(ledger_keys_at_upload,
+                         [set(), {SID_1}, {SID_1, SID_2}])
+        # The uploaded body is the hashed artifact path; config is threaded.
+        self.assertEqual([c.args[1] for c in up.call_args_list],
+                         [paths[s] for s in sids])
+        self.assertEqual(up.call_args_list[0].kwargs,
+                         {"bucket": "test-bucket", "profile": "test-profile"})
+        pre.assert_not_called()        # preflight is the CALLER's job
+        with open(ledger_path) as fh:
+            on_disk = json.load(fh)
+        self.assertEqual(final_ledger, on_disk)
+        self.assertEqual(set(on_disk), set(sids))
+        for s in sids:
+            self.assertEqual(on_disk[s]["s3_key"], keys[s])
+            self.assertEqual(on_disk[s]["artifact_sha256"], shas[s])
+
+        # --- Upload failure mid-batch: ok False (error = str(e), which main()
+        # renders verbatim); later sessions still processed; the ledger never
+        # records the failed session.
+        ledger_path = os.path.join(self.tmp, "ledger-fail.json")
+
+        def fail_second(key, body_path, metadata, *, bucket, profile):
+            if metadata["session-id"] == SID_2:
+                raise RuntimeError("simulated upload failure")
+            return "etag-x"
+
+        with mock.patch.object(atif_to_s3, "upload_one",
+                               side_effect=fail_second) as up:
+            _, results = self._run_sync(entries, paths, shas, ledger_path)
+        self.assertEqual(up.call_count, 3)             # batch never aborts
+        self.assertEqual([r["ok"] for r in results], [True, False, True])
+        self.assertEqual(results[1],
+                         {"session_id": SID_2, "ok": False,
+                          "error": "simulated upload failure"})
+        with open(ledger_path) as fh:
+            on_disk = json.load(fh)
+        self.assertEqual(set(on_disk), {SID_1, SID_3})
+
+        # --- save_ledger raising AFTER a successful upload: ok False with a
+        # ledger-mentioning error; the batch continues; the failed session is
+        # not durably recorded (later saves must not resurrect it).
+        ledger_path = os.path.join(self.tmp, "ledger-torn.json")
+        real_save = atif_to_s3.save_ledger
+        state = {"calls": 0}
+
+        def flaky_save(path, ledger):
+            state["calls"] += 1
+            if state["calls"] == 1:
+                raise OSError("disk full")
+            real_save(path, ledger)
+
+        with mock.patch.object(atif_to_s3, "upload_one",
+                               return_value="etag-x") as up, \
+             mock.patch.object(atif_to_s3, "save_ledger",
+                               side_effect=flaky_save):
+            final_ledger, results = self._run_sync(entries, paths, shas,
+                                                   ledger_path)
+        self.assertEqual(up.call_count, 3)             # later sessions ran
+        self.assertFalse(results[0]["ok"])
+        self.assertEqual(results[0]["session_id"], SID_1)
+        self.assertIn("ledger", results[0]["error"].lower())
+        self.assertEqual([r["ok"] for r in results[1:]], [True, True])
+        with open(ledger_path) as fh:
+            on_disk = json.load(fh)
+        self.assertEqual(set(on_disk), {SID_2, SID_3})
+        self.assertEqual(final_ledger, on_disk)
+
+
+class TestMainCliParity(_ShellBase):
+    """Byte-level CLI parity pin for main() -- EXPECTED GREEN before AND after
+    the seam extraction (a regression pin, not a red seam test): the exact
+    stdout/stderr bytes and exit codes of --dry-run, --scan, and the upload
+    modes must not change when main() becomes a composition of
+    hash_candidates/select_sessions/sync_sessions. Drives the real fake-`aws`
+    boundary like the other TestMain* classes (no mocks)."""
+
+    def test_main_cli_parity(self):
+        e1 = _seed_session(
+            self.base, SID_1, _mk_traj(SID_1, message="contact dev@example.com"))
+        e2 = _seed_session(self.base, SID_2, _mk_traj(SID_2))
+        _write_index(self.base, [e1, e2])
+        k1 = atif_to_s3.plan_upload({}, e1, IDENTITY)["key"]
+        k2 = atif_to_s3.plan_upload({}, e2, IDENTITY)["key"]
+
+        # --dry-run: exactly one key per line, index order, nothing else.
+        rc, out, err = self._run_main(["--dry-run"])
+        self.assertEqual(rc, 0)
+        self.assertEqual(out, f"{k1}\n{k2}\n")
+        self.assertEqual(err, "")
+
+        # --scan: exactly the indent-2 JSON aggregate plus a newline.
+        rc, out, err = self._run_main(["--scan"])
+        self.assertEqual(rc, 0)
+        expected = {"by_type": {"Email address": 1},
+                    "per_session": {SID_1: {"Email address": 1}, SID_2: {}}}
+        self.assertEqual(out, json.dumps(expected, indent=2) + "\n")
+        self.assertEqual(err, "")
+
+        # Upload mode, all-success: one OK line per session, index order.
+        rc, out, err = self._run_main([])
+        self.assertEqual(rc, 0)
+        self.assertEqual(out, f"OK  {k1}  (etag abc123)\n"
+                              f"OK  {k2}  (etag abc123)\n")
+        self.assertEqual(err, "")
+
+        # Upload mode, failure: exit 1, no OK line, the exact stderr message.
+        e3 = _seed_session(self.base, SID_3, _mk_traj(SID_3))
+        _write_index(self.base, [e1, e2, e3])
+        k3 = atif_to_s3.plan_upload({}, e3, IDENTITY)["key"]
+        os.environ["FAKE_AWS_PUT_FAIL_KEYS"] = SID_3
+        rc, out, err = self._run_main([])
+        self.assertEqual(rc, 1)
+        self.assertEqual(out, "")
+        self.assertEqual(
+            err,
+            f"error: failed to sync {SID_3}: s3 put-object failed for {k3}: "
+            f"An error occurred (InternalError) when calling the PutObject "
+            f"operation: simulated transient failure\n")
 
 
 # ===========================================================================
