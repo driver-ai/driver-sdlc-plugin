@@ -376,5 +376,18 @@ class TestBuildDataset(unittest.TestCase):
         self.assertEqual(len(steps), 2)
 
 
+class TestViewerDefaults(unittest.TestCase):
+    """The launch defaults are the plugin's viewer provenance: the driver-ai
+    fork, pinned to an immutable merged SHA (capture-viewer DEC-010)."""
+
+    def test_default_repo_is_the_driver_ai_fork(self):
+        self.assertEqual(atif_to_viewer.DEFAULT_REPO,
+                         "https://github.com/driver-ai/ATIF-trajectory-viewer")
+
+    def test_default_pin_is_a_full_sha(self):
+        # A 40-char hex SHA is immutable; a branch name or short ref is not.
+        self.assertRegex(atif_to_viewer.DEFAULT_PIN, r"^[0-9a-f]{40}$")
+
+
 if __name__ == "__main__":
     unittest.main()
