@@ -121,6 +121,41 @@ def detect_mutation(name: str, raw_args):
     return None
 
 
+_META_ALLOW_TOP = ("llm_call_count",)       # step-top-level metadata keys
+_META_ALLOW_EXTRA = ("service_tier",)       # keys under metrics.extra (NOT step-top-level)
+
+
+def _span_kind_for(role: str) -> str:
+    # role -> viewer spanKind enum {llm, tool, general, system} (capture-viewer DEC-016).
+    return {"tool": "tool", "agent": "llm", "system": "system"}.get(role, "general")
+
+
+def curate_metadata(s: dict) -> dict | None:
+    """Pure: allow-listed, scrubbed per-step metadata for the Details tab. Never
+    passes raw `extra` through -- only enumerated safe keys, each read from its REAL
+    home (llm_call_count is step-top-level; service_tier + the cache breakdown live
+    under metrics.extra -- capture-viewer DEC-071 lineage)."""
+    md: dict = {}
+    for k in _META_ALLOW_TOP:
+        v = s.get(k)
+        if v is not None:
+            md[k] = _scrub(v) if isinstance(v, str) else v
+    metrics = s.get("metrics") or {}
+    extra = metrics.get("extra") or {}
+    for k in _META_ALLOW_EXTRA:
+        v = extra.get(k)
+        if v is not None:
+            md[k] = _scrub(v) if isinstance(v, str) else v
+    # cache_read_input_tokens == metrics.cached_tokens (== tokens.cached) on CC captures
+    # (corpus-proven 2038/2038 equal) -- keep only cache_creation here so the same count
+    # is not duplicated under two names (capture-viewer DEC-022, dry-run round-2 #13).
+    cache = {k: extra[k] for k in ("cache_creation_input_tokens",)
+             if extra.get(k) is not None}
+    if cache:
+        md["cache"] = cache                 # read-cache lives only in tokens.cached (no dup)
+    return md or None
+
+
 def step_from_atif(s: dict, idx: int) -> dict:
     role = {"user": "user", "agent": "agent", "assistant": "agent",
             "tool": "tool", "system": "system"}.get((s.get("source") or "agent").lower(), "agent")
@@ -157,7 +192,7 @@ def step_from_atif(s: dict, idx: int) -> dict:
     elif isinstance(obs, list):
         obs = "\n\n".join(str(x) for x in obs)
     metrics = s.get("metrics") or {}
-    return {
+    out = {
         "index": idx, "role": role,
         # Flatten BEFORE _cap/_scrub so the defense-in-depth re-scrub always
         # sees a string (a list message would otherwise pass through unmasked).
@@ -172,33 +207,60 @@ def step_from_atif(s: dict, idx: int) -> dict:
         "mutations": muts or None,
         "edits": None,
     }
+    # payload v2: additive identity/hierarchy/model/metadata stamping. The private
+    # _depth/_parentIndex/_trajId/_spanKind keys baked in by flatten_with_subagents
+    # are consumed here and NOT re-emitted (capture-viewer DEC-016 / DEC-022).
+    out.update({
+        "stepId": s.get("step_id"),
+        "trajId": s.get("_trajId"),
+        "depth": s.get("_depth", 0),
+        "parentIndex": s.get("_parentIndex"),
+        "spanKind": s.get("_spanKind") or _span_kind_for(role),
+        "model": _scrub(s.get("model_name")) if s.get("model_name") else None,
+        "metadata": curate_metadata(s),
+    })
+    if out.get("tokens") is not None:
+        out["tokens"]["cached"] = (s.get("metrics") or {}).get("cached_tokens")
+    return out
 
 
 def flatten_with_subagents(traj: dict) -> list[dict]:
-    """Pure: parent steps with each subagent's steps spliced in right after the
-    tool_call that spawned it, recursively, each subtree preceded by a synthetic
-    'system' boundary marker. subagent_trajectories is flat (all depths) -> one
-    lookup map serves every level; placement follows tool_calls order (so siblings
-    match the Opik span order). Each subagent is spliced at most once; any subagent
-    never reached via a ref (truncation-unlinked or dangling) is appended at the end
-    under the root with an '(unlinked)' marker, so no subagent is silently dropped.
-    No I/O."""
+    """Pure: parent + spliced subagent steps as ONE flat list of SHALLOW COPIES,
+    each stamped with hierarchy (_depth/_parentIndex/_trajId/_spanKind). A single
+    shared accumulator `out` -> _parentIndex is the GLOBAL index in this pre-cap
+    list (never a per-recursion local index). A parent is always emitted before its
+    children, so after raw_steps[:MAX_STEPS] a kept child's _parentIndex still
+    references a kept step, and the trailing-boundary pop removes only trailing
+    markers. Input trajectory is NOT mutated. (capture-viewer DEC-016)"""
     subs = traj.get("subagent_trajectories") or []
     by_id = {s.get("trajectory_id"): s for s in subs}
     placed: set = set()
+    out: list[dict] = []
+    root_tid = traj.get("session_id") or "root"  # root steps join the graph root node
+                                                 # (same fallback as build_agent_graph -- DEC-022)
 
-    def marker(sub: dict, depth: int, note: str = "") -> dict:
-        # Label from the converter-filled agent.name; extra.subagent_type keeps
-        # artifacts from the previous converter rendering.
+    def emit(step, *, depth, parent_index, traj_id, span_kind=None) -> int:
+        idx = len(out)                           # GLOBAL position in the flat list
+        s = dict(step)                           # shallow copy -> input never mutated
+        s["_depth"], s["_parentIndex"], s["_trajId"] = depth, parent_index, traj_id
+        if span_kind is not None:
+            s["_spanKind"] = span_kind
+        out.append(s)
+        return idx
+
+    def marker(sub, level, note=""):
+        # `level` is the logical subagent NESTING level (1, 2, 3 ...), NOT the tree
+        # `_depth` (which grows by 2 per level for indentation). The human-readable
+        # label shows the nesting level so a 2nd-level subagent reads "(depth 2)",
+        # not "(depth 3)" -- capture-viewer DEC-022.
         stype = ((sub.get("agent") or {}).get("name")
                  or (sub.get("extra") or {}).get("subagent_type") or "agent")
         return {"source": "system", "step_id": None, "_boundary": True,
-                "message": f"↳ subagent {stype} (depth {depth}{note})"}
+                "message": f"↳ subagent {stype} (depth {level}{note})"}
 
-    def walk(steps: list[dict], depth: int) -> list[dict]:
-        out: list[dict] = []
+    def walk(steps, depth, parent_index, traj_id, level):
         for step in steps:
-            out.append(step)
+            i = emit(step, depth=depth, parent_index=parent_index, traj_id=traj_id)
             results = (step.get("observation") or {}).get("results", [])
             res_by_call: dict = {}
             for r in results:
@@ -211,18 +273,19 @@ def flatten_with_subagents(traj: dict) -> list[dict]:
                     if not sub or tid in placed:
                         continue
                     placed.add(tid)
-                    out.append(marker(sub, depth + 1))
-                    out.extend(walk(sub.get("steps") or [], depth + 1))
-        return out
+                    m = emit(marker(sub, level + 1), depth=depth + 1,   # label by nesting level
+                             parent_index=i, traj_id=tid, span_kind="system")
+                    walk(sub.get("steps") or [], depth + 2, m, tid, level + 1)
 
-    out = walk(traj.get("steps") or [], 0)
-    for sub in subs:                                   # subagents not reached via a ref
+    walk(traj.get("steps") or [], 0, None, root_tid, 0)
+    for sub in subs:                             # subagents never reached via a ref
         tid = sub.get("trajectory_id")
         if tid in placed:
             continue
         placed.add(tid)
-        out.append(marker(sub, 1, ", unlinked"))
-        out.extend(walk(sub.get("steps") or [], 1))
+        m = emit(marker(sub, 1, ", unlinked"), depth=1, parent_index=None,
+                 traj_id=tid, span_kind="system")
+        walk(sub.get("steps") or [], 2, m, tid, 1)
     return out
 
 

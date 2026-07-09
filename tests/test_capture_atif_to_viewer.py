@@ -10,6 +10,7 @@ Task 5 consolidates redaction onto redact.redact_text and purifies build_dataset
 detect_mutation / _cap robustness hold in both states.
 """
 
+import copy
 import json
 import sys
 import unittest
@@ -95,6 +96,87 @@ class TestStepFromAtif(unittest.TestCase):
         self.assertEqual(atif_to_viewer._cap(12345), 12345)
         self.assertIsNone(atif_to_viewer._cap(None))
 
+    def test_step_from_atif_stamps_hierarchy(self):
+        # depth/parentIndex/trajId/spanKind are read from the private stamping keys
+        # that flatten bakes in; an explicit _spanKind wins over the role rule; the
+        # private keys are consumed and NOT re-emitted into the final step dict.
+        stamped = {"step_id": 7, "source": "agent", "message": "child",
+                   "_depth": 2, "_parentIndex": 3, "_trajId": "sess/agent-a",
+                   "_spanKind": "system"}
+        out = atif_to_viewer.step_from_atif(stamped, 5)
+        self.assertEqual(out["stepId"], 7)
+        self.assertEqual(out["depth"], 2)
+        self.assertEqual(out["parentIndex"], 3)
+        self.assertEqual(out["trajId"], "sess/agent-a")
+        self.assertEqual(out["spanKind"], "system")     # explicit _spanKind wins
+        for k in ("_depth", "_parentIndex", "_trajId", "_spanKind"):
+            self.assertNotIn(k, out)                      # private keys never leak
+        # A root step (session_id as trajId, depth 0, no parent) derives spanKind.
+        root = {"step_id": 1, "source": "agent", "message": "root",
+                "_depth": 0, "_parentIndex": None, "_trajId": "sess-1"}
+        rout = atif_to_viewer.step_from_atif(root, 0)
+        self.assertEqual(rout["depth"], 0)
+        self.assertIsNone(rout["parentIndex"])
+        self.assertEqual(rout["trajId"], "sess-1")
+        self.assertEqual(rout["spanKind"], "llm")        # agent role -> llm
+
+    def test_step_from_atif_model_and_cached(self):
+        step = {"step_id": 1, "source": "agent", "message": "hi",
+                "model_name": f"model {SECRET_A}",
+                "metrics": {"prompt_tokens": 100, "completion_tokens": 10,
+                            "cached_tokens": 42}}
+        out = atif_to_viewer.step_from_atif(step, 0)
+        # model surfaced and scrubbed via the shared redaction core.
+        self.assertIn(TYPED, out["model"])
+        self.assertNotIn(SECRET_A, out["model"])
+        # tokens.cached surfaced from metrics.cached_tokens.
+        self.assertEqual(out["tokens"]["cached"], 42)
+        self.assertEqual(out["tokens"]["prompt"], 100)
+        # No metrics -> tokens None, model None; None-safe, no crash.
+        bare = atif_to_viewer.step_from_atif({"step_id": 2, "source": "user"}, 1)
+        self.assertIsNone(bare["tokens"])
+        self.assertIsNone(bare["model"])
+
+
+class TestCurateMetadata(unittest.TestCase):
+    def test_curate_metadata_allowlist(self):
+        step = {
+            "llm_call_count": 3,                          # step-top-level
+            "metrics": {
+                "cached_tokens": 500,
+                "extra": {
+                    "service_tier": f"standard {SECRET_A}",
+                    "cache_creation_input_tokens": 128,
+                    "cache_read_input_tokens": 500,
+                    "api_key": SECRET_B,                  # planted secret, NOT allow-listed
+                },
+            },
+        }
+        md = atif_to_viewer.curate_metadata(step)
+        self.assertEqual(md["llm_call_count"], 3)
+        # service_tier read from metrics.extra and scrubbed.
+        self.assertIn(TYPED, md["service_tier"])
+        self.assertNotIn(SECRET_A, md["service_tier"])
+        # cache summary carries only cache_creation_input_tokens (no read-cache dup).
+        self.assertEqual(md["cache"], {"cache_creation_input_tokens": 128})
+        self.assertNotIn("cache_read_input_tokens", md["cache"])
+        # planted secret excluded; cached_tokens NOT duplicated into metadata.
+        self.assertNotIn("api_key", md)
+        self.assertNotIn(SECRET_B, json.dumps(md))
+        self.assertNotIn("cached_tokens", md)
+        # None when nothing allow-listed is present.
+        self.assertIsNone(atif_to_viewer.curate_metadata({}))
+        self.assertIsNone(atif_to_viewer.curate_metadata({"metrics": {"extra": {}}}))
+
+
+class TestSpanKind(unittest.TestCase):
+    def test_span_kind_for(self):
+        cases = {"agent": "llm", "tool": "tool", "system": "system",
+                 "user": "general", "assistant": "general", "whatever": "general"}
+        for role, expected in cases.items():
+            with self.subTest(role=role):
+                self.assertEqual(atif_to_viewer._span_kind_for(role), expected)
+
 
 def _step(step_id, *, source="agent", message="", tool_calls=None, results=None):
     """Build a serialized-trajectory step dict (the ATIF JSON shape the viewer
@@ -126,6 +208,47 @@ def _subagent(trajectory_id, steps, *, subagent_type="explorer"):
     if subagent_type is not None:
         sub["extra"] = {"subagent_type": subagent_type}
     return sub
+
+
+def _traj_main_spawns_a(session_id="sess-1"):
+    """Nested (depth-2) fixture: main step 1 spawns subagent A (two steps); a
+    trailing root step follows. Pre-cap flat order (rebuilt flatten):
+        0 main one | 1 markerA | 2 A step one | 3 A step two | 4 main two."""
+    return {
+        "session_id": session_id,
+        "steps": [
+            _step(1, message="main one", tool_calls=[_agent_call("spawn-a")],
+                  results=[_spawn_result("spawn-a", "sess/agent-a")]),
+            _step(2, source="user", message="main two"),
+        ],
+        "subagent_trajectories": [
+            _subagent("sess/agent-a", [
+                _step(1, message="A step one"),
+                _step(2, message="A step two"),
+            ], subagent_type="code-reviewer"),
+        ],
+    }
+
+
+def _traj_two_subagents(session_id="sess-1"):
+    """Two subagents so the cap boundary can land on a marker. Pre-cap flat order:
+        0 main one | 1 markerA | 2 A one | 3 A two |
+        4 main two | 5 markerB | 6 B one | 7 B two."""
+    return {
+        "session_id": session_id,
+        "steps": [
+            _step(1, message="main one", tool_calls=[_agent_call("spawn-a")],
+                  results=[_spawn_result("spawn-a", "sess/agent-a")]),
+            _step(2, message="main two", tool_calls=[_agent_call("spawn-b")],
+                  results=[_spawn_result("spawn-b", "sess/agent-b")]),
+        ],
+        "subagent_trajectories": [
+            _subagent("sess/agent-a", [
+                _step(1, message="A one"), _step(2, message="A two")]),
+            _subagent("sess/agent-b", [
+                _step(1, message="B one"), _step(2, message="B two")]),
+        ],
+    }
 
 
 class TestFlattenWithSubagents(unittest.TestCase):
@@ -163,10 +286,23 @@ class TestFlattenWithSubagents(unittest.TestCase):
 
     def test_no_subagents_returns_parent_steps_unchanged(self):
         steps = [_step(1, message="only"), _step(2, source="user", message="reply")]
-        traj = {"steps": steps}
+        traj = {"session_id": "sess-1", "steps": steps}
         out = atif_to_viewer.flatten_with_subagents(traj)
-        self.assertEqual(out, steps)
+        # flatten now returns stamped SHALLOW COPIES (capture-viewer DEC-016), so
+        # the old `out == steps` identity no longer holds — compare on the original
+        # keys (subset) and pin the root stamping instead.
+        self.assertEqual(len(out), len(steps))
+        for orig, got in zip(steps, out):
+            for k, v in orig.items():
+                self.assertEqual(got[k], v)
+            self.assertEqual(got["_depth"], 0)          # root steps
+            self.assertIsNone(got["_parentIndex"])
+            self.assertEqual(got["_trajId"], "sess-1")  # root joins the graph root node
         self.assertFalse(any(s.get("_boundary") for s in out))
+        # Input list objects are untouched (stamping landed on copies, not input).
+        for s in steps:
+            for k in ("_depth", "_parentIndex", "_trajId", "_spanKind"):
+                self.assertNotIn(k, s)
 
     def test_depth3_grandchild_splices_under_its_parent_in_tool_calls_order(self):
         # main -> A -> B. A spawns B from within A's step; B's step must splice
@@ -259,6 +395,80 @@ class TestFlattenWithSubagents(unittest.TestCase):
         self.assertEqual(len(markers), 1)
         self.assertIn("agent", markers[0]["message"])
         self.assertEqual(out[-1]["message"], "sparse")
+
+    def test_flatten_global_parent_index(self):
+        # The Driver-flagged trap: parentIndex must be the parent's GLOBAL index in
+        # the flat list and point at the SEMANTIC parent (identity, not merely
+        # in-range) — marker.parent == spawning step; subagent step.parent == its
+        # marker; child.depth == parent.depth + 1 throughout. capture-viewer DEC-016.
+        out = atif_to_viewer.flatten_with_subagents(_traj_main_spawns_a())
+        idx = {s.get("message"): i for i, s in enumerate(out) if not s.get("_boundary")}
+        marker_i = next(i for i, s in enumerate(out) if s.get("_boundary"))
+        # marker.parent == the spawning root step (global index identity).
+        self.assertEqual(out[marker_i]["_parentIndex"], idx["main one"])
+        # each subagent step.parent == its marker.
+        self.assertEqual(out[idx["A step one"]]["_parentIndex"], marker_i)
+        self.assertEqual(out[idx["A step two"]]["_parentIndex"], marker_i)
+        # root steps have no parent and depth 0.
+        for msg in ("main one", "main two"):
+            self.assertIsNone(out[idx[msg]]["_parentIndex"])
+            self.assertEqual(out[idx[msg]]["_depth"], 0)
+        # child.depth == parent.depth + 1 for every non-root step (semantic chain).
+        for i, s in enumerate(out):
+            p = s.get("_parentIndex")
+            if p is not None:
+                self.assertEqual(s["_depth"], out[p]["_depth"] + 1)
+
+    def test_flatten_parent_index_valid_after_cap(self):
+        # Apply the cap the way the callers do — slice + pop trailing markers INLINE
+        # — NOT by monkeypatching atif_to_viewer.MAX_STEPS (flatten never reads it,
+        # and capture_viewer_core binds MAX_STEPS by value at import, so the patch is
+        # inert). The two-subagent fixture puts marker B at index 5; capping at 6
+        # forces a trailing-marker pop. capture-viewer DEC-016.
+        flat = atif_to_viewer.flatten_with_subagents(_traj_two_subagents())
+        n = 6
+        self.assertTrue(flat[n - 1].get("_boundary"))     # premise: cap lands on a marker
+        capped = flat[:n]
+        while capped and capped[-1].get("_boundary"):     # caller's trailing-marker pop
+            capped.pop()
+        self.assertFalse(capped[-1].get("_boundary"))     # the trailing marker was popped
+        # Every kept step's parentIndex points inside the capped+popped list; no ref
+        # lands on the popped trailing marker.
+        for s in capped:
+            self.assertIn("_parentIndex", s)
+            p = s["_parentIndex"]
+            if p is not None:
+                self.assertTrue(0 <= p < len(capped))
+                self.assertEqual(s["_depth"], capped[p]["_depth"] + 1)
+
+    def test_flatten_does_not_mutate_input(self):
+        # flatten stamps onto SHALLOW COPIES — the input trajectory is immutable
+        # (dry-run #9 / capture-viewer DEC-016).
+        traj = _traj_two_subagents()
+        snapshot = copy.deepcopy(traj)
+        out = atif_to_viewer.flatten_with_subagents(traj)
+        # The OUTPUT is stamped (proves flatten did the enrichment work)...
+        self.assertTrue(all("_parentIndex" in s for s in out))
+        # ...while the INPUT trajectory is byte-for-byte unchanged.
+        self.assertEqual(traj, snapshot)
+        for s in traj["steps"]:
+            for k in ("_depth", "_parentIndex", "_trajId", "_spanKind"):
+                self.assertNotIn(k, s)
+        for sub in traj["subagent_trajectories"]:
+            for s in sub["steps"]:
+                for k in ("_depth", "_parentIndex", "_trajId", "_spanKind"):
+                    self.assertNotIn(k, s)
+
+    def test_flatten_boundary_marker_spankind_system(self):
+        # Synthetic boundary markers are stamped _spanKind="system" and keep the
+        # parent chain intact (marker.parent == spawning step).
+        out = atif_to_viewer.flatten_with_subagents(_traj_main_spawns_a())
+        marker = next(s for s in out if s.get("_boundary"))
+        self.assertEqual(marker["_spanKind"], "system")
+        self.assertEqual(atif_to_viewer.step_from_atif(marker, 1)["spanKind"], "system")
+        self.assertEqual(marker["_parentIndex"], 0)       # spawning root step index
+        # Non-marker steps carry no _spanKind (derived from role in step_from_atif).
+        self.assertNotIn("_spanKind", out[0])
 
 
 class TestSubagentMarkerLabel(unittest.TestCase):
