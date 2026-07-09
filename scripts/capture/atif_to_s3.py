@@ -25,10 +25,17 @@ where <principal> is "auth0|<sub>" (user / PAT) or "machine|<id>" (machine),
 """
 from __future__ import annotations
 
+import argparse
 import copy
+import datetime
 import hashlib
+import json
 import os
+import subprocess
+import sys
 
+import render_trace  # module-top; the shell's scan_sessions calls render_trace.scan
+from capture_store_core import store_path_for  # sibling redacted-artifact path convention
 from cc_to_atif_core import is_safe_path_component  # module-top; mirrors capture_store_core
 
 # The S3-key schema version; also emitted as the `schema-version` metadata value
@@ -279,3 +286,294 @@ def select_sessions(index: dict, ledger: dict, artifact_shas: dict,
                 continue
             selected.append(entry)
     return selected
+
+
+# ---------------------------------------------------------------------------
+# Imperative shell (I/O, subprocess, clock) — mirrors atif_to_opik's split: the
+# pure planners above decide WHAT to do; everything below reads/writes files,
+# shells out to `aws`, and reads the clock. Kept stdlib-only (no boto3): `aws`
+# is invoked via subprocess with an explicit argv list.
+# ---------------------------------------------------------------------------
+
+_DEFAULT_BUCKET = "trajectory-uploads-1ddbee"
+# `dev-admin` is the only SSO identity with kms:GenerateDataKey on the bucket's
+# CMK (DEC-067); the bucket applies KMS via default encryption, so put-object
+# carries NO SSE flags. A later presigned-URL path removes client-side creds.
+_DEFAULT_PROFILE = "dev-admin"
+_DEFAULT_BASE_DIR = "~/.driver/capture"
+_INDEX_NAME = "index.json"
+_LEDGER_NAME = "s3-sync-ledger.json"     # separate from the hook-owned index.json
+
+
+def _load_json_map(path: str, *, label: str) -> dict:
+    """Load a JSON object from `path`, treating missing OR corrupt as empty.
+
+    A missing file is a normal first-run state (silent empty); a corrupt or
+    non-object file warns to stderr and degrades to {} rather than crashing the
+    sync (mirrors atif_to_opik.trace_id_for's corrupt-ledger recovery)."""
+    if not os.path.exists(path):
+        return {}
+    try:
+        with open(path) as f:
+            data = json.load(f)
+    except (OSError, ValueError) as e:
+        print(f"warning: {label} unreadable ({e.__class__.__name__}); "
+              f"treating as empty: {path}", file=sys.stderr)
+        return {}
+    if not isinstance(data, dict):
+        print(f"warning: {label} is not a JSON object; treating as empty: {path}",
+              file=sys.stderr)
+        return {}
+    return data
+
+
+def load_index(path: str) -> dict:
+    """Shell: read the hook-owned capture index; corrupt/missing -> warn + {}."""
+    return _load_json_map(path, label="capture index")
+
+
+def load_ledger(path: str) -> dict:
+    """Shell: read the sync ledger; corrupt/missing -> warn + {}."""
+    return _load_json_map(path, label="sync ledger")
+
+
+def save_ledger(path: str, ledger: dict) -> None:
+    """Shell: atomically persist the ledger (temp file in its OWN dir + os.replace).
+
+    Reimplements the atomic pattern inlined in atif_to_opik.trace_id_for (there is
+    no shared helper): the temp file lives beside the target so os.replace is a
+    same-filesystem atomic swap, and a crash mid-write can never leave a torn
+    ledger. The index.json is never touched — idempotency state stays here."""
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = path + f".tmp.{os.getpid()}"
+    with open(tmp, "w") as f:
+        json.dump(ledger, f, indent=2)
+    os.replace(tmp, path)
+
+
+def artifact_sha256(path: str) -> str | None:
+    """Shell: sha256 hex of a redacted artifact, or None if it can't be read.
+
+    Streams the file so a large artifact never loads whole into memory. A missing
+    or unreadable file warns to stderr and returns None so the caller can SKIP that
+    session and keep the batch going (never a raised traceback)."""
+    try:
+        h = hashlib.sha256()
+        with open(path, "rb") as f:
+            for chunk in iter(lambda: f.read(1 << 16), b""):
+                h.update(chunk)
+        return h.hexdigest()
+    except OSError as e:
+        print(f"warning: cannot read artifact ({e.__class__.__name__}); "
+              f"skipping: {path}", file=sys.stderr)
+        return None
+
+
+def scan_sessions(selected: list) -> dict:
+    """Shell: read each selected session's redacted artifact and scan it.
+
+    Returns {session_id: findings_list} (findings shaped {type, where, snippet})
+    for aggregate_scan, which folds them to counts-only. Reads each entry's
+    `store_path` (the index-recorded redacted-artifact path, equal to the base-dir
+    convention). An unreadable artifact warns and contributes an empty finding
+    list so the session still appears in the aggregate. Only redacted bytes are
+    read — never a raw transcript."""
+    out: dict = {}
+    for entry in selected or []:
+        sid = entry.get("session_id")
+        path = entry.get("store_path")
+        try:
+            with open(path) as f:
+                traj = json.load(f)
+        except (OSError, ValueError, TypeError) as e:
+            print(f"warning: cannot scan {sid} ({e.__class__.__name__}); "
+                  f"treating as no findings", file=sys.stderr)
+            out[sid] = []
+            continue
+        out[sid] = render_trace.scan(traj)
+    return out
+
+
+def preflight_sso(profile: str) -> None:
+    """Shell: verify the SSO session before egress; raise a clear RuntimeError.
+
+    Runs `aws sts get-caller-identity --profile <p>` and distinguishes three
+    failure modes with distinct, actionable messages and NO traceback:
+      - expired/invalid SSO token -> tell the user to `aws sso login --profile <p>`;
+      - the profile isn't configured -> a distinct "profile not found" message;
+      - `aws` isn't installed (FileNotFoundError) -> "install/enable aws".
+    Returns None on success."""
+    try:
+        proc = subprocess.run(
+            ["aws", "sts", "get-caller-identity", "--profile", profile,
+             "--output", "json"],
+            capture_output=True, text=True,
+        )
+    except FileNotFoundError as e:
+        raise RuntimeError(
+            "aws CLI not found on PATH — install/enable it "
+            "(e.g. `brew install awscli`) before syncing") from e
+    if proc.returncode == 0:
+        return
+    err = proc.stderr.strip()
+    low = err.lower()
+    if "token" in low or "expired" in low or "sso" in low:
+        raise RuntimeError(
+            f"SSO session expired or invalid — run "
+            f"`aws sso login --profile {profile}`, then retry")
+    if "profile" in low and ("could not be found" in low or "not found" in low
+                             or "does not exist" in low):
+        raise RuntimeError(
+            f"AWS profile {profile!r} not found — configure it "
+            f"(`aws configure sso`) or pass --profile")
+    raise RuntimeError(
+        f"aws sts get-caller-identity failed for profile {profile!r}: {err}")
+
+
+def upload_one(key: str, body_path: str, metadata: dict, *,
+               bucket: str, profile: str) -> str:
+    """Shell: PUT one redacted artifact to S3 via `aws s3api put-object`.
+
+    Metadata is passed as a single JSON string (`--metadata '{...}'`), NOT the
+    `k=v,k=v` shorthand, so values containing ',' or '=' survive intact. No SSE
+    flags — the bucket's default encryption applies aws:kms server-side
+    (DEC-066/067). Returns the object's ETag (unquoting the `"..."` form S3
+    returns). A KMS 403 maps to a clear message; a missing `aws` maps to an
+    install hint. Both raise RuntimeError (no traceback)."""
+    try:
+        proc = subprocess.run(
+            ["aws", "s3api", "put-object", "--bucket", bucket, "--key", key,
+             "--body", body_path, "--content-type", "application/json",
+             "--metadata", json.dumps(metadata),   # JSON form: safe for ',' '=' in values
+             "--profile", profile, "--output", "json"],
+            capture_output=True, text=True,
+        )
+    except FileNotFoundError as e:
+        raise RuntimeError("aws CLI not found on PATH — install/enable it") from e
+    if proc.returncode != 0:
+        err = proc.stderr.strip()
+        if "AccessDenied" in err and "kms" in err.lower():
+            raise RuntimeError(
+                f"KMS access denied for {key}: the profile lacks CMK "
+                f"GenerateDataKey (DEC-067)")
+        raise RuntimeError(f"s3 put-object failed for {key}: {err}")
+    return json.loads(proc.stdout).get("ETag", "").strip('"')
+
+
+def _now_iso() -> str:
+    """Shell: current UTC timestamp for the ledger (the clock stays out of core)."""
+    return datetime.datetime.now(datetime.timezone.utc).strftime(
+        "%Y-%m-%dT%H:%M:%SZ")
+
+
+def _build_parser() -> argparse.ArgumentParser:
+    ap = argparse.ArgumentParser(
+        prog="atif_to_s3.py",
+        description="Idempotently sync redacted capture trajectories to S3.")
+    ap.add_argument("--session-id", help="sync only this session (default: all un-synced)")
+    ap.add_argument("--bucket", default=_DEFAULT_BUCKET)
+    ap.add_argument("--profile", default=_DEFAULT_PROFILE,
+                    help="AWS profile (default dev-admin — the CMK-authorized SSO identity)")
+    # Identity is supplied by the command (from get_caller_identity) for ALL modes
+    # — --dry-run and --scan compute keys/selection too, so they need it as well.
+    ap.add_argument("--principal-id", required=True)
+    ap.add_argument("--principal-type", required=True, choices=["user", "machine"])
+    ap.add_argument("--org-id", required=True)
+    ap.add_argument("--base-dir", default=_DEFAULT_BASE_DIR,
+                    help="capture base dir (index.json, ledger, sessions/ live here)")
+    ap.add_argument("--dry-run", action="store_true",
+                    help="print the composed S3 keys; upload nothing, write no ledger")
+    ap.add_argument("--scan", action="store_true",
+                    help="print by-type PII-scan counts (JSON) for the approval gate")
+    return ap
+
+
+def main(argv=None) -> int:
+    args = _build_parser().parse_args(argv)
+
+    base_dir = os.path.expanduser(args.base_dir)
+    index_path = os.path.join(base_dir, _INDEX_NAME)
+    ledger_path = os.path.join(base_dir, _LEDGER_NAME)
+    index = load_index(index_path)
+    ledger = load_ledger(ledger_path)
+    identity = {"principal_id": args.principal_id,
+                "principal_type": args.principal_type,
+                "org_id": args.org_id}
+
+    # Candidate pool: branch-keyed sessions (optionally the one --session-id).
+    # Hash each candidate's redacted artifact up front; a missing/unreadable file
+    # is skipped here with a warning so it never enters the selection or an upload.
+    shas: dict = {}
+    paths: dict = {}
+    for group_key, group in (index or {}).items():
+        if branch_from_group_key(group_key) is None:   # skip ungrouped/non-branch
+            continue
+        if not isinstance(group, dict):
+            continue
+        for sid, entry in group.items():
+            if args.session_id and sid != args.session_id:
+                continue
+            try:
+                path = store_path_for(base_dir, sid)   # sibling artifact convention
+            except ValueError as e:
+                print(f"warning: skipping {sid!r} ({e})", file=sys.stderr)
+                continue
+            sha = artifact_sha256(path)
+            if sha is None:                            # already warned; skip session
+                continue
+            shas[sid] = sha
+            paths[sid] = path
+
+    selected = select_sessions(index, ledger, shas, args.session_id)
+    # Only sessions whose artifact we could actually hash are uploadable/scannable.
+    selected = [e for e in selected if e.get("session_id") in shas]
+
+    # Empty selection is a clean no-op BEFORE any scan / preflight / upload.
+    if not selected:
+        print("nothing to sync")
+        return 0
+
+    if args.scan:
+        print(json.dumps(aggregate_scan(scan_sessions(selected)), indent=2))
+        return 0
+
+    if args.dry_run:
+        # Keys derive from identity + the entry (session/branch/codebase); the
+        # trajectory body is not needed, so dry-run reads no artifact bytes.
+        for entry in selected:
+            print(plan_upload({}, entry, identity)["key"])
+        return 0
+
+    # Real upload. Preflight once so an expired/missing SSO profile fails fast with
+    # one clear message instead of N identical per-object errors.
+    try:
+        preflight_sso(args.profile)
+    except RuntimeError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
+
+    exit_code = 0
+    for entry in selected:
+        sid = entry["session_id"]
+        try:
+            with open(paths[sid]) as f:
+                traj = json.load(f)                    # only redacted bytes, ever
+            plan = plan_upload(traj, entry, identity)
+            # Single-PUT put-object caps at 5 GB; an artifact above that would need
+            # a multipart upload (not implemented — captures are far smaller).
+            etag = upload_one(plan["key"], paths[sid], plan["metadata"],
+                              bucket=args.bucket, profile=args.profile)
+            # Upload BEFORE the ledger write, and save PER session, so a crash
+            # mid-batch just re-hashes/re-uploads this one session next run.
+            ledger = mark_synced(ledger, sid, s3_key=plan["key"], etag=etag,
+                                 synced_at=_now_iso(), artifact_sha=shas[sid])
+            save_ledger(ledger_path, ledger)
+            print(f"OK  {plan['key']}  (etag {etag})")
+        except Exception as e:   # continue-on-error: one bad session never aborts the batch
+            print(f"error: failed to sync {sid}: {e}", file=sys.stderr)
+            exit_code = 1
+    return exit_code
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

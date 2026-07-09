@@ -14,10 +14,17 @@ The module MUST import with stdlib only (no boto3) and pull
 exists these are red.
 """
 
+import contextlib
 import hashlib
+import io
 import json
+import os
+import shutil
+import subprocess
 import sys
+import tempfile
 import unittest
+import uuid
 
 from conftest import PLUGIN_ROOT
 
@@ -302,6 +309,474 @@ class TestSelectSessions(unittest.TestCase):
     def test_select_sessions_empty_and_missing_index(self):
         self.assertEqual(atif_to_s3.select_sessions({}, {}, {}), [])
         self.assertEqual(atif_to_s3.select_sessions(None, {}, {}), [])
+
+
+# ===========================================================================
+# Imperative-shell / I/O tests (Task 3).
+#
+# These exercise the shell edge with REAL files in tmp dirs (never a mock of the
+# I/O) and the `aws` boundary via a PATH-stubbed fake executable (never a patch
+# of internals) -- mirroring test_roll_capture_hook.py's fake-executable helper
+# and test_capture_atif_to_opik.py's corrupt-ledger/tmp-dir pattern.
+# ===========================================================================
+
+# A fake `aws` CLI: records every invocation's argv (one JSON line) to
+# $FAKE_AWS_CALLS and emits canned output driven by env vars, so the shell's
+# subprocess boundary is asserted without touching real AWS. It is a real
+# on-disk executable placed first on PATH (the PATH-stub technique from
+# test_roll_capture_hook.py), not a monkeypatch.
+_FAKE_AWS_BODY = r'''
+import json, os, sys
+argv = sys.argv[1:]
+calls = os.environ.get("FAKE_AWS_CALLS")
+if calls:
+    with open(calls, "a") as f:
+        f.write(json.dumps(argv) + "\n")
+
+def _sub(*names):
+    return argv[:len(names)] == list(names)
+
+if _sub("sts", "get-caller-identity"):
+    beh = os.environ.get("FAKE_AWS_STS", "ok")
+    if beh == "ok":
+        print(json.dumps({"Account": "123456789012",
+                          "Arn": "arn:aws:sts::123456789012:assumed-role/dev-admin/s",
+                          "UserId": "AIDAEXAMPLE"}))
+        sys.exit(0)
+    if beh == "expired":
+        sys.stderr.write("Error loading SSO Token: The SSO session associated with "
+                         "this profile has expired or is otherwise invalid. To refresh "
+                         "this SSO session run aws sso login with the corresponding "
+                         "profile.\n")
+        sys.exit(255)
+    if beh == "missing-profile":
+        sys.stderr.write("The config profile (dev-admin) could not be found\n")
+        sys.exit(255)
+    sys.stderr.write("Unable to locate credentials.\n")
+    sys.exit(1)
+
+if _sub("s3api", "put-object"):
+    key = argv[argv.index("--key") + 1] if "--key" in argv else ""
+    fail_keys = [k for k in os.environ.get("FAKE_AWS_PUT_FAIL_KEYS", "").split(",") if k]
+    if any(fk in key for fk in fail_keys):
+        if os.environ.get("FAKE_AWS_PUT_FAIL_MODE") == "kms":
+            sys.stderr.write("An error occurred (AccessDenied) when calling the "
+                             "PutObject operation: user is not authorized to perform "
+                             "kms:GenerateDataKey on the CMK\n")
+        else:
+            sys.stderr.write("An error occurred (InternalError) when calling the "
+                             "PutObject operation: simulated transient failure\n")
+        sys.exit(1)
+    # Emit the QUOTED ETag form S3 returns so upload_one's .strip('"') is exercised.
+    print(json.dumps({"ETag": os.environ.get("FAKE_AWS_ETAG", '"abc123"')}))
+    sys.exit(0)
+
+sys.stderr.write("fake aws: unhandled subcommand: %r\n" % (argv,))
+sys.exit(2)
+'''
+
+
+def _install_fake_aws(bindir):
+    """Write a fake `aws` executable into bindir (mirrors the fake-executable
+    helper in test_roll_capture_hook.py: write script, chmod +x, front of PATH)."""
+    aws = os.path.join(bindir, "aws")
+    with open(aws, "w") as fh:
+        fh.write(f"#!{sys.executable}\n" + _FAKE_AWS_BODY)
+    os.chmod(aws, 0o755)
+    return aws
+
+
+def _artifact_path(base_dir, sid):
+    return os.path.join(base_dir, "sessions", sid, "trajectory.redacted.json")
+
+
+def _seed_session(base_dir, sid, traj, *,
+                  group_key="branch:eric/agent-session-capture",
+                  cwd="/Users/dev/PycharmProjects/DriverAI/driver-sdlc-plugin",
+                  record_count=16, total_cost_usd=0.5):
+    """Write a redacted artifact under the base-dir convention and return the
+    index entry pointing at it (store_path == the base-dir convention path, so
+    scan_sessions' store_path read agrees with main's base-dir resolution)."""
+    art = _artifact_path(base_dir, sid)
+    os.makedirs(os.path.dirname(art), exist_ok=True)
+    with open(art, "w") as fh:
+        json.dump(traj, fh)
+    return {"session_id": sid, "group_key": group_key, "cwd": cwd,
+            "store_path": art, "first_seen": "2026-07-01T00:00:00+00:00",
+            "last_seen": "2026-07-01T00:00:00+00:00",
+            "record_count": record_count, "total_cost_usd": total_cost_usd,
+            "prev_session_id": None}
+
+
+def _write_index(base_dir, entries):
+    index = {}
+    for e in entries:
+        index.setdefault(e["group_key"], {})[e["session_id"]] = e
+    os.makedirs(base_dir, exist_ok=True)
+    with open(os.path.join(base_dir, "index.json"), "w") as fh:
+        json.dump(index, fh)
+    return index
+
+
+def _mk_traj(sid, *, message="synced.", total_cost_usd=0.5, total_steps=4):
+    return {"schema_version": "ATIF-v1.7", "session_id": sid,
+            "agent": {"name": "claude-code"},
+            "final_metrics": {"total_cost_usd": total_cost_usd,
+                              "total_steps": total_steps},
+            "steps": [{"step_id": 1, "source": "agent", "message": message}]}
+
+
+class _ShellBase(unittest.TestCase):
+    """Isolated tmp base-dir + a fake `aws` first on PATH. Restores PATH and the
+    FAKE_AWS_* env in tearDown so nothing leaks between tests."""
+
+    _FAKE_ENV = ("FAKE_AWS_CALLS", "FAKE_AWS_STS", "FAKE_AWS_ETAG",
+                 "FAKE_AWS_PUT_FAIL_KEYS", "FAKE_AWS_PUT_FAIL_MODE")
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="drvr-s3-shell-")
+        self.base = os.path.join(self.tmp, "capture")
+        os.makedirs(self.base, exist_ok=True)
+        self.bindir = os.path.join(self.tmp, "bin")
+        os.makedirs(self.bindir, exist_ok=True)
+        _install_fake_aws(self.bindir)
+        self.calls_file = os.path.join(self.tmp, "aws-calls.jsonl")
+        self._orig_path = os.environ["PATH"]
+        self._orig_env = {k: os.environ.get(k) for k in self._FAKE_ENV}
+        os.environ["PATH"] = self.bindir + os.pathsep + self._orig_path
+        os.environ["FAKE_AWS_CALLS"] = self.calls_file
+
+    def tearDown(self):
+        os.environ["PATH"] = self._orig_path
+        for k, v in self._orig_env.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    # -- fake-aws call inspection --------------------------------------------
+
+    def _calls(self):
+        if not os.path.exists(self.calls_file):
+            return []
+        with open(self.calls_file) as fh:
+            return [json.loads(line) for line in fh if line.strip()]
+
+    def _put_calls(self):
+        return [c for c in self._calls() if c[:2] == ["s3api", "put-object"]]
+
+    def _sts_calls(self):
+        return [c for c in self._calls() if c[:2] == ["sts", "get-caller-identity"]]
+
+    def _remove_aws_from_path(self):
+        """Point PATH at an empty dir so `aws` cannot be resolved -> the shell hits
+        FileNotFoundError (the aws-not-installed case)."""
+        empty = os.path.join(self.tmp, "empty-bin")
+        os.makedirs(empty, exist_ok=True)
+        os.environ["PATH"] = empty
+
+    def _run_main(self, extra_args):
+        """Run main() with identity + base-dir args, capturing stdout/stderr."""
+        argv = ["--principal-id", "auth0|user123", "--principal-type", "user",
+                "--org-id", "org_ABC123", "--base-dir", self.base] + extra_args
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            rc = atif_to_s3.main(argv)
+        return rc, out.getvalue(), err.getvalue()
+
+    @property
+    def _ledger_path(self):
+        return os.path.join(self.base, "s3-sync-ledger.json")
+
+
+class TestLedgerIO(_ShellBase):
+    def test_ledger_load_save_atomic_and_corrupt_recovers(self):
+        path = self._ledger_path
+        # Missing ledger -> empty (no crash).
+        self.assertEqual(atif_to_s3.load_ledger(path), {})
+
+        # Corrupt ledger -> warn to stderr + empty (never a crash).
+        with open(path, "w") as fh:
+            fh.write("{ not valid json ]")
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            self.assertEqual(atif_to_s3.load_ledger(path), {})
+        self.assertIn("unreadable", err.getvalue().lower())
+
+        # save_ledger round-trips and is atomic (no torn/leftover temp file).
+        ledger = {SID_1: {"s3_key": "k/1", "etag": "e1",
+                          "synced_at": "2026-07-08T00:00:00Z",
+                          "artifact_sha256": "sha-abc"}}
+        atif_to_s3.save_ledger(path, ledger)
+        with open(path) as fh:
+            self.assertEqual(json.load(fh), ledger)
+        leftovers = [n for n in os.listdir(self.base) if ".tmp." in n]
+        self.assertEqual(leftovers, [], f"temp file left behind: {leftovers}")
+
+
+class TestIndexIO(_ShellBase):
+    def test_load_index_corrupt_and_missing_fields(self):
+        index_path = os.path.join(self.base, "index.json")
+        # Missing -> empty.
+        self.assertEqual(atif_to_s3.load_index(index_path), {})
+        # Corrupt -> warn + empty.
+        with open(index_path, "w") as fh:
+            fh.write("{ nope ]")
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            self.assertEqual(atif_to_s3.load_index(index_path), {})
+        self.assertIn("unreadable", err.getvalue().lower())
+
+        # An entry missing cwd / total_cost_usd / record_count must not crash the
+        # pure planners the shell feeds it (sentinels + zero defaults kick in).
+        sparse_entry = {"session_id": SID_1,
+                        "group_key": "branch:eric/agent-session-capture"}
+        plan = atif_to_s3.plan_upload({}, sparse_entry, IDENTITY)
+        self.assertEqual(plan["metadata"]["codebase"], "unknown-codebase")
+        self.assertEqual(plan["metadata"]["cost-usd"], "0")
+        self.assertEqual(plan["metadata"]["steps"], "0")
+        md = atif_to_s3.build_metadata(session_id=SID_1, branch=None, cwd=None,
+                                       capture_kind="branch")
+        self.assertEqual(md["codebase"], "unknown-codebase")
+
+
+class TestArtifactSha256(_ShellBase):
+    def test_artifact_sha256_and_missing_file(self):
+        body = os.path.join(self.tmp, "trajectory.redacted.json")
+        content = b'{"schema_version": "ATIF-v1.7"}'
+        with open(body, "wb") as fh:
+            fh.write(content)
+        expected = hashlib.sha256(content).hexdigest()
+        self.assertEqual(atif_to_s3.artifact_sha256(body), expected)
+
+        # A missing artifact is skipped with a warning (returns None), the batch
+        # is expected to continue -- never a raised traceback.
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            self.assertIsNone(
+                atif_to_s3.artifact_sha256(os.path.join(self.tmp, "nope.json")))
+        self.assertTrue(err.getvalue().strip(), "missing artifact should warn")
+
+
+class TestUploadOne(_ShellBase):
+    def test_upload_one_builds_argv_and_parses_etag(self):
+        body = os.path.join(self.tmp, "body.json")
+        with open(body, "w") as fh:
+            fh.write("{}")
+        # Values carrying ',' '=' and a non-ASCII char: the JSON --metadata form
+        # survives them where the `k=v,k=v` shorthand would corrupt/split.
+        metadata = {"session-id": SID_1, "branch": "a,b=c",
+                    "codebase": "café-x", "cost-usd": "1,2=3"}
+        etag = atif_to_s3.upload_one(
+            "trajectories/v1/h/auth0|abc/cb/br/%s/trajectory.redacted.json" % SID_1,
+            body, metadata, bucket="my-bucket", profile="dev-admin")
+        # Shim emits the quoted ETag "\"abc123\"" -> strip('"') -> abc123.
+        self.assertEqual(etag, "abc123")
+
+        put = self._put_calls()
+        self.assertEqual(len(put), 1)
+        argv = put[0]
+        self.assertEqual(argv[:2], ["s3api", "put-object"])
+        # Flag/value pairs present.
+        for flag, val in (("--bucket", "my-bucket"), ("--body", body),
+                          ("--content-type", "application/json"),
+                          ("--profile", "dev-admin")):
+            self.assertIn(flag, argv)
+            self.assertEqual(argv[argv.index(flag) + 1], val)
+        # --metadata is a SINGLE JSON string that round-trips to the exact dict
+        # (proving the ',' '=' / non-ASCII values survive the boundary).
+        self.assertIn("--metadata", argv)
+        meta_arg = argv[argv.index("--metadata") + 1]
+        self.assertEqual(meta_arg, json.dumps(metadata))
+        self.assertEqual(json.loads(meta_arg), metadata)
+        # A comma-shorthand would have split the value into extra argv tokens.
+        self.assertNotIn("a,b=c", argv)
+
+
+class TestPreflightSso(_ShellBase):
+    def test_preflight_sso_errors_clearly(self):
+        # Expired SSO -> message tells the user exactly how to refresh.
+        os.environ["FAKE_AWS_STS"] = "expired"
+        with self.assertRaises(RuntimeError) as ctx:
+            atif_to_s3.preflight_sso("dev-admin")
+        expired_msg = str(ctx.exception)
+        self.assertIn("aws sso login --profile dev-admin", expired_msg)
+
+        # Profile-missing -> a DISTINCT message (not the sso-login hint).
+        os.environ["FAKE_AWS_STS"] = "missing-profile"
+        with self.assertRaises(RuntimeError) as ctx:
+            atif_to_s3.preflight_sso("dev-admin")
+        missing_msg = str(ctx.exception)
+        self.assertNotEqual(expired_msg, missing_msg)
+        self.assertNotIn("aws sso login", missing_msg)
+        self.assertIn("profile", missing_msg.lower())
+
+        # aws not installed -> a clean RuntimeError (no raw FileNotFoundError /
+        # traceback), telling the user to install/enable aws.
+        os.environ.pop("FAKE_AWS_STS", None)
+        self._remove_aws_from_path()
+        with self.assertRaises(RuntimeError) as ctx:
+            atif_to_s3.preflight_sso("dev-admin")
+        absent_msg = str(ctx.exception).lower()
+        self.assertTrue("install" in absent_msg or "enable" in absent_msg)
+        self.assertIn("aws", absent_msg)
+
+
+class TestMainDryRun(_ShellBase):
+    def test_main_dry_run_lists_real_keys_without_upload(self):
+        e1 = _seed_session(self.base, SID_1, _mk_traj(SID_1))
+        e2 = _seed_session(self.base, SID_2, _mk_traj(SID_2))
+        _write_index(self.base, [e1, e2])
+
+        rc, out, _ = self._run_main(["--dry-run"])
+        self.assertEqual(rc, 0)
+        # The real composed keys are printed (compare against the pure planner).
+        for entry, sid in ((e1, SID_1), (e2, SID_2)):
+            expected = atif_to_s3.plan_upload(_mk_traj(sid), entry, IDENTITY)["key"]
+            self.assertIn(expected, out)
+        # Dry-run egresses nothing: no upload, no preflight, no ledger.
+        self.assertEqual(self._put_calls(), [])
+        self.assertEqual(self._sts_calls(), [])
+        self.assertFalse(os.path.exists(self._ledger_path))
+
+
+class TestMainScan(_ShellBase):
+    def test_main_scan_emits_by_type_json(self):
+        traj = _mk_traj(SID_1, message="contact dev@example.com and ops@example.com")
+        entry = _seed_session(self.base, SID_1, traj)
+        _write_index(self.base, [entry])
+
+        rc, out, _ = self._run_main(["--scan"])
+        self.assertEqual(rc, 0)
+        agg = json.loads(out)
+        self.assertEqual(agg["by_type"], {"Email address": 2})
+        self.assertEqual(agg["per_session"][SID_1], {"Email address": 2})
+        # Counts only: no snippet text / bracket / raw finding leaks into stdout.
+        self.assertNotIn("@example.com", out)
+        self.assertNotIn("example.com", out)
+        self.assertNotIn("〈", out)  # the scan snippet marker
+        self.assertNotIn("snippet", out)
+        # Scan egresses nothing to S3.
+        self.assertEqual(self._put_calls(), [])
+
+
+class TestMainEmptySelection(_ShellBase):
+    def test_main_empty_selection_noop(self):
+        # (a) Empty index -> nothing to sync, rc 0, no preflight, no upload.
+        _write_index(self.base, [])
+        rc, out, _ = self._run_main([])
+        self.assertEqual(rc, 0)
+        self.assertIn("nothing to sync", out.lower())
+        self.assertEqual(self._put_calls(), [])
+        self.assertEqual(self._sts_calls(), [])
+
+        # (b) All-synced ledger -> also a clean no-op.
+        entry = _seed_session(self.base, SID_1, _mk_traj(SID_1))
+        _write_index(self.base, [entry])
+        sha = atif_to_s3.artifact_sha256(_artifact_path(self.base, SID_1))
+        atif_to_s3.save_ledger(self._ledger_path, {SID_1: {
+            "s3_key": "k", "etag": "e", "synced_at": "t", "artifact_sha256": sha}})
+        rc, out, _ = self._run_main([])
+        self.assertEqual(rc, 0)
+        self.assertIn("nothing to sync", out.lower())
+        self.assertEqual(self._put_calls(), [])
+
+
+class TestMainPartialBatch(_ShellBase):
+    def test_main_partial_batch_continues(self):
+        sids = [SID_1, SID_2, "44444444-4444-4444-8444-444444444444"]
+        entries = [_seed_session(self.base, s, _mk_traj(s)) for s in sids]
+        _write_index(self.base, entries)
+        # Fail only the SECOND session's upload; the batch must still finish 1 & 3.
+        os.environ["FAKE_AWS_PUT_FAIL_KEYS"] = sids[1]
+
+        rc, out, err = self._run_main([])
+        # Partial failure -> non-zero exit.
+        self.assertNotEqual(rc, 0)
+        # All three were attempted; SSO preflight ran once.
+        self.assertEqual(len(self._put_calls()), 3)
+        self.assertEqual(len(self._sts_calls()), 1)
+        # The ledger records ONLY the two successes (never the failed one).
+        with open(self._ledger_path) as fh:
+            ledger = json.load(fh)
+        self.assertEqual(set(ledger), {sids[0], sids[2]})
+        self.assertNotIn(sids[1], ledger)
+        self.assertIn(sids[1], err)  # the failure was reported
+
+
+# ===========================================================================
+# Optional real-AWS integration test (Task 7). Gated so it SKIPS cleanly when no
+# live SSO session is available -- it never fails/errors unauthenticated. Mirrors
+# the skipUnless gating pattern in test_capture_atif_to_opik.py.
+# ===========================================================================
+
+_S3_ITEST_PROFILE = os.environ.get("DRVR_S3_ITEST_PROFILE", "dev-admin")
+_S3_ITEST_BUCKET = os.environ.get("DRVR_S3_ITEST_BUCKET", "trajectory-uploads-1ddbee")
+
+
+def _real_s3_available() -> bool:
+    """True only when explicitly opted in (DRVR_S3_ITEST=1) AND a real `aws sts
+    get-caller-identity` succeeds for the profile -- so an unauthenticated run
+    SKIPS rather than erroring."""
+    if os.environ.get("DRVR_S3_ITEST") != "1":
+        return False
+    aws = shutil.which("aws")
+    if not aws:
+        return False
+    try:
+        res = subprocess.run(
+            [aws, "sts", "get-caller-identity", "--profile", _S3_ITEST_PROFILE],
+            capture_output=True, text=True, timeout=30)
+    except Exception:
+        return False
+    return res.returncode == 0
+
+
+@unittest.skipUnless(
+    _real_s3_available(),
+    "real S3/SSO not available (set DRVR_S3_ITEST=1 after `aws sso login "
+    "--profile dev-admin`)")
+class TestEndToEndRealS3(unittest.TestCase):
+    """A real PUT + head_object size check against the live bucket, then cleanup.
+    No real identity is used (synthetic org/principal); ETag is NOT asserted equal
+    to the local md5 because SSE-KMS ETags are opaque."""
+
+    def test_end_to_end_real_s3(self):
+        tmp = tempfile.mkdtemp(prefix="drvr-s3-e2e-")
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        body = os.path.join(tmp, "trajectory.redacted.json")
+        payload = json.dumps(
+            {"schema_version": "ATIF-v1.7", "session_id": "itest",
+             "note": "capture-sync integration test object; safe to delete"}
+        ).encode()
+        with open(body, "wb") as fh:
+            fh.write(payload)
+
+        sid = "itest-" + uuid.uuid4().hex
+        key = atif_to_s3.render_s3_key(
+            org_id="itest-org", principal_id="auth0|itest", principal_type="user",
+            codebase="itest-codebase", branch="itest-branch", session_id=sid)
+        metadata = atif_to_s3.build_metadata(
+            session_id=sid, branch="itest-branch", cwd="/x/itest-codebase",
+            capture_kind="branch")
+
+        etag = atif_to_s3.upload_one(key, body, metadata,
+                                     bucket=_S3_ITEST_BUCKET,
+                                     profile=_S3_ITEST_PROFILE)
+        self.assertTrue(etag)  # opaque under SSE-KMS -- presence only, not == md5.
+        try:
+            head = subprocess.run(
+                ["aws", "s3api", "head-object", "--bucket", _S3_ITEST_BUCKET,
+                 "--key", key, "--profile", _S3_ITEST_PROFILE, "--output", "json"],
+                capture_output=True, text=True, timeout=60)
+            self.assertEqual(head.returncode, 0, head.stderr)
+            self.assertEqual(json.loads(head.stdout)["ContentLength"], len(payload))
+        finally:
+            subprocess.run(
+                ["aws", "s3api", "delete-object", "--bucket", _S3_ITEST_BUCKET,
+                 "--key", key, "--profile", _S3_ITEST_PROFILE],
+                capture_output=True, text=True, timeout=60)
 
 
 if __name__ == "__main__":
