@@ -287,6 +287,7 @@ class TestCommandQualification(unittest.TestCase):
         "feature", "assess", "context", "dry-run-plan",
         "docs-artifacts", "open-pr", "orchestrate", "retro", "setup",
         "driverize", "un-driverize", "review", "capture-session",
+        "capture-sync",
     ]
 
     SCAN_DIRS = ["commands", "skills", "agents", "docs", "hooks", "templates"]
@@ -438,6 +439,136 @@ class TestCaptureSessionGovernance(unittest.TestCase):
             body,
             r'\[\s*-d\s+"\$HOME/\.driver/capture/current"\s*\]\s*&&\s*rm\s+-rf\s+"\$HOME/\.driver/capture/current"',
             "reject branch must contain a guarded rm -rf \"$HOME/.driver/capture/current\"",
+        )
+
+
+class TestCaptureSyncGovernance(unittest.TestCase):
+    """Registration + egress-control governance for /drvr:capture-sync.
+
+    Mirrors TestCaptureSessionGovernance: pins the command's registration
+    (plugin.json + COMMANDS scanner + comma-separated-string frontmatter) and the
+    load-bearing gate-before-egress ordering of the command body.
+
+    The wrinkle capture-sync adds: its body references ``atif_to_s3.py`` THREE
+    times — ``--dry-run`` (key preview), ``--scan`` (PII counts), and the real
+    upload — with the AskUserQuestion gate sitting BETWEEN the previews and the
+    upload. A naive ``body.find("atif_to_s3.py")`` would land on the pre-gate
+    ``--dry-run`` reference and wrongly conclude 'egress before gate'. The real
+    upload therefore carries a unique ``REAL UPLOAD (egress)`` marker, and this
+    test anchors the egress point on that marker so the earlier preview references
+    cannot defeat the ordering assertion.
+    """
+
+    UPLOAD_MARKER = "REAL UPLOAD (egress)"
+
+    @classmethod
+    def setUpClass(cls):
+        plugin_json_path = PLUGIN_CONFIG_DIR / "plugin.json"
+        with open(plugin_json_path, encoding="utf-8") as f:
+            cls.plugin_data = json.load(f)
+        cls.command_path = PLUGIN_ROOT / "commands" / "capture-sync.md"
+
+    def test_capture_sync_registered(self):
+        """capture-sync must be registered in plugin.json + COMMANDS, have valid
+        frontmatter (allowed-tools a comma-separated string with >=2 tools,
+        including the get_caller_identity MCP tool), and reference itself
+        fully-qualified as /drvr:capture-sync in its body."""
+        # Registered in plugin.json commands array
+        self.assertIn(
+            "./commands/capture-sync.md",
+            self.plugin_data.get("commands", []),
+            "capture-sync not registered in plugin.json commands array",
+        )
+        # Registered in the qualified-name scanner's COMMANDS list
+        self.assertIn(
+            "capture-sync",
+            TestCommandQualification.COMMANDS,
+            "capture-sync not added to COMMANDS list",
+        )
+        # Command file exists
+        self.assertTrue(
+            self.command_path.is_file(),
+            f"command file does not exist: {self.command_path}",
+        )
+
+        fm = parse_frontmatter(self.command_path)
+        # Three required frontmatter fields
+        for field in ("description", "argument-hint", "allowed-tools"):
+            self.assertIn(field, fm, f"capture-sync missing frontmatter '{field}'")
+
+        # allowed-tools must be a comma-separated STRING (not a YAML list)
+        self.assertEqual(
+            fm.get("allowed-tools-format"), "string",
+            "capture-sync allowed-tools must be a comma-separated string, not a YAML list",
+        )
+        tools = fm.get("allowed-tools", [])
+        self.assertGreaterEqual(
+            len(tools), 2,
+            f"capture-sync allowed-tools must list >=2 tools, got {tools}",
+        )
+        # The identity lookup drives the whole command — its MCP tool must be allowed.
+        self.assertIn(
+            "mcp__driver-mcp__get_caller_identity", tools,
+            "capture-sync must allow mcp__driver-mcp__get_caller_identity for identity resolution",
+        )
+
+        # Body references the command fully-qualified
+        body = get_md_body(self.command_path)
+        self.assertIn(
+            "/drvr:capture-sync", body,
+            "capture-sync body must reference the command fully-qualified as /drvr:capture-sync",
+        )
+
+    def test_command_governance_structure(self):
+        """The AskUserQuestion gate must appear BEFORE the real-upload egress step,
+        and the assertion must NOT be fooled by the earlier --dry-run/--scan
+        references to the same script."""
+        self.assertTrue(
+            self.command_path.is_file(),
+            f"command file does not exist: {self.command_path}",
+        )
+        body = get_md_body(self.command_path)
+
+        # The approval gate.
+        gate_idx = body.find("AskUserQuestion")
+        self.assertNotEqual(gate_idx, -1, "capture-sync body has no AskUserQuestion gate")
+
+        # The real upload is uniquely marked so it is distinguishable from the
+        # --dry-run / --scan previews that reference the same script.
+        marker_idx = body.find(self.UPLOAD_MARKER)
+        self.assertNotEqual(
+            marker_idx, -1,
+            f"capture-sync body is missing the {self.UPLOAD_MARKER!r} marker on the real-upload step",
+        )
+        # The marked step must actually invoke the upload script.
+        upload_idx = body.find("atif_to_s3.py", marker_idx)
+        self.assertNotEqual(
+            upload_idx, -1,
+            "no atif_to_s3.py invocation found at/after the REAL UPLOAD marker",
+        )
+
+        # Guard against a naive matcher: the FIRST atif_to_s3.py reference is a
+        # --dry-run/--scan preview that legitimately precedes the gate. Anchoring
+        # the egress point on the bare script name would wrongly place it before
+        # the gate — which is exactly why we anchor on the REAL UPLOAD marker.
+        first_ref = body.find("atif_to_s3.py")
+        self.assertNotEqual(first_ref, -1, "capture-sync body never references atif_to_s3.py")
+        self.assertLess(
+            first_ref, gate_idx,
+            "expected a --dry-run/--scan preview reference to atif_to_s3.py BEFORE the gate "
+            "(this is why the egress point is anchored on the REAL UPLOAD marker, "
+            "not the bare script name)",
+        )
+
+        # Load-bearing ordering: nothing egresses before approval.
+        self.assertLess(
+            gate_idx, marker_idx,
+            "AskUserQuestion gate must appear BEFORE the real-upload egress step "
+            "(no trajectory bytes leave the machine before the approval gate)",
+        )
+        self.assertLess(
+            gate_idx, upload_idx,
+            "AskUserQuestion gate must appear BEFORE the real-upload atif_to_s3.py invocation",
         )
 
 
