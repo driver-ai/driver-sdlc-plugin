@@ -234,7 +234,7 @@ class ViewerRequestHandler(http.server.SimpleHTTPRequestHandler):
             [{"session_id": sid, "store_path": paths[sid]}])
         agg = atif_to_s3.aggregate_scan(findings)
         # Counts only -- snippets/locations never leave the machine-local
-        # report path (DEC-071 lineage).
+        # report path (capture-s3-sync DEC-071 lineage).
         self._send_json(200, {"session_id": sid, "by_type": agg["by_type"]})
 
     # -- static / SPA ----------------------------------------------------------

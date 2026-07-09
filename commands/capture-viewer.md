@@ -107,7 +107,7 @@ perform uploads itself:
   refuses any sync without `confirm: true`.
 - The sync reuses the same S3 machinery as /drvr:capture-sync: idempotent
   sha256 ledger, per-session continue-on-error, and the `dev-admin` SSO
-  profile (DEC-067). If the SSO session is expired the sync returns an
+  profile (capture-s3-sync DEC-067). If the SSO session is expired the sync returns an
   actionable error in the UI — run `aws sso login --profile dev-admin` and
   retry from the browser.
 
