@@ -710,6 +710,112 @@ class TestRoute(unittest.TestCase):
                 with self.subTest(method=method, path=path):
                     self.assertEqual(route(method, path)[0], "api_404")
 
+    def test_route_annotations_sync_scan_kinds(self):
+        # The plan-06 sibling kinds: annotations_scan (GET) + annotations_sync
+        # (POST). Matched by a MORE-SPECIFIC suffix than the plain /scan and
+        # /annotations routes, so their branches sit before those.
+        route = capture_viewer_core.route
+
+        # GET /api/sessions/<id>/annotations/scan -> annotations_scan.
+        self.assertEqual(route("GET", "/api/sessions/abc-123/annotations/scan"),
+                         ("annotations_scan", {"session_id": "abc-123"}))
+        # HEAD routes like GET.
+        self.assertEqual(route("HEAD", "/api/sessions/abc-123/annotations/scan"),
+                         ("annotations_scan", {"session_id": "abc-123"}))
+        # POST /api/sessions/<id>/annotations/sync -> annotations_sync.
+        self.assertEqual(route("POST", "/api/sessions/abc-123/annotations/sync"),
+                         ("annotations_sync", {"session_id": "abc-123"}))
+        # route normalizes the raw path (query strip) first.
+        self.assertEqual(route("GET", "/api/sessions/abc-123/annotations/scan?x=1"),
+                         ("annotations_scan", {"session_id": "abc-123"}))
+
+        # No collision with the plain /scan and POST /annotations routes: the
+        # more-specific suffixes win, the plain ones still resolve as before.
+        self.assertEqual(route("GET", "/api/sessions/abc-123/scan"),
+                         ("scan", {"session_id": "abc-123"}))
+        self.assertEqual(route("POST", "/api/sessions/abc-123/annotations"),
+                         ("annotations_post", {"session_id": "abc-123"}))
+
+        # Method discipline: annotations_scan is GET-only, annotations_sync is
+        # POST-only. A POST /annotations/scan is NOT a scan; a GET
+        # /annotations/sync is NOT a sync.
+        self.assertNotEqual(
+            route("POST", "/api/sessions/abc-123/annotations/scan")[0],
+            "annotations_scan")
+        self.assertNotEqual(
+            route("GET", "/api/sessions/abc-123/annotations/sync")[0],
+            "annotations_sync")
+
+        # A sid literally "annotations" routes as an ORDINARY sid (never a false
+        # match of the endpoint suffix): the plain annotations endpoint keeps it.
+        self.assertEqual(route("GET", "/api/sessions/annotations/annotations"),
+                         ("annotations_get", {"session_id": "annotations"}))
+        self.assertEqual(route("POST", "/api/sessions/annotations/annotations"),
+                         ("annotations_post", {"session_id": "annotations"}))
+        # /api/sessions/annotations/scan is the TRAJECTORY scan of a session
+        # whose id is "annotations" -- the new /annotations/scan branch must not
+        # swallow it (its would-be sid is empty), so it falls through to /scan.
+        self.assertEqual(route("GET", "/api/sessions/annotations/scan"),
+                         ("scan", {"session_id": "annotations"}))
+
+        # Traversal-bearing / dotfile ids degrade to api_404 on both new kinds
+        # (a URL-supplied id can never traverse).
+        for path in ("/api/sessions/../x/annotations/scan",
+                     "/api/sessions/..%2Fx/annotations/scan",
+                     "/api/sessions/.hidden/annotations/scan"):
+            with self.subTest(scan_path=path):
+                self.assertEqual(route("GET", path)[0], "api_404")
+        for path in ("/api/sessions/../x/annotations/sync",
+                     "/api/sessions/..%2Fx/annotations/sync",
+                     "/api/sessions/.hidden/annotations/sync"):
+            with self.subTest(sync_path=path):
+                self.assertEqual(route("POST", path)[0], "api_404")
+
+
+class TestValidateAnnotationsSyncRequest(unittest.TestCase):
+    """validate_annotations_sync_request -- THE pure egress gate for the
+    annotations-sync route (capture-viewer DEC-032; sibling of
+    validate_sync_request). Strict boolean confirm + a non-empty doc; the
+    synced-trajectory gate itself lives in plan_annotations_upload (DEC-034)."""
+
+    NONEMPTY = {"stepLabels": [{"decision": "correct",
+                                "anchor": {"trajId": "s", "stepId": 1}}],
+                "runLabels": [], "tags": []}
+
+    def test_validate_annotations_sync_request(self):
+        v = capture_viewer_core.validate_annotations_sync_request
+
+        # Happy path: strict confirm True + a non-empty doc -> None.
+        self.assertIsNone(v({"confirm": True}, self.NONEMPTY))
+        # tags-only and runLabels-only docs are non-empty too.
+        self.assertIsNone(
+            v({"confirm": True},
+              {"stepLabels": [], "runLabels": [], "tags": ["flaky"]}))
+        self.assertIsNone(
+            v({"confirm": True},
+              {"stepLabels": [], "runLabels": [{"decision": "unsure"}], "tags": []}))
+
+        # Body must be a JSON object.
+        for body in (None, [], "confirm", 42):
+            with self.subTest(body=body):
+                self.assertIsInstance(v(body, self.NONEMPTY), str)
+
+        # confirm must be the STRICT boolean True -- the load-bearing gate detail:
+        # "true"/1 and every truthy look-alike are rejected (mirrors
+        # validate_sync_request's strictness).
+        for confirm in (None, False, "true", 1, "yes", [True]):
+            with self.subTest(confirm=confirm):
+                self.assertIsInstance(v({"confirm": confirm}, self.NONEMPTY), str)
+        # Missing confirm entirely is rejected too.
+        self.assertIsInstance(v({}, self.NONEMPTY), str)
+
+        # Empty / absent annotations doc -> "no annotations to sync".
+        for doc in (None, {}, {"stepLabels": [], "runLabels": [], "tags": []}):
+            with self.subTest(doc=doc):
+                err = v({"confirm": True}, doc)
+                self.assertIsInstance(err, str)
+                self.assertIn("no annotations", err.lower())
+
 
 if __name__ == "__main__":
     unittest.main()

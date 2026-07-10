@@ -703,14 +703,36 @@ class TestCaptureViewerGovernance(unittest.TestCase):
             "(the server shells out to nothing but git/npm)",
         )
 
-        # The one egress path: the atif_to_s3 seam behind the pure-core gate.
+        # The egress paths: the atif_to_s3 seams, each behind its pure-core gate.
         self.assertIn(
             "validate_sync_request", source,
-            "sync must be gated by capture_viewer_core.validate_sync_request",
+            "trajectory sync must be gated by "
+            "capture_viewer_core.validate_sync_request",
         )
         self.assertIn(
             "atif_to_s3.sync_sessions", source,
-            "sync must reuse atif_to_s3.sync_sessions (no second egress path)",
+            "trajectory sync must reuse atif_to_s3.sync_sessions",
+        )
+        # Plan 06 adds the annotations egress seam, equally gated. Both seams
+        # exist BEHIND their named pure-core gates.
+        self.assertIn(
+            "validate_annotations_sync_request", source,
+            "annotations sync must be gated by "
+            "capture_viewer_core.validate_annotations_sync_request",
+        )
+        self.assertIn(
+            "atif_to_s3.sync_annotations", source,
+            "annotations sync must reuse atif_to_s3.sync_annotations",
+        )
+        # EXACTLY TWO egress seams are sanctioned -- no more, no fewer. Any new
+        # atif_to_s3.sync_* call must be added here deliberately (a new egress
+        # surface is a governance decision, not an accident).
+        egress_seams = set(re.findall(r"atif_to_s3\.sync_\w+", source))
+        self.assertEqual(
+            egress_seams,
+            {"atif_to_s3.sync_sessions", "atif_to_s3.sync_annotations"},
+            "the server must expose EXACTLY the two sanctioned egress seams "
+            f"(sync_sessions, sync_annotations); found {sorted(egress_seams)}",
         )
 
     def test_server_binds_localhost(self):

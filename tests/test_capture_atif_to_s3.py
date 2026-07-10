@@ -1144,6 +1144,122 @@ class TestSyncSessions(_ShellBase):
         self.assertEqual(final_ledger, on_disk)
 
 
+class TestSyncAnnotations(_ShellBase):
+    """sync_annotations -- the annotations upload shell, the DELIBERATE sibling
+    of sync_sessions, tested ABOVE the aws-CLI boundary (upload_one stubbed on
+    the atif_to_s3 namespace, the same sanctioned deviation TestSyncSessions
+    documents). What this seam owes its caller (the viewer's annotations-sync
+    route) is: upload-before-ledger-write, the sha-what-you-upload snapshot, and
+    corrupt-ledger tolerance. Server calls it as the module attribute
+    atif_to_s3.sync_annotations, so one patch site covers the route tests."""
+
+    def _traj_key(self, sid):
+        return atif_to_s3.render_s3_key(
+            org_id=IDENTITY["org_id"], principal_id=IDENTITY["principal_id"],
+            principal_type=IDENTITY["principal_type"],
+            codebase="driver-sdlc-plugin", branch="eric/agent-session-capture",
+            session_id=sid)
+
+    def _seed_ann(self, sid, doc):
+        path = os.path.join(self.base, "sessions", sid, "annotations.json")
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w") as fh:
+            json.dump(doc, fh)
+        return path
+
+    @property
+    def _ann_ledger_path(self):
+        return os.path.join(self.base, atif_to_s3.ANNOTATIONS_LEDGER_NAME)
+
+    def _seed_synced_session(self, sid, doc):
+        """A branch-keyed session that is trajectory-synced (a ledger row exists
+        -> the DEC-034 gate passes) with an annotations sidecar `doc`."""
+        entry = _seed_session(self.base, sid, _mk_traj(sid))
+        _write_index(self.base, [entry])
+        atif_to_s3.save_ledger(self._ledger_path, {sid: {
+            "s3_key": self._traj_key(sid), "etag": "traj-etag",
+            "synced_at": "2026-07-08T00:00:00Z", "artifact_sha256": "traj-sha"}})
+        return self._seed_ann(sid, doc)
+
+    def test_sync_annotations_upload_before_ledger(self):
+        sid = SID_1
+        doc = {"stepLabels": [{"decision": "correct",
+                               "anchor": {"trajId": sid, "stepId": 1},
+                               "note": "look at this step"}],
+               "runLabels": [], "tags": ["reviewed"]}
+        ann_path = self._seed_synced_session(sid, doc)
+        snapshot_sha = _sha_of(ann_path)
+        ann_key = atif_to_s3.render_annotations_key(self._traj_key(sid))
+
+        seen = {}
+
+        def fake_upload(key, body_path, metadata, *, bucket, profile):
+            # The ledger is written only AFTER a successful upload -- at upload
+            # time this session is NOT yet in the annotations ledger on disk.
+            seen["ledger_at_upload"] = set(
+                atif_to_s3.load_ledger(self._ann_ledger_path))
+            # sha-what-you-upload: the uploaded body is a snapshot whose bytes
+            # hash to the sidecar sha recorded in the ledger.
+            seen["body_sha"] = _sha_of(body_path)
+            seen["key"] = key
+            return "etag-ann"
+
+        with mock.patch.object(atif_to_s3, "upload_one",
+                               side_effect=fake_upload) as up:
+            result = atif_to_s3.sync_annotations(
+                base_dir=self.base, session_id=sid, bucket="b", profile="p")
+
+        # Upload ran once; the annotations ledger did NOT exist at upload time.
+        self.assertEqual(up.call_count, 1)
+        self.assertNotIn(sid, seen["ledger_at_upload"])
+        # The uploaded snapshot bytes hash to the sidecar sha.
+        self.assertEqual(seen["body_sha"], snapshot_sha)
+        self.assertEqual(seen["key"], ann_key)
+
+        # Flat wire body.
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["s3_key"], ann_key)
+        self.assertEqual(result["etag"], "etag-ann")
+
+        # The ledger row was written AFTER the upload, recording THAT sha.
+        with open(self._ann_ledger_path) as fh:
+            ann_ledger = json.load(fh)
+        self.assertEqual(ann_ledger[sid]["annotations_sha"], snapshot_sha)
+        self.assertEqual(ann_ledger[sid]["s3_key"], ann_key)
+        self.assertEqual(ann_ledger[sid]["etag"], "etag-ann")
+        self.assertIn("updated_at", ann_ledger[sid])
+        self.assertEqual(set(ann_ledger[sid]),
+                         {"s3_key", "annotations_sha", "etag", "updated_at"})
+
+    def test_annotations_ledger_corrupt_tolerant(self):
+        sid = SID_1
+        self._seed_synced_session(
+            sid, {"stepLabels": [], "runLabels": [], "tags": ["reviewed"]})
+        # A CORRUPT annotations ledger degrades to {} with a warning, so the sync
+        # still functions -- an unreadable ledger has no prior sha, so LWW never
+        # no-ops and the session re-uploads.
+        with open(self._ann_ledger_path, "w") as fh:
+            fh.write("{ not valid json ]")
+
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err), \
+             mock.patch.object(atif_to_s3, "upload_one",
+                               return_value="etag-x") as up:
+            result = atif_to_s3.sync_annotations(
+                base_dir=self.base, session_id=sid, bucket="b", profile="p")
+
+        self.assertIn("unreadable", err.getvalue().lower())
+        self.assertEqual(up.call_count, 1)          # re-uploaded, never a no-op
+        self.assertTrue(result["ok"])
+        self.assertFalse(result.get("noop"))
+        # The corrupt ledger was rewritten as a well-formed map carrying the row.
+        with open(self._ann_ledger_path) as fh:
+            ann_ledger = json.load(fh)
+        self.assertIn(sid, ann_ledger)
+        self.assertEqual(ann_ledger[sid]["s3_key"],
+                         atif_to_s3.render_annotations_key(self._traj_key(sid)))
+
+
 class TestMainCliParity(_ShellBase):
     """Byte-level CLI parity pin for main() -- EXPECTED GREEN before AND after
     the seam extraction (a regression pin, not a red seam test): the exact

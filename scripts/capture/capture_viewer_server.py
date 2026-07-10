@@ -78,6 +78,13 @@ _SYNC_LOCK = threading.Lock()
 # released in try/finally on every exit path.
 _ANNOTATIONS_LOCK = threading.Lock()
 
+# Single-flight annotations S3 SYNC (process-global): its OWN lock, distinct from
+# BOTH _SYNC_LOCK (coupling to trajectory sync would 409 across unrelated egress)
+# AND _ANNOTATIONS_LOCK (slow S3 egress must never 409 a fast local annotation
+# save -- capture-viewer DEC-017/DEC-030). Non-blocking acquire -> 409 on
+# contention; released in try/finally on every exit path.
+_ANNOTATIONS_SYNC_LOCK = threading.Lock()
+
 
 @dataclasses.dataclass(frozen=True)
 class ServerContext:
@@ -190,6 +197,8 @@ class ViewerRequestHandler(http.server.SimpleHTTPRequestHandler):
                 self._handle_run(params["session_id"])
             elif kind == "scan":
                 self._handle_scan(params["session_id"])
+            elif kind == "annotations_scan":
+                self._handle_annotations_scan(params["session_id"])
             elif kind == "annotations_get":
                 self._handle_annotations_get(params["session_id"])
             elif kind == "api_404":
@@ -207,6 +216,8 @@ class ViewerRequestHandler(http.server.SimpleHTTPRequestHandler):
             kind, params = capture_viewer_core.route(self.command, self.path)
             if kind == "sync":
                 self._handle_sync()
+            elif kind == "annotations_sync":
+                self._handle_annotations_sync(params["session_id"])
             elif kind == "annotations_post":
                 self._handle_annotations_post(params["session_id"])
             else:
@@ -274,6 +285,23 @@ class ViewerRequestHandler(http.server.SimpleHTTPRequestHandler):
         # Counts only -- snippets/locations never leave the machine-local
         # report path (capture-s3-sync DEC-071 lineage).
         self._send_json(200, {"session_id": sid, "by_type": agg["by_type"]})
+
+    def _handle_annotations_scan(self, sid: str) -> None:
+        # Counts-only note-PII scan of the annotations SIDECAR (capture-viewer
+        # DEC-031) so the fork's confirm affordance can disclose counts before
+        # egress. Existence-gated like the sidecar routes (unknown session ->
+        # 404), but NEVER on the trajectory artifact: an absent/empty sidecar
+        # degrades to 200 zero counts, never a 404 or an empty-counts lie.
+        _index, _ledger, shas, _paths = self._store()
+        if sid not in shas:                          # UNKNOWN session only
+            self._send_json(404, {"error": "unknown session"})
+            return
+        doc = read_annotations(
+            capture_store_core.annotations_path_for(self.ctx.base_dir, sid), sid)
+        # Counts only -- the findings' snippet/where fields never leave
+        # scan_note_pii (capture-viewer DEC-031/DEC-071 lineage).
+        self._send_json(200, {"session_id": sid,
+                              "by_type": atif_to_s3.scan_note_pii(doc)})
 
     # -- static / SPA ----------------------------------------------------------
 
@@ -412,6 +440,66 @@ class ViewerRequestHandler(http.server.SimpleHTTPRequestHandler):
             self._send_json(200, doc)
         finally:
             _ANNOTATIONS_LOCK.release()
+
+    # -- POST /api/sessions/<id>/annotations/sync (S3 egress) -----------------
+    # The gated egress sibling of POST /api/sync (capture-viewer DEC-032). Order:
+    # body -> existence (unknown -> 404 BEFORE any ledger probe) -> request-shape
+    # gate (strict confirm + non-empty doc) -> synced-trajectory gate (the row
+    # must exist -- DEC-034, the same rule plan_annotations_upload enforces;
+    # checked here so it maps to 400 rather than a shell ok:false) -> dedicated
+    # single-flight lock -> SSO preflight -> the one-patch-site egress seam
+    # atif_to_s3.sync_annotations. Nothing egresses on any 400/404/409.
+
+    def _handle_annotations_sync(self, sid: str) -> None:
+        body, err = self._read_json_body()
+        if err is not None:
+            self._send_json(400, {"error": err})
+            return
+        # Existence FIRST: an unknown session is 404 BEFORE any ledger probe (a
+        # confirmed body must never surface as a not-synced / empty-doc 400).
+        _index, ledger, shas, _paths = self._store()
+        if sid not in shas:
+            self._send_json(404, {"error": "unknown session"})
+            return
+        # Request-shape gate: strict confirm + a non-empty annotations doc. THE
+        # egress decision point for this route (capture-viewer DEC-032).
+        doc = read_annotations(
+            capture_store_core.annotations_path_for(self.ctx.base_dir, sid), sid)
+        gate_err = capture_viewer_core.validate_annotations_sync_request(body, doc)
+        if gate_err is not None:
+            self._send_json(400, {"error": gate_err})
+            return
+        # Synced-trajectory gate (capture-viewer DEC-034): the trajectory ledger
+        # row must exist (a row implies the object is in S3 -> no orphan
+        # annotation object). Same predicate plan_annotations_upload enforces in
+        # the shell; probed here (AFTER the 404) so it maps to a 400.
+        row = ledger.get(sid)
+        if not isinstance(row, dict) or not row.get("s3_key"):
+            self._send_json(400, {"error": "trajectory not synced — sync the "
+                                  "trajectory first (no orphan annotation objects)"})
+            return
+        # Dedicated single-flight lock -- NOT _SYNC_LOCK, NOT _ANNOTATIONS_LOCK
+        # (capture-viewer DEC-017/DEC-030). Acquired OUTSIDE the try, released in
+        # finally on every exit path (503/500/200 alike).
+        if not _ANNOTATIONS_SYNC_LOCK.acquire(blocking=False):
+            self._send_json(409, {"error": "annotations sync already in progress"})
+            return
+        try:
+            try:
+                atif_to_s3.preflight_sso(self.ctx.profile)
+            except RuntimeError as e:
+                self._send_json(503, {"error": str(e)})
+                return
+            # One patch site: the server calls the shell as a MODULE ATTRIBUTE.
+            # The flat wire body ({ok, s3_key?, etag?, noop?, error?}) rides
+            # straight through -- upload/KMS failure is ok:false at 200, matching
+            # POST /api/sync's continue-on-error posture (flat, single-session).
+            result = atif_to_s3.sync_annotations(
+                base_dir=self.ctx.base_dir, session_id=sid,
+                bucket=self.ctx.bucket, profile=self.ctx.profile)
+            self._send_json(200, result)
+        finally:
+            _ANNOTATIONS_SYNC_LOCK.release()   # every exit path: 503/500/200 alike
 
 
 def make_server(port: int, ctx: ServerContext) -> http.server.ThreadingHTTPServer:

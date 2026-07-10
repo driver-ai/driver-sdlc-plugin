@@ -1093,5 +1093,310 @@ class TestResolveAuthor(unittest.TestCase):
             self.assertEqual(cvs._resolve_author(None), "you")
 
 
+class TestAnnotationsSyncRoutes(_ViewerServerBase):
+    """POST /api/sessions/<id>/annotations/sync + GET .../annotations/scan: the
+    plan-06 egress route + its counts-only preview, served over the same
+    route-table / Host / Content-Type machinery as /api/sync but on a DEDICATED
+    single-flight lock (_ANNOTATIONS_SYNC_LOCK, NEVER _ANNOTATIONS_LOCK or
+    _SYNC_LOCK -- capture-viewer DEC-017/030). One-patch-site: the server calls
+    the shell as atif_to_s3.sync_annotations, so a single patch of that module
+    attribute stubs egress."""
+
+    # -- annotations-sync HTTP drivers ----------------------------------------
+
+    def _post_sync_ann(self, sid, payload, *, ct="application/json", host=None,
+                       timeout=10):
+        data = (payload if isinstance(payload, (bytes, bytearray))
+                else json.dumps(payload).encode())
+        headers = {"Content-Type": ct} if ct is not None else {}
+        return self._request(f"/api/sessions/{sid}/annotations/sync",
+                             method="POST", data=data, headers=headers,
+                             host=host, timeout=timeout)
+
+    def _post_ann(self, sid, payload, *, ct="application/json", host=None,
+                  timeout=10):
+        data = (payload if isinstance(payload, (bytes, bytearray))
+                else json.dumps(payload).encode())
+        headers = {"Content-Type": ct} if ct is not None else {}
+        return self._request(f"/api/sessions/{sid}/annotations", method="POST",
+                             data=data, headers=headers, host=host,
+                             timeout=timeout)
+
+    def _seed_ann(self, sid, doc):
+        path = os.path.join(self.base, "sessions", sid, "annotations.json")
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w") as fh:
+            json.dump(doc, fh)
+        return path
+
+    def _ann_path(self, sid):
+        return os.path.join(self.base, "sessions", sid, "annotations.json")
+
+    def _traj_key(self, sid):
+        return atif_to_s3.render_s3_key(
+            org_id=IDENTITY["org_id"], principal_id=IDENTITY["principal_id"],
+            principal_type=IDENTITY["principal_type"],
+            codebase="driver-sdlc-plugin", branch="eric/agent-session-capture",
+            session_id=sid)
+
+    def _mark_traj_synced(self, sid):
+        self._write_ledger({sid: {
+            "s3_key": self._traj_key(sid), "etag": "traj-etag",
+            "synced_at": "2026-07-08T00:00:00Z",
+            "artifact_sha256": _sha_of(_artifact_path(self.base, sid))}})
+
+    _NONEMPTY_DOC = {"stepLabels": [], "runLabels": [], "tags": ["reviewed"]}
+
+    def _seed_syncable(self, sid=SID_1):
+        """A branch-keyed, trajectory-synced session with a non-empty annotations
+        sidecar -- passes every gate up to the lock/preflight."""
+        e = self._seed(sid)
+        _write_index(self.base, [e])
+        self._mark_traj_synced(sid)
+        self._seed_ann(sid, dict(self._NONEMPTY_DOC))
+        return e
+
+    # -- sync route guards -----------------------------------------------------
+
+    def test_annotations_sync_route_403_host(self):
+        self._seed_syncable()
+        self._start()
+        with mock.patch.object(atif_to_s3, "sync_annotations") as sa, \
+             mock.patch.object(atif_to_s3, "preflight_sso") as pre:
+            status, headers, raw = self._post_sync_ann(
+                SID_1, {"confirm": True}, host="evil.example")
+            self.assertEqual(status, 403)
+            self.assertIn("error", json.loads(raw))
+            self.assertEqual(headers.get("Cache-Control"), "no-store")
+            sa.assert_not_called()
+            pre.assert_not_called()
+
+    def test_annotations_sync_route_400_content_type(self):
+        self._seed_syncable()
+        self._start()
+        flat = {"ok": True, "s3_key": "k", "etag": "e"}
+        with mock.patch.object(atif_to_s3, "sync_annotations",
+                               return_value=flat) as sa, \
+             mock.patch.object(atif_to_s3, "preflight_sso"):
+            # Non-JSON Content-Type -> 400 before any gate/egress.
+            status, _h, raw = self._post_sync_ann(
+                SID_1, {"confirm": True}, ct="text/plain")
+            self.assertEqual(status, 400)
+            self.assertIn("error", json.loads(raw))
+            sa.assert_not_called()
+
+            # No explicit Content-Type (urllib defaults to a form CT) -> 400.
+            status, _h, _b = self._post_sync_ann(SID_1, {"confirm": True}, ct=None)
+            self.assertEqual(status, 400)
+            sa.assert_not_called()
+
+            # A charset parameter is still application/json (media-type compare)
+            # -> the CT check passes and the request reaches the (stubbed) sync.
+            status, _h, _b = self._post_sync_ann(
+                SID_1, {"confirm": True}, ct="application/json; charset=utf-8")
+            self.assertEqual(status, 200)
+            sa.assert_called_once()
+
+    def test_annotations_sync_route_400_unconfirmed(self):
+        self._seed_syncable()
+        self._start()
+        with mock.patch.object(atif_to_s3, "sync_annotations") as sa, \
+             mock.patch.object(atif_to_s3, "preflight_sso") as pre:
+            # Missing confirm -> 400 (strict-True gate).
+            status, _h, raw = self._post_sync_ann(SID_1, {})
+            self.assertEqual(status, 400)
+            self.assertIn("confirm", json.loads(raw)["error"])
+            # Truthy look-alikes are NOT the JSON boolean true -> still 400.
+            for confirm in ("true", 1, [True]):
+                with self.subTest(confirm=confirm):
+                    status, _h, _b = self._post_sync_ann(SID_1, {"confirm": confirm})
+                    self.assertEqual(status, 400)
+            sa.assert_not_called()
+            pre.assert_not_called()
+
+    def test_annotations_sync_route_404_unknown_session(self):
+        self._seed_syncable()
+        self._start()
+        with mock.patch.object(atif_to_s3, "sync_annotations") as sa, \
+             mock.patch.object(atif_to_s3, "preflight_sso") as pre:
+            # Unknown session -> 404 BEFORE any ledger probe (a confirmed body
+            # must not surface as a not-synced / empty-doc 400).
+            status, _h, raw = self._post_sync_ann(SID_UNKNOWN, {"confirm": True})
+            self.assertEqual(status, 404)
+            self.assertIn("error", json.loads(raw))
+            sa.assert_not_called()
+            pre.assert_not_called()
+
+    def test_annotations_sync_route_400_not_synced(self):
+        # Known + non-empty doc, but the trajectory is NOT synced (no ledger row)
+        # -> 400 (no orphan annotation objects -- DEC-034).
+        e = self._seed(SID_1)
+        _write_index(self.base, [e])
+        self._seed_ann(SID_1, dict(self._NONEMPTY_DOC))
+        self._start()
+        with mock.patch.object(atif_to_s3, "sync_annotations") as sa, \
+             mock.patch.object(atif_to_s3, "preflight_sso") as pre:
+            status, _h, raw = self._post_sync_ann(SID_1, {"confirm": True})
+            self.assertEqual(status, 400)
+            self.assertIn("not synced", json.loads(raw)["error"].lower())
+            sa.assert_not_called()
+            pre.assert_not_called()
+
+    def test_annotations_sync_route_400_empty_doc(self):
+        # Synced session, but NO annotations sidecar -> empty doc -> 400 "no
+        # annotations to sync".
+        e = self._seed(SID_1)
+        _write_index(self.base, [e])
+        self._mark_traj_synced(SID_1)
+        self._start()
+        with mock.patch.object(atif_to_s3, "sync_annotations") as sa, \
+             mock.patch.object(atif_to_s3, "preflight_sso") as pre:
+            status, _h, raw = self._post_sync_ann(SID_1, {"confirm": True})
+            self.assertEqual(status, 400)
+            self.assertIn("no annotations", json.loads(raw)["error"].lower())
+            sa.assert_not_called()
+            pre.assert_not_called()
+
+    def test_annotations_sync_route_409_single_flight(self):
+        self._seed_syncable()
+        cvs = self._start()
+        with mock.patch.object(atif_to_s3, "sync_annotations") as sa, \
+             mock.patch.object(atif_to_s3, "preflight_sso") as pre:
+            # Holding the DEDICATED sync lock -> a concurrent sync gets 409.
+            self.assertTrue(cvs._ANNOTATIONS_SYNC_LOCK.acquire(blocking=False))
+            try:
+                status, _h, raw = self._post_sync_ann(SID_1, {"confirm": True})
+                self.assertEqual(status, 409)
+                self.assertIn("progress", json.loads(raw)["error"].lower())
+            finally:
+                cvs._ANNOTATIONS_SYNC_LOCK.release()
+            # A lock refusal egresses nothing.
+            sa.assert_not_called()
+            pre.assert_not_called()
+
+    def test_annotations_sync_route_503_sso(self):
+        self._seed_syncable()
+        self._start()
+        boom = RuntimeError("SSO session expired or invalid — sign in again")
+        with mock.patch.object(atif_to_s3, "preflight_sso",
+                               side_effect=boom), \
+             mock.patch.object(atif_to_s3, "sync_annotations") as sa:
+            status, headers, raw = self._post_sync_ann(SID_1, {"confirm": True})
+            self.assertEqual(status, 503)
+            self.assertEqual(json.loads(raw)["error"], str(boom))
+            self.assertEqual(headers.get("Cache-Control"), "no-store")
+            sa.assert_not_called()
+
+            # Lock released in finally: the retry is a fresh 503, NEVER a 409.
+            status, _h, raw = self._post_sync_ann(SID_1, {"confirm": True})
+            self.assertEqual(status, 503)
+            self.assertNotEqual(json.loads(raw).get("error"),
+                                "annotations sync already in progress")
+            sa.assert_not_called()
+
+    def test_annotations_sync_route_happy_200_flat(self):
+        # The 200 body is a FLAT single object {ok, s3_key?, etag?, noop?} (NOT a
+        # `results` list -- this route is single-session).
+        self._seed_syncable()
+        self._start()
+        flat = {"ok": True, "s3_key": "trajectories/v1/h/p/cb/br/x/annotations.json",
+                "etag": "etag-ann"}
+        with mock.patch.object(atif_to_s3, "preflight_sso") as pre, \
+             mock.patch.object(atif_to_s3, "sync_annotations",
+                               return_value=flat) as sa:
+            status, headers, raw = self._post_sync_ann(SID_1, {"confirm": True})
+            self.assertEqual(status, 200)
+            self.assertEqual(headers.get("Cache-Control"), "no-store")
+            body = json.loads(raw)
+            self.assertNotIn("results", body)       # flat, not a batch list
+            self.assertEqual(body, flat)
+            pre.assert_called_once_with("test-profile")
+            # The server calls the shell as the module attribute (one patch site),
+            # threading base_dir/session_id/bucket/profile from the context.
+            sa.assert_called_once_with(
+                base_dir=self.base, session_id=SID_1,
+                bucket="test-bucket", profile="test-profile")
+
+    def test_annotations_sync_lock_independent_of_annotations_post(self):
+        # capture-viewer DEC-017, BOTH directions: the slow S3 sync lock and the
+        # fast local-save lock are INDEPENDENT.
+        self._seed_syncable()
+        cvs = self._start()
+        save_doc = {"stepLabels": [{"decision": "correct",
+                                    "anchor": {"trajId": SID_1, "stepId": 1}}],
+                    "runLabels": [], "tags": []}
+
+        # Direction 1: an in-flight SYNC holds _ANNOTATIONS_SYNC_LOCK -> a local
+        # annotation SAVE (its own _ANNOTATIONS_LOCK) still 200s.
+        self.assertTrue(cvs._ANNOTATIONS_SYNC_LOCK.acquire(blocking=False))
+        try:
+            status, _h, raw = self._post_ann(SID_1, save_doc)
+            self.assertEqual(status, 200)
+            self.assertEqual(json.loads(raw)["sessionId"], SID_1)
+        finally:
+            cvs._ANNOTATIONS_SYNC_LOCK.release()
+
+        # Direction 2: an in-flight local SAVE holds _ANNOTATIONS_LOCK -> a SYNC
+        # (its own _ANNOTATIONS_SYNC_LOCK) still proceeds, NOT a 409.
+        with mock.patch.object(atif_to_s3, "preflight_sso"), \
+             mock.patch.object(atif_to_s3, "sync_annotations",
+                               return_value={"ok": True, "s3_key": "k",
+                                             "etag": "e"}) as sa:
+            self.assertTrue(cvs._ANNOTATIONS_LOCK.acquire(blocking=False))
+            try:
+                status, _h, raw = self._post_sync_ann(SID_1, {"confirm": True})
+                self.assertEqual(status, 200)
+                self.assertTrue(json.loads(raw)["ok"])
+                sa.assert_called_once()
+            finally:
+                cvs._ANNOTATIONS_LOCK.release()
+
+    # -- scan route ------------------------------------------------------------
+
+    def test_annotations_scan_route_200_counts(self):
+        e1 = self._seed(SID_1)
+        e2 = self._seed(SID_2)          # a session with NO sidecar -> zero counts
+        _write_index(self.base, [e1, e2])
+        self._seed_ann(SID_1, {
+            "stepLabels": [{"decision": "correct",
+                            "anchor": {"trajId": SID_1, "stepId": 1},
+                            "note": "ping dev@example.com about this"}],
+            "runLabels": [{"decision": "unsure",
+                           "note": "escalate to dev@example.com"}],
+            "tags": ["owner ops@example.com", "flaky"]})
+        self._start()
+
+        status, headers, raw = self._request(
+            f"/api/sessions/{SID_1}/annotations/scan")
+        self.assertEqual(status, 200)
+        self.assertEqual(headers.get("Cache-Control"), "no-store")
+        body = json.loads(raw)
+        self.assertEqual(body["session_id"], SID_1)
+        self.assertGreaterEqual(body["by_type"].get("Email address", 0), 1)
+        self.assertTrue(all(isinstance(v, int) for v in body["by_type"].values()))
+        # Counts ONLY: no snippet/where keys, no raw note text leaves the machine.
+        self.assertNotIn(b"snippet", raw)
+        self.assertNotIn(b"where", raw)
+        self.assertNotIn(b"dev@example.com", raw)
+        self.assertNotIn(b"ops@example.com", raw)
+
+        # Absent sidecar -> 200 zero counts ({}), never a 404.
+        status, headers, raw = self._request(
+            f"/api/sessions/{SID_2}/annotations/scan")
+        self.assertEqual(status, 200)
+        self.assertEqual(headers.get("Cache-Control"), "no-store")
+        self.assertEqual(json.loads(raw), {"session_id": SID_2, "by_type": {}})
+
+    def test_annotations_scan_route_404_unknown(self):
+        e1 = self._seed(SID_1)
+        _write_index(self.base, [e1])
+        self._start()
+        # Unknown (not-in-index) session -> 404 (existence-gated, like /scan).
+        status, _h, body = self._get_json(
+            f"/api/sessions/{SID_UNKNOWN}/annotations/scan")
+        self.assertEqual(status, 404)
+        self.assertIn("error", body)
+
+
 if __name__ == "__main__":
     unittest.main()

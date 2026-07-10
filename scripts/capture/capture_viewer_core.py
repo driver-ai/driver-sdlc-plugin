@@ -214,7 +214,13 @@ def build_run_payload(traj: dict) -> dict:
 
 
 def validate_sync_request(body: object, runs_by_id: dict) -> tuple[list[str], str | None]:
-    """Pure: THE gate check -- no egress decision is made anywhere else.
+    """Pure: THE gate check for the TRAJECTORY sync route (POST /api/sync) -- the
+    trajectory route's egress decision is made nowhere else.
+
+    (The sibling annotations-sync route, POST /api/sessions/<id>/annotations/sync,
+    has its OWN egress decision point -- `validate_annotations_sync_request` here
+    plus `plan_annotations_upload`'s synced-trajectory gate in atif_to_s3 --
+    capture-viewer DEC-032/DEC-034.)
 
     `body` must be a JSON object; `confirm` must be the boolean True (strict
     identity -- "true"/1 and every other truthy look-alike are rejected: the
@@ -239,6 +245,29 @@ def validate_sync_request(body: object, runs_by_id: dict) -> tuple[list[str], st
         if not run.get("uploadable"):
             return [], f"session is not uploadable: {sid}"
     return list(ids), None
+
+
+def validate_annotations_sync_request(body: object, doc: dict | None) -> str | None:
+    """Pure: THE egress gate for the annotations-sync route (capture-viewer
+    DEC-032; sibling of `validate_sync_request`, which gates the trajectory
+    route). Returns an error string (-> 400) or None.
+
+    Rules: `body` must be a JSON object carrying the JSON boolean True under
+    "confirm" (strict identity -- "true"/1 and every truthy look-alike are
+    rejected, exactly as `validate_sync_request` does); the annotations `doc`
+    must exist and carry at least one label or tag ("no annotations to sync").
+    The synced-trajectory gate itself lives in `plan_annotations_upload`
+    (capture-viewer DEC-034) -- this validator is request-shape only.
+    """
+    if not isinstance(body, dict):
+        return "request body must be a JSON object"
+    if body.get("confirm") is not True:
+        return "confirm must be the JSON boolean true"
+    if not isinstance(doc, dict):
+        return "no annotations to sync"
+    if not (doc.get("stepLabels") or doc.get("runLabels") or doc.get("tags")):
+        return "no annotations to sync"
+    return None
 
 
 DEFAULT_ANNOTATIONS = {"version": 1, "sessionId": None,
@@ -327,15 +356,22 @@ def normalize_path(raw: str) -> str:
 
 
 def route(method: str, raw_path: str) -> tuple[str, dict]:
-    """Pure: (method, RAW path) -> (kind, params), kind in
-    'dataset'|'run'|'scan'|'sync'|'annotations_get'|'annotations_post'|'api_404'|'static'.
+    """Pure: (method, RAW path) -> (kind, params), kind in 'dataset'|'run'|'scan'|
+    'sync'|'annotations_get'|'annotations_post'|'annotations_scan'|
+    'annotations_sync'|'api_404'|'static'.
 
     Normalizes the raw path internally via `normalize_path` before matching.
     HEAD routes like GET (a headers-only reply is the shell's job). POST matches
-    /api/sync and /api/sessions/<id>/annotations; any other POST -> api_404, as
-    does any other non-GET method. `/api/sessions/<id>/annotations` is a distinct
-    `endswith` from `/scan` (no prefix collision) and the GET branch sits BEFORE
-    the /api/ catch-all so the SPA fallback never shadows it. Unknown /api/ paths
+    /api/sync, /api/sessions/<id>/annotations/sync, and
+    /api/sessions/<id>/annotations; any other POST -> api_404, as does any other
+    non-GET method. The plan-06 sibling endpoints
+    (`/annotations/scan` GET, `/annotations/sync` POST) are MORE-SPECIFIC
+    suffixes of `/scan` and `/annotations`, so their branches sit BEFORE those
+    and FALL THROUGH (rather than api_404-ing) when the id before the suffix is
+    empty/unsafe -- so a session whose id is literally "annotations"
+    (`/api/sessions/annotations/scan`) is still handled by the plain `/scan`
+    branch instead of being falsely swallowed. The GET branches sit BEFORE the
+    /api/ catch-all so the SPA fallback never shadows them; unknown /api/ paths
     are api_404, never static. run/scan/annotations ids must be safe single path
     components (`is_safe_path_component`) or the route degrades to api_404 -- a
     URL-supplied id can never traverse; the id reaches the shell only inside
@@ -346,6 +382,12 @@ def route(method: str, raw_path: str) -> tuple[str, dict]:
     if verb == "POST":
         if path == "/api/sync":
             return ("sync", {})
+        # More-specific suffix first: /annotations/sync before /annotations.
+        if path.startswith("/api/sessions/") and path.endswith("/annotations/sync"):
+            sid = path[len("/api/sessions/"):-len("/annotations/sync")]
+            if is_safe_path_component(sid):
+                return ("annotations_sync", {"session_id": sid})
+            # else fall through -> api_404 below (empty/unsafe id is not a sync)
         if path.startswith("/api/sessions/") and path.endswith("/annotations"):
             sid = path[len("/api/sessions/"):-len("/annotations")]
             if is_safe_path_component(sid):
@@ -360,6 +402,14 @@ def route(method: str, raw_path: str) -> tuple[str, dict]:
         if is_safe_path_component(sid):
             return ("run", {"session_id": sid})
         return ("api_404", {})
+    # More-specific suffix first: /annotations/scan before /scan. A fall-through
+    # (not api_404) on an empty/unsafe id lets /api/sessions/annotations/scan
+    # resolve as the /scan of a session literally named "annotations".
+    if path.startswith("/api/sessions/") and path.endswith("/annotations/scan"):
+        sid = path[len("/api/sessions/"):-len("/annotations/scan")]
+        if is_safe_path_component(sid):
+            return ("annotations_scan", {"session_id": sid})
+        # else fall through to the /scan branch / api_404 catch-all below
     if path.startswith("/api/sessions/") and path.endswith("/scan"):
         sid = path[len("/api/sessions/"):-len("/scan")]
         if is_safe_path_component(sid):

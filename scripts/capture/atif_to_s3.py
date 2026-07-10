@@ -26,6 +26,7 @@ where <principal> is "auth0|<sub>" (user / PAT) or "machine|<id>" (machine),
 from __future__ import annotations
 
 import argparse
+import contextlib
 import copy
 import datetime
 import hashlib
@@ -35,7 +36,10 @@ import subprocess
 import sys
 
 import render_trace  # module-top; the shell's scan_sessions calls render_trace.scan
-from capture_store_core import store_path_for  # sibling redacted-artifact path convention
+from capture_store_core import (  # sibling redacted-artifact + annotations paths
+    annotations_path_for,
+    store_path_for,
+)
 from cc_to_atif_core import is_safe_path_component  # module-top; mirrors capture_store_core
 
 # The S3-key schema version; also emitted as the `schema-version` metadata value
@@ -640,6 +644,97 @@ def sync_sessions(selected: list, *, paths: dict, shas: dict, identity: dict,
         results.append({"session_id": sid, "ok": True,
                         "s3_key": plan["key"], "etag": etag})
     return ledger, results
+
+
+def _index_entry_for(index: dict, session_id: str) -> dict:
+    """Shell helper: the flattened index entry for `session_id` (or {}). Used to
+    read the session's codebase/branch for identity-free annotations metadata."""
+    for group in (index or {}).values():
+        if isinstance(group, dict):
+            entry = group.get(session_id)
+            if isinstance(entry, dict):
+                return entry
+    return {}
+
+
+def sync_annotations(*, base_dir: str, session_id: str, bucket: str,
+                     profile: str) -> dict:
+    """Shell: gate -> snapshot -> upload -> ledger write, for ONE session -- the
+    deliberate sibling of `sync_sessions` (capture-viewer DEC-030/DEC-032). Reads
+    the annotations sidecar bytes ONCE, sha256s those exact bytes, uploads from a
+    temp snapshot of them (sidecar TOCTOU self-heals on the next sync -- LWW),
+    then writes the annotations ledger row (upload-before-ledger-write, so a crash
+    mid-upload just re-uploads next run). SILENT -- no printing; the caller (the
+    viewer's annotations-sync route) renders the result to its response body.
+
+    The synced-trajectory gate is `plan_annotations_upload` (capture-viewer
+    DEC-034: the trajectory ledger row must exist -> no orphan annotation
+    objects); the sibling key is derived FROM that row's `s3_key` (DEC-030). The
+    annotations ledger is its OWN file (`ANNOTATIONS_LEDGER_NAME`), read/written
+    with the shared corrupt-tolerant load_ledger/atomic save_ledger; its row is
+    mutable last-write-wins (a changed sha re-uploads -- DEC-008's one-shot rule
+    is the trajectory's alone). Caller runs preflight_sso first.
+
+    Returns the flat wire object {ok, s3_key?, etag?, noop?, error?}: an unchanged
+    sha -> {ok:true, noop:true}; an upload/KMS failure -> {ok:false, error}
+    (consistent with sync_sessions' continue-on-error posture, but flat because
+    this route is single-session, not a batch).
+    """
+    traj_ledger = load_ledger(os.path.join(base_dir, LEDGER_NAME))
+    ann_ledger_path = os.path.join(base_dir, ANNOTATIONS_LEDGER_NAME)
+    ann_ledger = load_ledger(ann_ledger_path)           # corrupt -> {} (re-upload)
+    index = load_index(os.path.join(base_dir, _INDEX_NAME))
+    idx_entry = _index_entry_for(index, session_id)
+    meta_entry = {
+        "codebase": os.path.basename(idx_entry.get("cwd") or "") or None,
+        "branch": branch_from_group_key(idx_entry.get("group_key")),
+    }
+
+    sidecar = annotations_path_for(base_dir, session_id)
+    # Snapshot the bytes ONCE and sha THOSE bytes -- sha-what-you-upload.
+    try:
+        with open(sidecar, "rb") as f:
+            raw = f.read()
+    except OSError as e:
+        return {"ok": False, "error": f"cannot read annotations sidecar: {e}"}
+    sha = hashlib.sha256(raw).hexdigest()
+
+    try:
+        plan = plan_annotations_upload(
+            session_id=session_id, trajectory_ledger=traj_ledger,
+            annotations_ledger=ann_ledger, annotations_sha=sha, entry=meta_entry)
+    except ValueError as e:                             # malformed trajectory key
+        return {"ok": False, "error": str(e)}
+    if plan["action"] == "refuse":
+        return {"ok": False, "error": plan["reason"]}
+    if plan["action"] == "noop":                        # unchanged sha -> no re-PUT
+        return {"ok": True, "noop": True, "s3_key": plan["s3_key"]}
+
+    # Upload from a temp snapshot of the hashed bytes (never the live sidecar):
+    # a concurrent edit between the sha and the PUT self-heals on the next sync.
+    tmp = sidecar + f".sync.{os.getpid()}"
+    try:
+        with open(tmp, "wb") as f:
+            f.write(raw)
+        etag = upload_one(plan["s3_key"], tmp, plan["metadata"],
+                          bucket=bucket, profile=profile)
+    except Exception as e:      # continue-on-error posture: flat ok:false + error
+        return {"ok": False, "error": str(e), "s3_key": plan["s3_key"]}
+    finally:
+        with contextlib.suppress(OSError):
+            os.remove(tmp)
+
+    # Ledger write AFTER a successful upload (upload-before-ledger-write). The row
+    # is mutable LWW, so re-assigning the session's entry is the intended update.
+    try:
+        new_ledger = dict(ann_ledger)
+        new_ledger[session_id] = annotations_ledger_row(
+            plan["s3_key"], sha, etag, _now_iso())
+        save_ledger(ann_ledger_path, new_ledger)
+    except Exception as e:
+        return {"ok": False, "s3_key": plan["s3_key"], "etag": etag,
+                "error": f"uploaded but ledger write failed: {e}"}
+    return {"ok": True, "s3_key": plan["s3_key"], "etag": etag}
 
 
 def _build_parser() -> argparse.ArgumentParser:
