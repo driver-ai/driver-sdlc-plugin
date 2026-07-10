@@ -351,6 +351,25 @@ def plan_annotations_upload(*, session_id: str, trajectory_ledger: dict,
     return {"action": "upload", "reason": None, "s3_key": key, "metadata": metadata}
 
 
+def scan_note_pii(doc: dict) -> dict:
+    """Pure: by-type PII counts over the human-authored text in an annotations doc
+    (stepLabels[].note + runLabels[].note + tags — capture-viewer DEC-031).
+    render_trace.scan walks a TRAJECTORY dict (steps[].message), so each text is
+    wrapped as its own synthetic step — one step per text, so scan's value@location
+    dedup cannot under-count a value repeated across notes. Counts only: the
+    findings' snippet/where fields never leave this function (DEC-071 lineage)."""
+    texts = [lbl.get("note") for lbl in doc.get("stepLabels", [])]
+    texts += [lbl.get("note") for lbl in doc.get("runLabels", [])]
+    texts += list(doc.get("tags", []))
+    steps = [{"step_id": i, "message": t} for i, t in enumerate(texts) if t]
+    if not steps:
+        return {}
+    counts: dict[str, int] = {}
+    for finding in render_trace.scan({"steps": steps}):
+        counts[finding["type"]] = counts.get(finding["type"], 0) + 1
+    return counts
+
+
 # ---------------------------------------------------------------------------
 # Imperative shell (I/O, subprocess, clock) — mirrors atif_to_opik's split: the
 # pure planners above decide WHAT to do; everything below reads/writes files,

@@ -454,6 +454,68 @@ class TestPlanAnnotationsUpload(unittest.TestCase):
         self.assertEqual(plan["action"], "refuse")
 
 
+class TestScanNotePii(unittest.TestCase):
+    """scan_note_pii -- by-type PII COUNTS over the human-authored text in an
+    annotations doc (stepLabels[].note + runLabels[].note + tags[]; capture-viewer
+    DEC-031). render_trace.scan takes a TRAJECTORY dict, so scan_note_pii wraps each
+    text as its OWN synthetic step -- one step per text, so scan's value@location
+    dedup cannot under-count a value repeated across notes. Counts ONLY: the
+    findings' snippet/where fields never leave the function (DEC-071 lineage).
+    Pure -- plain dicts in, a {type: count} dict out; no I/O."""
+
+    def test_scan_note_pii_counts_only(self):
+        # dev@example.com appears in a stepLabel note AND a runLabel note (SAME
+        # value, two DIFFERENT notes); ops@example.com in a tag; an IPv4 in a
+        # stepLabel note. Values chosen so render_trace.scan recognizes them:
+        # "Email address" + "IPv4 address" detectors (see render_trace.SCAN).
+        doc = {
+            "stepLabels": [
+                {"decision": "correct", "anchor": {"trajId": None, "stepId": 1},
+                 "note": "ping dev@example.com about this step"},
+                {"decision": "unsure", "anchor": {"trajId": None, "stepId": 3},
+                 "note": "the box at 10.0.0.1 was flaky here"},
+            ],
+            "runLabels": [
+                {"decision": "incorrect", "note": "escalate to dev@example.com"},
+            ],
+            "tags": ["owner ops@example.com", "flaky"],
+        }
+        counts = atif_to_s3.scan_note_pii(doc)
+
+        # Three emails: dev@ (stepLabel) + dev@ (runLabel) + ops@ (tag). The
+        # repeated dev@example.com across two DIFFERENT notes counts TWICE -- the
+        # per-text synthetic-step wrap defeats render_trace.scan's value@location
+        # dedup (a single-step scan would have folded the two dev@ hits to one).
+        self.assertEqual(counts, {"Email address": 3, "IPv4 address": 1})
+        self.assertEqual(counts["Email address"], 3)
+
+        # Counts ONLY -- no snippet / where key, no raw note text leaks out
+        # (capture-viewer DEC-071 lineage: the findings' snippet/where fields
+        # never leave scan_note_pii). Every value is an int count.
+        self.assertNotIn("snippet", counts)
+        self.assertNotIn("where", counts)
+        for v in counts.values():
+            self.assertIsInstance(v, int)
+        blob = json.dumps(counts)
+        self.assertNotIn("@example.com", blob)
+        self.assertNotIn("dev@", blob)
+        self.assertNotIn("10.0.0.1", blob)
+        self.assertNotIn("〈", blob)   # the scan snippet bracket marker
+
+    def test_scan_note_pii_empty_doc(self):
+        # An empty doc -> {} (no texts -> no synthetic steps -> nothing scanned).
+        self.assertEqual(atif_to_s3.scan_note_pii({}), {})
+        # A doc whose labels/tags carry no note text is also {} (empty/None notes
+        # and empty tags contribute no synthetic step).
+        self.assertEqual(
+            atif_to_s3.scan_note_pii(
+                {"stepLabels": [{"decision": "correct",
+                                 "anchor": {"trajId": None, "stepId": 1}}],
+                 "runLabels": [{"decision": "unsure", "note": ""}],
+                 "tags": []}),
+            {})
+
+
 # ===========================================================================
 # Imperative-shell / I/O tests (Task 3).
 #
