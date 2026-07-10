@@ -297,6 +297,60 @@ def select_sessions(index: dict, ledger: dict, artifact_shas: dict,
     return selected
 
 
+def render_annotations_key(trajectory_key: str) -> str:
+    """Pure: the annotations sibling key, derived FROM the trajectory's ledger-stored
+    key (capture-viewer DEC-030 — never recomputed from launch identity; identity
+    drift was proven to land a recomputed 'sibling' under a different org-hash
+    prefix than the object actually occupies).
+    Raises ValueError unless the leaf is exactly 'trajectory.redacted.json'."""
+    prefix, _, leaf = trajectory_key.rpartition("/")
+    if leaf != "trajectory.redacted.json" or not prefix:
+        raise ValueError(f"not a trajectory key: {trajectory_key!r}")
+    return f"{prefix}/annotations.json"
+
+
+def annotations_ledger_row(s3_key: str, sha: str, etag: str, now: str) -> dict:
+    """Pure: mutable last-write-wins row. Unlike the trajectory row (one-shot,
+    capture-viewer DEC-008), a changed sha UPDATES the row — annotations re-upload
+    on edit."""
+    return {"s3_key": s3_key, "annotations_sha": sha, "etag": etag, "updated_at": now}
+
+
+def plan_annotations_upload(*, session_id: str, trajectory_ledger: dict,
+                            annotations_ledger: dict, annotations_sha: str,
+                            entry: dict | None) -> dict:
+    """Pure: the annotations-sync decision for one session.
+
+    Gate (capture-viewer DEC-034): the TRAJECTORY ledger row must exist — a row
+    implies the object is in S3, so no orphan annotation object is possible. (NOT
+    is_synced: a drifted artifact sha — a re-rolled session — still has its object
+    in S3; a DEC-024 missing-artifact session could never re-match.) The sibling
+    key is derived FROM that row's `s3_key` (DEC-030), never from launch identity.
+    Then last-write-wins: an unchanged sha is a no-op; a changed/new sha uploads
+    (a changed sha UPDATES the row — not a DEC-008 violation). Metadata is
+    identity-free (capture-viewer DEC-068), sanitized like the trajectory's.
+    Returns {"action": "upload"|"noop"|"refuse", "reason": str|None,
+             "s3_key": str|None, "metadata": dict|None}."""
+    row = trajectory_ledger.get(session_id)
+    if not isinstance(row, dict) or not row.get("s3_key"):
+        return {"action": "refuse", "reason": "trajectory not synced — sync it first "
+                "(no orphan annotation objects)", "s3_key": None, "metadata": None}
+    key = render_annotations_key(row["s3_key"])
+    prev = annotations_ledger.get(session_id)
+    if isinstance(prev, dict) and prev.get("annotations_sha") == annotations_sha:
+        return {"action": "noop", "reason": None, "s3_key": key, "metadata": None}
+    entry = entry or {}
+    metadata = {  # identity-free (capture-viewer DEC-068); sanitized like the trajectory's
+        "session-id": session_id,
+        "codebase": sanitize_segment(entry.get("codebase"), fallback=_UNKNOWN_CODEBASE),
+        "branch": sanitize_segment(strip_branch_owner(entry.get("branch")),
+                                   fallback=_UNKNOWN_BRANCH),
+        "content-kind": "annotations",
+        "schema-version": "1",
+    }
+    return {"action": "upload", "reason": None, "s3_key": key, "metadata": metadata}
+
+
 # ---------------------------------------------------------------------------
 # Imperative shell (I/O, subprocess, clock) — mirrors atif_to_opik's split: the
 # pure planners above decide WHAT to do; everything below reads/writes files,
@@ -312,6 +366,12 @@ DEFAULT_PROFILE = "dev-admin"
 _DEFAULT_BASE_DIR = "~/.driver/capture"
 _INDEX_NAME = "index.json"
 LEDGER_NAME = "s3-sync-ledger.json"      # separate from the hook-owned index.json
+# The annotations sync ledger is its OWN file (never a section of s3-sync-ledger.json:
+# a same-file section is lost-update-prone under the whole-file save_ledger write and
+# creates an is_synced phantom) — capture-viewer DEC-030. Readers/writers reuse
+# load_ledger/save_ledger with this path; the row is mutable/last-write-wins (a changed
+# sha re-uploads), unlike the trajectory's one-shot row (DEC-008).
+ANNOTATIONS_LEDGER_NAME = "annotations-sync-ledger.json"
 
 
 def _load_json_map(path: str, *, label: str) -> dict:

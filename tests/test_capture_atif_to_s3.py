@@ -313,6 +313,148 @@ class TestSelectSessions(unittest.TestCase):
 
 
 # ===========================================================================
+# Annotations S3-sync planners (plan 06). Pure functions -- the annotations
+# sibling key (derived FROM the trajectory ledger row, never recomputed from
+# launch identity -- capture-viewer DEC-030), the mutable last-write-wins ledger
+# row (capture-viewer DEC-008 does NOT apply -- a changed sha re-uploads), and
+# the per-session upload decision gated on the TRAJECTORY ledger row existing
+# (capture-viewer DEC-034 -- row-exists, NOT is_synced). Driven with plain dicts;
+# no I/O, clock, or randomness.
+# ===========================================================================
+
+# A real-shaped trajectory key, exactly as render_s3_key composes it -- the
+# annotations sibling is derived from THIS, not re-rendered from identity.
+_ORG_HASH = hashlib.sha256("org_ABC123".encode()).hexdigest()[:63]
+_TRAJ_KEY = (f"trajectories/v1/{_ORG_HASH}/auth0|user123/driver-sdlc-plugin/"
+             f"agent-session-capture/{SID_1}/trajectory.redacted.json")
+
+
+class TestRenderAnnotationsKey(unittest.TestCase):
+    def test_render_annotations_key_sibling(self):
+        ann_key = atif_to_s3.render_annotations_key(_TRAJ_KEY)
+        # Leaf swap only: trajectory.redacted.json -> annotations.json.
+        self.assertEqual(
+            ann_key,
+            f"trajectories/v1/{_ORG_HASH}/auth0|user123/driver-sdlc-plugin/"
+            f"agent-session-capture/{SID_1}/annotations.json")
+        # The sibling shares the trajectory's EXACT prefix (the whole point of
+        # DEC-030 -- the object lives where the ledger says the trajectory does).
+        self.assertEqual(ann_key.rsplit("/", 1)[0], _TRAJ_KEY.rsplit("/", 1)[0])
+        # A key whose leaf is not the fixed trajectory leaf is rejected -- the
+        # only traversal surface left (the key comes from the ledger, not input).
+        for bad in (
+            f"trajectories/v1/{_ORG_HASH}/auth0|user123/cb/br/{SID_1}/annotations.json",
+            f"trajectories/v1/{_ORG_HASH}/auth0|user123/cb/br/{SID_1}/trajectory.json",
+            "trajectory.redacted.json",   # no prefix at all
+            "",
+        ):
+            with self.assertRaises(ValueError, msg=bad):
+                atif_to_s3.render_annotations_key(bad)
+
+
+class TestAnnotationsLedgerRow(unittest.TestCase):
+    def test_annotations_ledger_row_shape(self):
+        row = atif_to_s3.annotations_ledger_row(
+            "trajectories/v1/h/p/cb/br/sid/annotations.json",
+            "ann-sha-abc", "etag-1", "2026-07-09T00:00:00Z")
+        # A pure constructor: EXACTLY these four keys, values passed through.
+        self.assertEqual(
+            row,
+            {"s3_key": "trajectories/v1/h/p/cb/br/sid/annotations.json",
+             "annotations_sha": "ann-sha-abc", "etag": "etag-1",
+             "updated_at": "2026-07-09T00:00:00Z"})
+        self.assertEqual(set(row.keys()),
+                         {"s3_key", "annotations_sha", "etag", "updated_at"})
+
+
+class TestPlanAnnotationsUpload(unittest.TestCase):
+    # The annotations planner reads codebase/branch off the entry directly
+    # (identity-free metadata, sanitized like the trajectory's -- DEC-068).
+    ENTRY = {"codebase": "driver-sdlc-plugin",
+             "branch": "eric/agent-session-capture"}
+
+    def _traj_ledger(self):
+        return {SID_1: {"s3_key": _TRAJ_KEY, "etag": "e", "synced_at": "t",
+                        "artifact_sha256": "traj-sha"}}
+
+    def test_plan_annotations_upload_lww(self):
+        traj_ledger = self._traj_ledger()
+        ann_key = atif_to_s3.render_annotations_key(_TRAJ_KEY)
+
+        # Unchanged sha (annotations ledger already records this exact sha) -> a
+        # no-op decision (no re-upload of identical bytes). This LWW/no-op logic
+        # is the PLANNER's, never the row constructor's.
+        ann_ledger = {SID_1: {"s3_key": ann_key, "annotations_sha": "ann-sha-1",
+                              "etag": "ae", "updated_at": "t"}}
+        plan = atif_to_s3.plan_annotations_upload(
+            session_id=SID_1, trajectory_ledger=traj_ledger,
+            annotations_ledger=ann_ledger, annotations_sha="ann-sha-1",
+            entry=self.ENTRY)
+        self.assertEqual(plan["action"], "noop")
+        self.assertEqual(plan["s3_key"], ann_key)
+        self.assertIsNone(plan["reason"])
+        self.assertIsNone(plan["metadata"])
+
+        # Changed sha -> the row must UPDATE (upload planned), NOT be rejected as
+        # a DEC-008 re-sync violation (that one-shot rule is the trajectory's).
+        plan = atif_to_s3.plan_annotations_upload(
+            session_id=SID_1, trajectory_ledger=traj_ledger,
+            annotations_ledger=ann_ledger, annotations_sha="ann-sha-2",
+            entry=self.ENTRY)
+        self.assertEqual(plan["action"], "upload")
+        self.assertIsNone(plan["reason"])
+        self.assertEqual(plan["s3_key"], ann_key)
+        # Identity-free metadata, sanitized like the trajectory's (DEC-068).
+        md = plan["metadata"]
+        self.assertEqual(md["session-id"], SID_1)
+        self.assertEqual(md["codebase"], "driver-sdlc-plugin")
+        self.assertEqual(md["branch"], "agent-session-capture")  # owner stripped
+        self.assertEqual(md["content-kind"], "annotations")
+        self.assertEqual(md["schema-version"], "1")
+        blob = json.dumps(md)
+        for forbidden in ("auth0", "org_ABC123", "eric"):
+            self.assertNotIn(forbidden, blob)
+
+        # First-ever annotations upload (no annotations ledger row) -> upload too.
+        plan = atif_to_s3.plan_annotations_upload(
+            session_id=SID_1, trajectory_ledger=traj_ledger,
+            annotations_ledger={}, annotations_sha="ann-sha-1", entry=self.ENTRY)
+        self.assertEqual(plan["action"], "upload")
+        self.assertEqual(plan["s3_key"], ann_key)
+
+    def test_plan_annotations_upload_gated_on_synced(self):
+        traj_ledger = self._traj_ledger()
+
+        # No trajectory ledger row -> refused with a reason (no orphan annotation
+        # object -- a row implies the trajectory object is in S3; DEC-034).
+        plan = atif_to_s3.plan_annotations_upload(
+            session_id=SID_2, trajectory_ledger=traj_ledger,
+            annotations_ledger={}, annotations_sha="ann-sha", entry=self.ENTRY)
+        self.assertEqual(plan["action"], "refuse")
+        self.assertTrue(plan["reason"])
+        self.assertIsNone(plan["s3_key"])
+        self.assertIsNone(plan["metadata"])
+
+        # A trajectory row present with a DRIFTED artifact sha (a re-rolled
+        # session) STILL passes -- the gate is row-exists, NOT is_synced. The
+        # planner takes no artifact-sha argument at all, so a drifted/absent local
+        # sha can never refuse (a strict is_synced would wrongly refuse here).
+        plan = atif_to_s3.plan_annotations_upload(
+            session_id=SID_1, trajectory_ledger=traj_ledger,
+            annotations_ledger={}, annotations_sha="ann-sha", entry=self.ENTRY)
+        self.assertEqual(plan["action"], "upload")
+        self.assertEqual(plan["s3_key"],
+                         atif_to_s3.render_annotations_key(_TRAJ_KEY))
+
+        # A malformed trajectory row (no s3_key) is treated as no row -> refused
+        # (a row without a key can't derive a sibling; no orphan possible).
+        plan = atif_to_s3.plan_annotations_upload(
+            session_id=SID_1, trajectory_ledger={SID_1: {"etag": "e"}},
+            annotations_ledger={}, annotations_sha="ann-sha", entry=self.ENTRY)
+        self.assertEqual(plan["action"], "refuse")
+
+
+# ===========================================================================
 # Imperative-shell / I/O tests (Task 3).
 #
 # These exercise the shell edge with REAL files in tmp dirs (never a mock of the
