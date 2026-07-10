@@ -40,7 +40,7 @@ from cc_to_atif_core import flatten_content  # shared ContentPart-list -> text
 DEFAULT_REPO = "https://github.com/driver-ai/ATIF-trajectory-viewer"
 # Pin so a clone-on-demand stays reproducible. Bump deliberately, always to a
 # merged fork-main SHA (never a branch tip).
-DEFAULT_PIN = "1c954d5aa10d14f8e4d7d08f76b66011af1cdcfe"
+DEFAULT_PIN = "7b0306c057d190359775d1f1a56a57e43d28c52e"
 DEFAULT_VIEWER_DIR = os.path.expanduser("~/.driver/viewer")
 DEFAULT_PORT = 5273  # 5173 collides with local Opik; use a dedicated port.
 
