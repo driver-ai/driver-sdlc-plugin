@@ -361,7 +361,7 @@ def scan_note_pii(doc: dict) -> dict:
     render_trace.scan walks a TRAJECTORY dict (steps[].message), so each text is
     wrapped as its own synthetic step — one step per text, so scan's value@location
     dedup cannot under-count a value repeated across notes. Counts only: the
-    findings' snippet/where fields never leave this function (DEC-071 lineage)."""
+    findings' snippet/where fields never leave this function (capture-s3-sync DEC-071 lineage)."""
     texts = [lbl.get("note") for lbl in doc.get("stepLabels", [])]
     texts += [lbl.get("note") for lbl in doc.get("runLabels", [])]
     texts += list(doc.get("tags", []))

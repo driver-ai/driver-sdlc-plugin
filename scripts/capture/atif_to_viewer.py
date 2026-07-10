@@ -134,7 +134,7 @@ def curate_metadata(s: dict) -> dict | None:
     """Pure: allow-listed, scrubbed per-step metadata for the Details tab. Never
     passes raw `extra` through -- only enumerated safe keys, each read from its REAL
     home (llm_call_count is step-top-level; service_tier + the cache breakdown live
-    under metrics.extra -- capture-viewer DEC-071 lineage)."""
+    under metrics.extra -- capture-s3-sync DEC-071 lineage)."""
     md: dict = {}
     for k in _META_ALLOW_TOP:
         v = s.get(k)

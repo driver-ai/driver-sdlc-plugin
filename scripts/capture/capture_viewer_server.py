@@ -299,7 +299,7 @@ class ViewerRequestHandler(http.server.SimpleHTTPRequestHandler):
         doc = read_annotations(
             capture_store_core.annotations_path_for(self.ctx.base_dir, sid), sid)
         # Counts only -- the findings' snippet/where fields never leave
-        # scan_note_pii (capture-viewer DEC-031/DEC-071 lineage).
+        # scan_note_pii (capture-viewer DEC-031 / capture-s3-sync DEC-071 lineage).
         self._send_json(200, {"session_id": sid,
                               "by_type": atif_to_s3.scan_note_pii(doc)})
 
