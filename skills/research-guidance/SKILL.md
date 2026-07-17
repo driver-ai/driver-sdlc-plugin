@@ -152,11 +152,11 @@ The user can identify potential overlaps based on their knowledge of this featur
 
 ## Step 2: Resolve Codebase Standards
 
-**Why a separate step**: This step reads the codebase's standards documents directly because `gather_task_context` (Step 3) synthesizes conventions from its pre-computed documentation, which may paraphrase or omit specific rules. The raw CLAUDE.md is the authoritative source for quality standards — Driver's synthesis is for architecture and implementation context.
+**Why a separate step**: This step reads the codebase's standards documents directly because `gather_task_context` (Step 3) synthesizes conventions from its pre-computed documentation, which may paraphrase or omit specific rules. The native instruction file (`AGENTS.md` in Codex or `CLAUDE.md` in Claude Code) is the authoritative source for quality standards — Driver's synthesis is for architecture and implementation context.
 
 **Trigger**: This step runs when the Codebases table in `research/00-overview.md` has at least one entry with a Local Path filled in. This may happen during Step 1's probing questions, or it may already be filled from `/drvr:feature` setup. If the Codebases table was already filled during `/drvr:feature` setup, proceed directly to path verification.
 
-**Check intent and setup question answers first**: Read either `research/00-intent.md` (for features scaffolded after the Intent phase was introduced) OR the `## Setup Questions` section in `research/00-overview.md` (for legacy features scaffolded before Intent). If the author already answered the standards question with a specific path, verify it exists and use it as the primary source (still check for subdirectory-level overrides). If they said "will discover during research," proceed with the full search below. If they said "none" or equivalent, do a quick check (CLAUDE.md at repo root only) to confirm, then accept their answer — don't ask again.
+**Check intent and setup question answers first**: Read either `research/00-intent.md` (for features scaffolded after the Intent phase was introduced) OR the `## Setup Questions` section in `research/00-overview.md` (for legacy features scaffolded before Intent). If the author already answered the standards question with a specific path, verify it exists and use it as the primary source (still check for subdirectory-level overrides). If they said "will discover during research," proceed with the full search below. If they said "none" or equivalent, do a quick check for `AGENTS.md` and `CLAUDE.md` at the repo root to confirm, then accept their answer — don't ask again.
 
 ### Path Verification
 
@@ -166,16 +166,17 @@ For each codebase in the Codebases table, verify the Local Path exists on disk. 
 
 Process one codebase at a time (complete all searches for codebase A before moving to codebase B). For each codebase in the Codebases table, search for standards docs relative to the local path:
 
-- `<local-path>/CLAUDE.md`
-- `<local-path>/<subdirectory>/CLAUDE.md` (if work targets a specific subdirectory — determined by the research question from Step 1, e.g., "the backend API" → look in the backend subdirectory. If no specific subdirectory is mentioned, search only at the repo root level)
+- `<local-path>/AGENTS.md` (Codex) or `<local-path>/CLAUDE.md` (Claude Code)
+- `<local-path>/<subdirectory>/AGENTS.md` or `<local-path>/<subdirectory>/CLAUDE.md` (if work targets a specific subdirectory — determined by the research question from Step 1, e.g., "the backend API" → look in the backend subdirectory. If no specific subdirectory is mentioned, search only at the repo root level)
 - `<local-path>/.claude/CLAUDE.md`
 - `<local-path>/.claude/rules/*.md` (note any filename-based activation patterns, e.g., `test-*.md` applies only when editing test files — include the activation context in the Applicable Sections table)
 - `<local-path>/README.md` (check for conventions/guidelines sections)
-- Walk up from the target subdirectory to repo root — when CLAUDE.md files exist at multiple levels, include all of them in the standards artifact. Note the hierarchy (repo-root vs. subdirectory) and that subdirectory rules take precedence on conflicts, matching Claude Code's native merge behavior
+- Walk up from the target subdirectory to repo root — when native instruction files exist at multiple levels, include all of them in the standards artifact. Note the hierarchy (repo-root vs. subdirectory) and that subdirectory rules take precedence on conflicts.
+- When both `AGENTS.md` and `CLAUDE.md` exist at the same level, prefer the file native to the active client and treat the other as supplementary. Preserve non-conflicting rules from both so a shared project behaves consistently.
 
-Only search for CLAUDE.md and README.md — other AI assistant config files (`.cursorrules`, `.windsurfrules`, etc.) are out of scope. This plugin targets Claude Code's native standards format.
+Only search for AGENTS.md, CLAUDE.md, and README.md — other AI assistant config files (`.cursorrules`, `.windsurfrules`, etc.) are out of scope.
 
-**Note on native file reading**: Reading standards documents at known paths (CLAUDE.md, README.md) is a direct file lookup, not a substitute for `gather_task_context`. The prohibition in Step 3 against native file-reading applies to broad codebase exploration for research context, not targeted reads of specific files at known paths.
+**Note on native file reading**: Reading standards documents at known paths (AGENTS.md, CLAUDE.md, README.md) is a direct file lookup, not a substitute for `gather_task_context`. The prohibition in Step 3 against native file-reading applies to broad codebase exploration for research context, not targeted reads of specific files at known paths.
 
 ### Handling Results
 
@@ -186,11 +187,11 @@ Only search for CLAUDE.md and README.md — other AI assistant config files (`.c
   2. Describe them verbally (capture as research artifact with "User-supplied" attribution)
   3. Proceed without standards constraints
 - **If user says none exist**: record in the research overview: "No codebase standards found. User confirmed none exist." No friction added.
-- **If user supplies standards**: flag as user-supplied, suggest committing a CLAUDE.md to the repo for future use
+- **If user supplies standards**: flag as user-supplied, suggest committing the active client's native instruction file (`AGENTS.md` or `CLAUDE.md`) to the repo for future use
 
 ### Authority Hierarchy
 
-The local CLAUDE.md read in this step is the authoritative source for coding standards. If `gather_task_context` (Step 3) later returns conventions or standards information that supplements this, note the supplement but do not overwrite CLAUDE.md content with Driver-synthesized conventions. Update the standards artifact only to add genuinely new information — not to replace what was read directly from CLAUDE.md.
+The local native instruction file read in this step is the authoritative source for coding standards. If `gather_task_context` (Step 3) later returns conventions or standards information that supplements this, note the supplement but do not overwrite native instructions with Driver-synthesized conventions. Update the standards artifact only to add genuinely new information — not to replace what was read directly.
 
 ### Multi-Codebase
 
@@ -207,7 +208,7 @@ Write to `research/NN-codebase-standards.md` with this template:
 
 | Codebase | Source | Path |
 |----------|--------|------|
-| <name> | CLAUDE.md | `<path>` |
+| <name> | AGENTS.md or CLAUDE.md | `<path>` |
 
 ## Applicable Sections
 
@@ -224,7 +225,7 @@ Write to `research/NN-codebase-standards.md` with this template:
 
 ## Full Standards Text
 
-<include the full text of ALL CLAUDE.md sections, clearly attributed. Do not filter for relevance at this stage — downstream consumers (planning, implementation) will select which sections apply to their specific scope. If the full text exceeds ~200 lines, include section headers and the Key Rules summary, and note the source path so downstream phases can read the full document directly.>
+<include the full text of ALL native instruction-file sections, clearly attributed. Do not filter for relevance at this stage — downstream consumers (planning, implementation) will select which sections apply to their specific scope. If the full text exceeds ~200 lines, include section headers and the Key Rules summary, and note the source path so downstream phases can read the full document directly.>
 ````
 
 All paths in the artifact must be absolute (not relative, not using `~`).
@@ -447,7 +448,7 @@ git add research/ FEATURE_LOG.md && git commit -m "chore: Research artifact — 
 - Split documents based on length rather than concept boundaries
 - Leave the overview out of date when research is finalized
 - Assume you know where the codebase is or what standards apply — if uncertain, ask the user
-- Skip standards resolution when the user has identified codebases — always search for CLAUDE.md
+- Skip standards resolution when the user has identified codebases — always search for AGENTS.md and CLAUDE.md
 - Trust Driver context without local validation — Driver shows committed state, not local uncommitted changes
 
 **DO:**
@@ -457,7 +458,7 @@ git add research/ FEATURE_LOG.md && git commit -m "chore: Research artifact — 
 - Spawn parallel subagents as concurrency wrappers for multiple `gather_task_context` calls
 - Ask lots of probing questions before and during research
 - Keep the overview current as an index of all research
-- Search for CLAUDE.md relative to each codebase path before gathering context
+- Search for AGENTS.md and CLAUDE.md relative to each codebase path before gathering context
 - When no standards are found, ask the user rather than proceeding silently
 - After gather_task_context returns, validate key files and branch locally before building on the findings
 
@@ -473,7 +474,7 @@ Before sending any response during research, verify:
 - [ ] **Driver context?** — Have I called `gather_task_context` where relevant?
 - [ ] **Overview current?** — Does `00-overview.md` reflect the latest findings and decisions?
 - [ ] **Feature log?** — Did I update `FEATURE_LOG.md` when creating new research docs?
-- [ ] **Standards resolved?** — Have I searched for CLAUDE.md at each codebase path? If not found, did I ask the user?
+- [ ] **Standards resolved?** — Have I searched for AGENTS.md and CLAUDE.md at each codebase path? If neither was found, did I ask the user?
 - [ ] **Core/shell decomposition surfaced?** — Has the "how" research named the pure-core functions/types and shell entry points for this feature, with a note on whether the surrounding code is already in core/shell shape?
 - [ ] **Local state validated?** — After gather_task_context, did I check branch, key file existence, and uncommitted changes locally?
 - [ ] **Decision log?** — Did I append to DECISIONS.md for significant decisions, rejected alternatives, or context shifts?

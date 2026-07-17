@@ -1,0 +1,44 @@
+{
+  "name": "drvr",
+  "version": "1.2.0",
+  "description": "Structured SDLC workflows for feature development with Driver MCP, Codex, and Claude Code",
+  "author": {
+    "name": "Driver AI",
+    "url": "https://driverai.com"
+  },
+  "homepage": "https://github.com/driver-ai/driver-sdlc-plugin",
+  "repository": "https://github.com/driver-ai/driver-sdlc-plugin",
+  "license": "MIT",
+  "keywords": [
+    "sdlc",
+    "planning",
+    "implementation",
+    "driver"
+  ],
+  "skills": "./skills/",
+  "mcpServers": {
+    "driver-mcp": {
+      "type": "http",
+      "url": "https://api.pod2.driverai.com/mcp/v1"
+    }
+  },
+  "interface": {
+    "displayName": "drvr",
+    "shortDescription": "Structured, plan-driven feature development",
+    "longDescription": "Guide features from intent and research through planning, implementation, review, and handoff with Driver MCP context.",
+    "developerName": "Driver AI",
+    "category": "Developer Tools",
+    "capabilities": [
+      "Read",
+      "Write",
+      "MCP"
+    ],
+    "websiteURL": "https://driverai.com",
+    "defaultPrompt": [
+      "Use drvr to set up an SDLC projects directory.",
+      "Use drvr to start a new feature project.",
+      "Use drvr to resume my current feature."
+    ],
+    "brandColor": "#5B5BD6"
+  }
+}

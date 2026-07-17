@@ -1,7 +1,7 @@
 {
   "name": "drvr",
-  "version": "1.1.0",
-  "description": "Structured SDLC workflow for feature development with Driver MCP and Claude Code",
+  "version": "1.2.0",
+  "description": "Structured SDLC workflow for feature development with Driver MCP, Codex, and Claude Code",
   "skills": [
     "./skills/intent-guidance",
     "./skills/research-guidance",

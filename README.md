@@ -1,6 +1,6 @@
-# drvr — SDLC Plugin for Claude Code
+# drvr — SDLC Plugin for Codex and Claude Code
 
-A Claude Code plugin that guides structured feature development through a full software development lifecycle. Features move through Research, Planning, Validation, Implementation, Review, and Handoff phases -- each supported by specialized skills, commands, and agents that keep work organized, traceable, and thorough.
+An AI coding plugin that guides structured feature development through a full software development lifecycle. Features move through Research, Planning, Validation, Implementation, Review, and Handoff phases -- each supported by specialized skills and workflows that keep work organized, traceable, and thorough. The repository packages native manifests for both Codex and Claude Code.
 
 ## What You Can Build
 
@@ -16,9 +16,9 @@ The plugin handles the structure so you can focus on the hard part: deciding wha
 
 ## Prerequisites
 
-- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) installed and configured
+- [Codex](https://developers.openai.com/codex/) or [Claude Code](https://docs.anthropic.com/en/docs/claude-code) installed and configured
 - A [Driver](https://driverai.com) account with your codebases onboarded
-- `python3` available in PATH — required for the laziness detector hook
+- `python3` available in PATH — required for Claude Code's laziness detector hook
 
 ## Installation
 
@@ -27,6 +27,20 @@ Clone the repository:
 ```bash
 git clone https://github.com/driver-ai/driver-sdlc-plugin.git
 ```
+
+### Codex
+
+Add the repository as a marketplace, then install the plugin:
+
+```bash
+codex plugin marketplace add driver-ai/driver-sdlc-plugin
+codex plugin add drvr@drvr
+```
+
+Start a new Codex session after installation. Invoke the compatibility skill with `@drvr`, or ask
+for a workflow naturally, such as "Use drvr to set up my projects directory."
+
+### Claude Code
 
 Add the plugin as a marketplace source, then install:
 
@@ -43,7 +57,12 @@ claude --plugin-dir /path/to/driver-sdlc-plugin --permission-mode auto
 
 ## Getting Started
 
-> **Note:** This plugin orchestrates many tools, agents, and file operations across its lifecycle phases. For the best experience, run Claude Code with `--permission-mode auto`, which approves routine tool calls automatically while still flagging unusual operations:
+In Codex, invoke `@drvr` and ask it to set up a projects directory. The setup workflow creates or
+audits Codex's native `AGENTS.md` instructions. Equivalent examples throughout this README use the
+Claude-style `/drvr:<workflow>` aliases; when typed in Codex, the `drvr` skill routes them to the
+same workflow.
+
+> **Claude Code note:** This plugin orchestrates many tools, agents, and file operations across its lifecycle phases. For the best experience, run Claude Code with `--permission-mode auto`, which approves routine tool calls automatically while still flagging unusual operations:
 >
 > ```bash
 > claude --permission-mode auto
@@ -51,22 +70,22 @@ claude --plugin-dir /path/to/driver-sdlc-plugin --permission-mode auto
 >
 > See the [Claude Code permissions documentation](https://docs.anthropic.com/en/docs/claude-code/security) for details on permission modes.
 
-After installing the plugin, run `/drvr:setup` to configure your projects directory. It handles everything: creating the directory structure, generating CLAUDE.md, configuring the Driver MCP server, and verifying connectivity.
+After installing the plugin, run `/drvr:setup` in Claude Code or ask `@drvr` to set up the directory in Codex. It handles everything: creating the directory structure, generating native project instructions, configuring the Driver MCP server, and verifying connectivity.
 
 ### New Team / Solo Developer
 
-1. Open Claude Code with `--permission-mode auto`
-2. Run `/drvr:setup` — it will guide you through creating a projects directory with all required configuration
+1. Open Codex, or open Claude Code with `--permission-mode auto`
+2. Ask `@drvr` to set up a projects directory, or run `/drvr:setup` in Claude Code
 
 ### Joining an Existing Team
 
 1. Clone your team's projects repo: `git clone <team-repo-url>`
-2. Open Claude Code in the cloned directory with `--permission-mode auto`
-3. Run `/drvr:setup` — it will verify your configuration and fill any gaps
+2. Open Codex, or open Claude Code in the cloned directory with `--permission-mode auto`
+3. Ask `@drvr` to run setup, or run `/drvr:setup` in Claude Code — it will verify your configuration and fill any gaps
 
 You can also pass a clone URL directly: `/drvr:setup git@github.com:my-org/my-team-sdlc.git`
 
-> **Note:** `/drvr:setup` is idempotent — safe to re-run at any time. It also creates `.mcp.json` locally (gitignored, since it may contain API keys), so each team member needs to run `/drvr:setup` on their own machine.
+> **Note:** setup is idempotent — safe to re-run at any time. It also creates `.mcp.json` locally (gitignored, since it may contain API keys), so each team member needs to run setup on their own machine.
 
 ### Verify
 
@@ -305,7 +324,9 @@ Skills activate automatically based on the current SDLC phase or trigger phrases
 
 ## Agents
 
-Agents are specialized workers that run in isolated context. They are spawned by skills or commands -- you can also invoke them directly via the Agent tool.
+Agents are specialized workers that run in isolated context. Claude Code registers them directly;
+in Codex, the `drvr` compatibility skill reads the same agent instructions and delegates to Codex
+sub-agents when a workflow calls for them.
 
 | Agent | What It Does |
 |-------|-------------|
@@ -322,7 +343,9 @@ Agents are specialized workers that run in isolated context. They are spawned by
 
 ## Hooks
 
-Hooks are automatically registered when the plugin is installed via `hooks/hooks.json` — no manual configuration needed.
+The hooks in `hooks/hooks.json` use Claude Code's hook schema and are automatically registered by
+Claude Code. They are intentionally not registered by the Codex manifest. The SDLC skills and
+workflows work in Codex, but the hook-only safeguards below do not run automatically there.
 
 ### laziness-detector (PreToolUse)
 
@@ -336,7 +359,7 @@ Tracks which skills are loaded during a session by appending skill names to a se
 
 Auto-commits uncommitted SDLC artifacts (research docs, plans, implementation logs, feature logs) when a Claude Code session ends. Acts as a safety net to prevent artifact loss from session crashes or forgotten commits. Scans all feature directories for uncommitted `.md` files in artifact directories and commits them with a descriptive message. Follows the fail-open pattern — never blocks session termination.
 
-All hooks resolve their configuration via the `CLAUDE_PLUGIN_ROOT` environment variable (set by Claude Code) with a fallback to relative path resolution for backward compatibility. They follow a fail-open pattern — errors never block user operations.
+In Claude Code, all hooks resolve their configuration via the `CLAUDE_PLUGIN_ROOT` environment variable with a fallback to relative path resolution for backward compatibility. They follow a fail-open pattern — errors never block user operations.
 
 ## Friction Tracking
 
@@ -351,14 +374,14 @@ Observational friction logging -- detects wrong-tool usage, wrong-path edits, an
 
 There are two levels of customization:
 
-- **Team standards** (recommended): Edit the `CLAUDE.md` in your projects repo (generated by `/drvr:setup`) to add coding standards, naming conventions, testing strategy, and engineering guidelines. The plugin discovers and enforces these during research, planning, and implementation.
+- **Team standards** (recommended): Edit `AGENTS.md` for Codex or `CLAUDE.md` for Claude Code in your projects repo to add coding standards, naming conventions, testing strategy, and engineering guidelines. The plugin discovers both formats during research, planning, and implementation.
 - **Plugin behavior**: Fork the plugin to customize hooks, skill trigger phrases, or agent model preferences in agent markdown frontmatter.
 
 ## Troubleshooting
 
 **MCP connection failures**
 - Run `/drvr:setup` -- it verifies MCP connectivity and reports issues
-- Verify your Driver API token is valid and configured in Claude Code
+- Verify your Driver API token is valid and configured in your active client
 - Check network connectivity to Driver's API
 - Confirm your codebases are onboarded in Driver -- use `get_codebase_names` to verify
 - The MCP server **must** be named `driver-mcp` -- all plugin agents reference tools using the `mcp__driver-mcp__` prefix. Using a different name will cause agent failures.
@@ -382,7 +405,8 @@ There are two levels of customization:
 - **Large Driver responses should go through the agent.** Calling Driver MCP directly for architecture overviews or onboarding guides can consume significant context. Route these through `driver-task-context` instead.
 - **Plans are the source of truth during implementation.** The drvr plugin enforces plan-driven development. Deviations are tracked, not prevented, but they must be reviewed before bookkeeping proceeds.
 - **The laziness detector skips test files.** Patterns like TODO and NotImplementedError in test files are intentionally allowed.
+- **Claude hooks are not active in Codex.** Laziness detection, friction tracking, and session-end artifact commits currently remain Claude Code-only.
 - **`.mcp.json` is gitignored.** It may contain API keys, so `/drvr:setup` creates it locally but does not commit it. Each team member needs to run `/drvr:setup` on their own machine to get their local `.mcp.json`.
-- **Select the correct command when multiple plugins are installed.** For example, typing `/drvr:feature` in Claude Code may match commands from other plugins — make sure to select the one with the full name `drvr:feature` in the list below. Here's a screenshot that shows an example:
+- **Select the correct command when multiple plugins are installed.** In Codex, invoke `@drvr`; in Claude Code, make sure to select the fully qualified `drvr:<command>`. Here's a Claude Code example:
 
 ![Command selection](docs/images/command_selection.png)

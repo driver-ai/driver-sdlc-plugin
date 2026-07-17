@@ -1,5 +1,8 @@
 {
   "name": "drvr",
+  "interface": {
+    "displayName": "Driver AI"
+  },
   "owner": {
     "name": "Driver AI"
   },
@@ -7,9 +10,14 @@
     {
       "name": "drvr",
       "source": "./",
-      "description": "Structured SDLC workflow for feature development with Driver MCP and Claude Code",
+      "description": "Structured SDLC workflow for feature development with Driver MCP, Codex, and Claude Code",
       "homepage": "https://github.com/driver-ai/driver-sdlc-plugin",
-      "repository": "https://github.com/driver-ai/driver-sdlc-plugin"
+      "repository": "https://github.com/driver-ai/driver-sdlc-plugin",
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
     }
   ]
 }
