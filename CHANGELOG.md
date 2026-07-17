@@ -4,6 +4,21 @@ All notable changes to the Driver SDLC Plugin (drvr) will be documented in this 
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.2.0] - 2026-07-16
+
+### Added
+
+- **Codex**: Native `.codex-plugin/plugin.json` manifest with Driver MCP configuration and install-surface metadata
+- **Codex**: `drvr` compatibility skill that routes existing command workflows and translates agent delegation for Codex
+- **Codex**: `AGENTS.md` projects template for native repository instructions
+- **Tests**: Structural coverage for the Codex manifest, workflow router, marketplace policy, and project template
+
+### Changed
+
+- **Research**: Codebase standards discovery now supports both `AGENTS.md` and `CLAUDE.md`
+- **Marketplace**: Added Codex-compatible display metadata and installation policy
+- **Documentation**: Added Codex installation, invocation, and platform-specific hook guidance
+
 ## [1.1.0] - 2026-05-14
 
 ### Added
