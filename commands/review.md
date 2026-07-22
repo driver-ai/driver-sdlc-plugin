@@ -6,10 +6,11 @@ allowed-tools: Read, Write, Edit, Bash, Glob, Grep, Agent
 
 # /drvr:review Command
 
-Run an internal standards review after assessment and before opening a PR. This command delegates to the [standards-review](../agents/standards-review.md) agent, which checks two layers of standards:
+Run an internal standards review after assessment and before opening a PR. This command delegates to the [standards-review](../agents/standards-review.md) agent, which checks these layers of standards:
 
 1. **§FCIS — functional core / imperative shell** (plugin commitment, always runs)
-2. **Codebase-specific standards** (only if a standards artifact exists from research)
+2. **§self-standing — code stands on its own** (plugin commitment, always runs): comments explain the non-obvious *why*, never reference SDLC/process artifacts (task numbers, deviation/decision IDs, plan/gap names)
+3. **Codebase-specific standards** (only if a standards artifact exists from research)
 
 It also verifies acceptance criteria from plans are met and confirms test coverage. Standards violations can be auto-fixed; unmet criteria and missing tests are presented as manual action items.
 

@@ -75,6 +75,16 @@ All §FCIS rows are reported under the `§FCIS` standard identifier in the outpu
 
 Codebase standards layer on top of the §FCIS findings; they do not override them.
 
+### Step 2c: Comment Self-Sufficiency (always runs)
+
+The code must stand on its own — someone reading only the source, with no access to the plan or any process artifact, should be able to understand it. This check runs regardless of whether a per-codebase standards artifact exists. Report rows under the `§self-standing` standard identifier.
+
+1. Filter the changed files to **source and test files**.
+2. For each file, scan comments and docstrings for:
+   - **Process references** — task numbers (`Task 3`), deviation or decision IDs (`D003`, `DEC-005`), plan names, dry-run gap numbers, or acceptance-criteria IDs. Any such reference: FAIL with line number. Proposed fix: replace with the actual reason in plain terms, or delete the comment if the code is self-evident.
+   - **How-not-why comments** — a comment that merely restates what the adjacent code does (`// increment i by one`). FAIL with line number. Proposed fix: delete.
+3. A comment that explains a non-obvious **why** — a subtle design decision, a workaround, or a deviation from a normal standard, stated in plain terms — is PASS. A justified-mock comment naming its real reason (external / expensive / non-deterministic / absent) is PASS, not a violation.
+
 ### Step 3: Acceptance Criteria Check
 
 1. Read each plan's `## Acceptance Criteria` section.
@@ -101,11 +111,12 @@ Produce a structured markdown report with three sections:
 
 #### Standards Compliance
 
-The table includes both `§FCIS` rows (always present, from Step 2a) and codebase-standards rows (from Step 2b, if a standards artifact was supplied). Status is PASS, FAIL, or N/A.
+The table includes `§FCIS` rows (always present, from Step 2a), `§self-standing` rows (always present, from Step 2c), and codebase-standards rows (from Step 2b, if a standards artifact was supplied). Status is PASS, FAIL, or N/A.
 
 | File | Standard | Status | Detail | Proposed Fix |
 |------|----------|--------|--------|-------------|
 | `src/checkout.py` | §FCIS | FAIL | Line 18: `compute_total` is classified as core but calls `db.fetch_items()` | Extract DB read into shell wrapper; pass items as a list to `compute_total` |
+| `src/queue.py` | §self-standing | FAIL | Line 30: comment `# see D003 for rationale` references a deviation ID | Replace with the reason itself (e.g. `# retry with backoff — upstream returns 429 under burst`) or delete |
 | `src/api.py` | §FCIS | FAIL | Line 47: `handle_login` (shell) contains password-hashing logic | Extract `verify_password(hash, candidate) -> bool` as a pure-core function |
 | `tests/test_pricing.py` | §FCIS | FAIL | Line 12: mocks internal `PricingRepository` with no justification | Extract pure-core `calculate_price(items, coupon)` and assert values in / values out against it; delete the mock-based test |
 | `src/routes.py` | §FCIS | N/A | Shell-only plan, routing dispatch — branching IS the feature | — |
@@ -140,7 +151,7 @@ The table includes both `§FCIS` rows (always present, from Step 2a) and codebas
 
 - Err on the side of reporting — surface potential issues rather than suppressing them.
 - Be specific with file paths and line numbers for every finding.
-- Only flag codebase standards that are clearly applicable to the file type under review. §FCIS applies to all source and test files in scope of the plan.
+- Only flag codebase standards that are clearly applicable to the file type under review. §FCIS and §self-standing apply to all source and test files in scope of the plan.
 - Propose concrete, actionable fixes — not generic suggestions. For §FCIS findings, fixes should name the extraction (which function to add, where I/O moves to, which test to rewrite).
 - When a standard is ambiguous about applicability, note the ambiguity in the Detail column.
 
