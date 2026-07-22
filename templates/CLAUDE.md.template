@@ -1,4 +1,4 @@
-<!-- drvr:template-version:1.1.0 -->
+<!-- drvr:template-version:1.2.0 -->
 # {{TEAM_NAME}} — SDLC Project Instructions
 
 This repository organizes development work by feature, with each feature containing its own lifecycle of artifacts. It is managed by the [Driver SDLC Plugin (drvr)](https://github.com/driver-ai/driver-sdlc-plugin) for Claude Code.
@@ -16,31 +16,47 @@ This repository organizes development work by feature, with each feature contain
 │   └── <feature-name>/
 │       ├── FEATURE_LOG.md   # Lifecycle state — the source of truth
 │       ├── research/        # Problem exploration and design decisions
-│       ├── plans/           # Implementation plans
-│       │   ├── 00-overview.md  # Multi-plan overview (when needed)
+│       ├── plans/           # Implementation plans (one plan = one PR)
+│       │   ├── 00-overview.md  # Multi-plan overview, dependency graph, PR stack
 │       │   └── NN-plan-name/   # Directory named after plan file (sans .md)
 │       │       └── tasks/      # Materialized task documents
 │       │           └── NN-task-name.md
 │       ├── dry-runs/        # Plan validation results
 │       ├── implementation/  # Implementation logs per plan
-│       ├── assessment/      # Test suite curation results
+│       ├── assessment/      # Per-plan test curation results (<plan>-test-curation.md)
 │       ├── tests/           # Markdown test plans (optional)
 │       │   └── results/     # Timestamped test results
-│       └── driver-docs/     # Handoff documentation
+│       └── driver-docs/     # Handoff documentation — centralized, per-plan
+│           ├── 00-feature-overview.md   # Cross-plan rollup (updated as plans ship)
+│           └── <plan>/                  # Self-contained PR documentation per plan
+│               ├── feature-overview.md
+│               ├── architecture.md
+│               ├── testing-guide.md
+│               └── risk-assessment.md
 ```
 
 | Folder | Purpose | When Created |
 |--------|---------|-------------|
 | `FEATURE_LOG.md` | Source of truth for lifecycle state | `/drvr:feature` scaffolding |
 | `research/` | Problem statements, explorations, trade-off analysis | `/drvr:feature` scaffolding |
-| `plans/` | Implementation plans with concrete steps | Planning phase |
+| `plans/` | Implementation plans with concrete steps (one plan = one PR) | Planning phase |
 | `dry-runs/` | Plan validation results with gap analysis | `/drvr:dry-run-plan` |
 | `implementation/` | Implementation logs tracking deviations per plan | Implementation phase |
-| `assessment/` | Test suite curation results | `/drvr:assess` |
+| `assessment/` | Per-plan test suite curation results | `/drvr:assess <plan>` |
 | `tests/` | Markdown test plans executed by LLM agents | When manual testing is needed |
-| `driver-docs/` | Handoff documentation | `/drvr:docs-artifacts` |
+| `driver-docs/` | Handoff documentation (per-plan PR docs + cross-plan rollup) | `/drvr:docs-artifacts <plan>` |
 
 Use `/drvr:feature <name>` to scaffold a new feature project. Use `/drvr:orchestrate <feature-path>` to resume an existing feature.
+
+### One Plan = One PR (DAG of Bases)
+
+Each plan ships as its own pull request. The "stack" of PRs is a **DAG of base relationships**, not a linear chain — each plan's Base Branch is derived from that plan's `depends_on`:
+
+- **No upstream dependencies** (`depends_on: []`) → Base Branch is the feature parent (e.g., `main`). The PR targets the feature parent directly.
+- **One upstream dependency** → Base Branch is the upstream plan's Feature Branch. The PR is stacked on that upstream PR.
+- **Multiple upstream dependencies** → pick one as the branch parent (typically the latest in DAG order); the others are satisfied semantically (interface contracts) without driving the branch.
+
+Independent plans produce **parallel PRs** targeting the feature parent; dependent plans produce **stacked PRs**. The PR Stack table in `plans/00-overview.md` records the actual base relationships. Per-plan branches are generated from the feature's Branch Prefix (default `<prefix>/<NN-plan-slug>`) and may be overridden during planning.
 
 ---
 
@@ -66,21 +82,34 @@ updated: "YYYY-MM-DD"
 - `task`: `plan` (parent plan name), `task_number` (sequential position, integer), `kind` (`core`, `shell`, or `both`), `depends_on` (list of task paths), `materialized_at` (ISO 8601 timestamp)
 - `decision`: `topic`, `choice`
 - `deviation`: `severity` (low/medium/high), `task` (source task)
-- `plan`: `depends_on`, `blocks` (for dependency graph resolution)
+- `plan`: `depends_on`, `blocks` (for dependency graph resolution), `approved_at`, `approved_by`
 
 ---
 
 ## SDLC Lifecycle
 
-Features follow a phased development lifecycle. Each phase has a dedicated skill that provides guidance.
+Features follow a phased development lifecycle. Each phase has a dedicated skill or command that provides guidance.
+
+The per-plan PR gate runs **once per plan**, not once per feature: after each plan's implementation and bookkeeping, that plan must be assessed, documented, and opened as a PR before work begins on the next plan. This keeps every PR self-contained and reviewable in isolation.
 
 ```
-/drvr:feature --> Intent --> Research --> Planning --> Validation --> Materialization --> Implementation --> Review --> Bookkeeping --> Next Plan --> ...
-                                                                                                                                                 |
-                                                                                                                                    All plans complete
-                                                                                                                                                 |
-                                                                                                                                                 v
-                                                                                                                       /drvr:assess --> [/drvr:review] --> /drvr:docs-artifacts --> /drvr:open-pr --> PR Review <--> Revision --> Merge --> Verification --> Shipped
+/drvr:feature --> Intent --> Research --> Planning ┐
+                                                   │
+   ┌───────────────────────────────────────────────┘
+   │
+   ▼
+   For each plan in dependency order:
+     Validation --> Materialization --> Implementation --> Review --> Bookkeeping
+       │
+       ▼
+     Per-plan PR gate (REQUIRED before starting next plan):
+       /drvr:assess <plan> --> [/drvr:review <plan>] --> /drvr:docs-artifacts <plan> --> /drvr:open-pr <plan>
+       │
+       ▼
+     PR Review <--> Revision --> Merge --> Verification --> Next plan
+   │
+   ▼
+   All plans shipped --> Feature Shipped
 ```
 
 ### Phase -> Skill Mapping
@@ -90,24 +119,27 @@ Features follow a phased development lifecycle. Each phase has a dedicated skill
 | Intent | `drvr:intent-guidance` | Mine the author's tacit knowledge and produce `research/00-intent.md` before codebase research |
 | Research | `drvr:research-guidance` | Why-What-How methodology, document organization, completion criteria |
 | Planning | `drvr:planning-guidance` | Functional-core / imperative-shell architecture, TDD-first task design, test strategy derived from architecture, task breakdown |
-| Validation | `/drvr:dry-run-plan` | Walk through plan as-if implementing, severity-classified gaps including core/shell boundary violations |
+| Validation | `/drvr:dry-run-plan` | Walk through a plan as-if implementing, severity-classified gaps including core/shell boundary violations |
 | Materialization | `drvr:materialize-tasks` | Convert plan tasks into standalone task docs carrying core/shell classification for sub-agent execution |
 | Implementation | `drvr:implementation-guidance` | Plan-driven task execution, deviation tracking (including "needs a mock" as boundary trigger), commit discipline |
 | Review | `drvr:sdlc-orchestration` | Present deviations for user approval before bookkeeping |
 | Bookkeeping | `drvr:implementation-guidance` | Update plan status, overview, cascade check |
-| Assessment | `/drvr:assess` | Curate test suite against the core/shell commitment — prune mock-heavy and implementation-detail tests, promote behavior coverage needing pure-core extraction |
-| Internal Review | `/drvr:review` | Review code against §FCIS and codebase standards, auto-fix codebase-standard violations |
-| Handoff | `/drvr:docs-artifacts` | Generate feature-overview, architecture, testing-guide, risk-assessment |
-| Open PR | `/drvr:open-pr` | Create PR from handoff docs via gh CLI |
-| PR Review | `drvr:sdlc-orchestration` | Track review status, suggest next steps |
-| Revision | `drvr:sdlc-orchestration` | Guide revision cycle |
-| Merge | `drvr:sdlc-orchestration` | Track merge, verify CI |
-| Verification | `drvr:sdlc-orchestration` | Advisory post-merge checks |
-| Shipped | `drvr:sdlc-orchestration` | Terminal — suggest retro |
+| Per-plan Assessment | `/drvr:assess <plan>` | Curate this plan's tests against the core/shell commitment — prune mock-heavy and implementation-detail tests, promote behavior coverage needing pure-core extraction |
+| Per-plan Internal Review | `/drvr:review <plan>` | Review this plan's code against §FCIS and codebase standards, auto-fix codebase-standard violations |
+| Per-plan Handoff | `/drvr:docs-artifacts <plan>` | Generate this plan's self-contained PR docs (feature-overview, architecture, testing-guide, risk-assessment) |
+| Per-plan Open PR | `/drvr:open-pr <plan>` | Create the plan's (stacked or parallel) PR via gh CLI |
+| Per-plan PR Review | `drvr:sdlc-orchestration` | Track this plan's PR review status, suggest next steps |
+| Per-plan Revision | `drvr:sdlc-orchestration` | Guide this plan's revision cycle |
+| Per-plan Merge | `drvr:sdlc-orchestration` | Track this plan's merge, verify CI |
+| Per-plan Verification | `drvr:sdlc-orchestration` | Advisory post-merge checks for this plan |
+| Next Plan | `drvr:sdlc-orchestration` | Transition to the next unblocked plan once the current plan's PR is open |
+| Shipped | `drvr:sdlc-orchestration` | Terminal — suggest retro after all plan PRs merge |
 
 ### Key Principles
 
 - **Functional core, imperative shell** — features produced through this plugin separate a pure logical core (functions taking values in and returning values out — no I/O, no time, no randomness, no mutable shared state) from a thin imperative shell that performs I/O and calls into the core. Pure-core code is unit-tested with values in / values out and no mocks; shell code is integration-tested against real I/O. A "unit test" that needs mocks is a signal the boundary is broken — fix the architecture, not the test. The plugin steers each new feature toward extracting a pure core even when the surrounding code isn't in this shape.
+- **One plan = one PR, stacked** — each plan ships on its own branch (independent plans in parallel off the feature parent; dependent plans stacked on their upstream). The per-plan PR gate (assess → docs → open-pr) runs after each plan's bookkeeping, before the next plan starts.
+- **Each PR must stand alone** — the PR body comes from `driver-docs/<plan>/` and includes feature context, this plan's purpose, architecture, test plan, risks, and stack position. A reviewer who hasn't seen the rest of the stack should be able to evaluate the change.
 - **User controls all decisions** — skills suggest, the user decides. No auto-fixing, no silent bookkeeping.
 - **Deviations are reviewed** — after implementation, deviations are presented for approval before bookkeeping.
 - **Plans are the source of truth** — implementation builds exactly what the plan specifies, nothing more.
@@ -123,9 +155,11 @@ Features follow a phased development lifecycle. Each phase has a dedicated skill
 | `/drvr:feature <name>` | Scaffold a new feature project with FEATURE_LOG.md |
 | `/drvr:orchestrate <path>` | Resume a feature — read log, report state, suggest next action |
 | `/drvr:dry-run-plan <plan>` | Walk through a plan to identify gaps before implementation |
-| `/drvr:assess` | Curate test suite after implementation — categorize, prune, promote |
-| `/drvr:review` | Run internal standards review — check code, verify criteria, auto-fix |
-| `/drvr:docs-artifacts` | Generate handoff documentation for code review |
+| `/drvr:assess <plan>` | Curate a plan's test suite — categorize, prune, promote |
+| `/drvr:review <plan>` | Run a plan's internal standards review — check code, verify criteria, auto-fix |
+| `/drvr:docs-artifacts <plan>` | Generate a plan's handoff documentation for code review |
+| `/drvr:open-pr <plan>` | Open the plan's pull request from its handoff documentation |
+| `/drvr:context <task>` | Gather codebase context for a specific task via Driver MCP |
 | `/drvr:retro` | Evaluate session quality, patterns, and improvements |
 
 ## Skills
@@ -152,9 +186,11 @@ Features follow a phased development lifecycle. Each phase has a dedicated skill
 
 ## Codebases
 
-| Codebase | Repo | Local Path | Base Branch | Feature Branch | Description |
-|----------|------|------------|-------------|----------------|-------------|
+| Codebase | Repo | Local Path | Base Branch | Branch Prefix | Description |
+|----------|------|------------|-------------|---------------|-------------|
 | _Add your codebases here_ | | | | | |
+
+The **Base Branch** is where each feature's Plan 01 branches from (and where PRs ultimately merge). The **Branch Prefix** is the convention used to generate per-plan branch names (e.g., prefix `<user>/oauth` produces `<user>/oauth/01-token-store`). There is no single "feature branch" — each plan gets its own.
 
 ---
 

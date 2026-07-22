@@ -169,7 +169,7 @@ Validate the codebase target from task docs' `## Codebase` section.
 
 - **2.1 Codebase root exists** — Read the codebase root path from any task doc. Verify the path exists on disk and is a directory. If not: BLOCK.
 - **2.2 Git repository check** — Verify the codebase root is a git repo: `git -C <root> rev-parse --is-inside-work-tree`. If not: WARN.
-- **2.3 Branch check** — Compare `git -C <root> branch --show-current` against the Feature Branch in the task doc's `## Codebase` section. If the task doc uses a single `**Branch**:` field (legacy format), compare against that. Mismatch: WARN. Detached HEAD: WARN.
+- **2.3 Branch check (per-plan)** — Compare `git -C <root> branch --show-current` against the Feature Branch in the task doc's `## Codebase` section (this plan's branch). If the task doc uses a single `**Branch**:` field (legacy format), compare against that. **Per-plan stacked-PR model**: each plan has its own Feature Branch, stacked off Base Branch. If the Feature Branch does not exist locally yet (`git -C <root> rev-parse --verify <branch>` fails), this is the first task on this plan — suggest: "Feature Branch `<branch>` does not exist locally. Create it off Base Branch `<base>`? (`git checkout <base> && git pull && git checkout -b <branch>`)". Mismatch with an existing branch: WARN, and report Base Branch from the task doc so the user can decide whether to create the missing branch off it. Detached HEAD: WARN.
 - **2.4 Uncommitted changes** — Run `git -C <root> status --short`. Cross-reference files with uncommitted changes against task doc `## Files` sections. Overlapping files: WARN per file. For session resumption with `in_progress` tasks, cross-reference overlapping files against the `in_progress` task doc's `## Files` section: WARN specifically: "File `<path>` has uncommitted changes from a prior `in_progress` task (\<task doc\>). These may be partial implementation artifacts. Review or discard before restarting this task."
 - **2.5 Codebase table consistency** — Read codebase path info from `plans/00-overview.md` `## Implementation Environment` (or `research/00-overview.md` `## Codebases` if no IE section exists). Compare the task doc's codebase root path against the recorded paths. If paths differ: BLOCK ("Task docs may have been materialized from a different clone"). Also compare the current working directory. If no matching entry found: INFO.
 - **2.6 Worktree readiness** — If the dependency graph has parallelizable tasks (from parallel execution group derivation): (1) **Branch mismatch escalation:** If pre-flight 2.3 detected a branch mismatch (current branch ≠ Feature Branch), escalate from WARN to BLOCK: "Worktree isolation requires the correct Feature Branch. Current branch `<actual>` does not match Feature Branch `<expected>`. Switch to the Feature Branch before running parallel tasks." (2) **Clean working directory:** Verify `git -C <root> status --short --untracked-files=no` shows no uncommitted changes to tracked files. Uncommitted changes: WARN. "Uncommitted changes detected. Worktree isolation requires a clean working directory. Commit or stash changes before parallel execution." (3) **Existing worktrees:** Check `git -C <root> worktree list`. If worktrees other than the main one exist: WARN. "Existing worktrees found. These may conflict with parallel execution."
@@ -449,15 +449,31 @@ git add implementation/log-<plan>.md FEATURE_LOG.md 2>/dev/null
 git commit -m "chore: Bookkeeping complete — plan <name>"
 ```
 
-#### 5.5: Transition Suggestion
+#### 5.5: Per-Plan PR Gate (REQUIRED before next plan)
 
-Use the overview's progress table and dependency graph to identify the next unblocked plan:
-- "Next unblocked plan is X. It has [a plan document / no plan document yet]."
-- Multiple unblocked: "Two plans are unblocked: X and Y."
+**Each plan ships as its own PR.** After bookkeeping, the plan must go through the per-plan PR gate before work begins on the next plan. The gate is sequential and each step depends on the previous:
+
+```
+Plan <name> complete (bookkeeping done)
+  → /drvr:assess <plan>           (per-plan test curation; writes assessment/<plan>-test-curation.md)
+  → [/drvr:review <plan>]         (optional — only if assessment found FAIL violations)
+  → /drvr:docs-artifacts <plan>   (writes driver-docs/<plan>/*; PR body content)
+  → /drvr:open-pr <plan>          (push Feature Branch, open PR with base = this plan's Base Branch — derived from depends_on)
+  → THEN next unblocked plan (independent plans can be worked in any order; dependent plans wait until their upstream branch exists)
+```
+
+State the gate explicitly to the user, naming the current plan:
+
+> "Plan `<plan>` bookkeeping complete. Per-plan PR gate is required before starting the next plan. Next step: `/drvr:assess <plan>` — curate this plan's tests. After that: `/drvr:docs-artifacts <plan>`, then `/drvr:open-pr <plan>` (PR will target `<Base Branch>` from this plan's Environment — `<feature parent>` if independent, or upstream plan's Feature Branch if dependent)."
+
+After the user runs `/drvr:open-pr <plan>` and the PR is created, use the overview's progress table and PR Stack to identify the next unblocked plan:
+
+- "Next unblocked plan is `<next>`. Its Base Branch is `<base>` (this plan's Feature Branch). It has [a plan document / no plan document yet]."
+- Multiple unblocked: "Two plans are unblocked: X and Y. Reminder: stacked PRs are linear — pick the next one in stack order, or surface the conflict if Y's Base Branch is X's Feature Branch."
 - None unblocked: "All dependencies for remaining plans are not yet complete."
-- All complete: "All plans complete. Run `/drvr:assess` to curate the test suite before handoff."
+- All plans through the PR gate: "All plans have open PRs. Track merge status and run `/drvr:retro` after the stack ships."
 
-This is informational — the user decides what to do.
+This is informational — the user decides what to do, but the gate sequence (assess → docs → open-pr) is required, not optional.
 
 ---
 
@@ -645,10 +661,12 @@ Task docs are the persistent source of truth for task state. The implementation 
 - Commit broken state
 - Implement things not in the plan ("while I'm here...")
 - Move to the next task with unresolved issues
-- Suggest moving to the next SDLC phase
+- Move to the next plan without running the per-plan PR gate (`/drvr:assess` → `/drvr:docs-artifacts` → `/drvr:open-pr`) for the just-completed plan
 - Skip post-implementation bookkeeping
+- Prune scaffolding tests during implementation — that's the per-plan `/drvr:assess` step's job, after bookkeeping
 - Mix bookkeeping commits with implementation commits
 - Omit the Code Quality Standards section from subagent prompts when a standards artifact exists
+- Open a PR for the wrong base — each plan's PR targets the Base Branch from its own `## Environment` (derived from `depends_on`: feature parent if independent; upstream plan's Feature Branch if dependent). Don't default to the feature parent for every PR.
 
 **Do:**
 - Treat "needing a mock for an internal module" as a stop-and-surface signal — that's the plugin's strongest deviation indicator

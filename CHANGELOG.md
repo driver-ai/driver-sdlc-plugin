@@ -4,6 +4,26 @@ All notable changes to the Driver SDLC Plugin (drvr) will be documented in this 
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.2.0] - 2026-07-22
+
+### Added
+
+- **Lifecycle**: Per-plan PR model — each plan ships as its own pull request instead of one PR per feature. The stack is a DAG of base relationships (independent plans → parallel PRs off the feature parent; dependent plans → stacked PRs), recorded in the `plans/00-overview.md` PR Stack table
+- **Lifecycle**: Per-plan PR gate — `assess → [review] → docs-artifacts → open-pr` runs once per plan (after that plan's bookkeeping, before the next plan starts) so every PR is self-contained and reviewable in isolation
+- **Lifecycle**: Per-plan phases and transitions in `sdlc-orchestration` (Per-Plan Assessment / Internal Review / Handoff / Open PR / PR Review / Revision / Merge / Verification, plus Next Plan and the All-Plan-PRs-Shipped → Feature Shipped terminal)
+- **Handoff**: Centralized per-plan `driver-docs/` layout — a cross-plan `00-feature-overview.md` rollup plus self-contained `driver-docs/<plan>/` PR documentation
+- **Assessment**: Per-plan scoping — `/drvr:assess <plan>` curates only the tests introduced or modified by that plan, writing `assessment/<plan>-test-curation.md`
+- **Architecture**: Functional core / imperative shell (FCIS) as a load-bearing architectural commitment enforced through every phase — research identifies the core/shell decomposition, planning derives the test strategy from it, materialization carries the classification into task docs, implementation treats "needs a mock" as a boundary trigger, and assessment/standards-review key off mock presence and core/shell membership
+- **Scaffold template**: Migrated `templates/CLAUDE.md.template` to the per-plan model (template v1.2.0) — per-plan Project Structure, "One Plan = One PR (DAG of Bases)", per-plan lifecycle diagram and Phase→Skill mapping, and a `Branch Prefix` column (replacing the single `Feature Branch`)
+- **Migration**: New `/drvr:setup` Migration Registry entry (template 1.1.0 → 1.2.0) with idempotent steps, so existing project `CLAUDE.md` files migrate to the per-plan model on their next setup run
+
+### Changed
+
+- **Assessment**: PRUNE/KEEP/PROMOTE now key off the FCIS commitment — bias toward pruning mock-heavy and implementation-detail tests, promote behavior coverage that needs a pure-core extraction; the shape-based rule replaces the blanket "when uncertain, KEEP" default (mock-on-internal-module and tautological structural assertions default to PRUNE/PROMOTE)
+- **Planning**: Step 4.5 now leads with core/shell decomposition and derives the test strategy from the architecture; adds branch & stack-position for the plan's PR
+- **Setup**: `/drvr:setup` no longer embeds a duplicate CLAUDE.md template — it reads the single source of truth at `${CLAUDE_PLUGIN_ROOT}/templates/CLAUDE.md.template` (resolves a prior drift between the two copies)
+- **Infrastructure**: Plugin version bumped from 1.1.0 to 1.2.0
+
 ## [1.1.0] - 2026-05-14
 
 ### Added
