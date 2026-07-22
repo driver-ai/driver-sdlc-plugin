@@ -1,14 +1,20 @@
 ---
-description: Per-plan test suite curation — runs after a plan's bookkeeping completes and before that plan's PR. Categorize, prune scaffolding, promote valuable tests, keep durable ones for the named plan.
+description: Per-plan test suite curation against the functional-core / imperative-shell commitment — runs after a plan's bookkeeping and before that plan's PR. Prune mock-heavy and implementation-detail tests, promote behavior coverage that needs a pure-core extraction, keep conforming tests for the named plan.
 argument-hint: <plan-name> [feature-path]
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep, Agent
 ---
 
 # /drvr:assess Command
 
-Curate the test suite **for a single plan**, after that plan's bookkeeping completes and before that plan's PR opens. TDD naturally produces scaffolding tests that are valuable during construction but become maintenance burden afterward. This command evaluates the plan's tests, prunes what's no longer needed, promotes scaffolding that covers important behavior, and documents the decisions — so the PR ships with a curated, reviewable test suite.
+Curate the test suite **for a single plan**, after that plan's bookkeeping completes and before that plan's PR opens. This command evaluates the plan's tests against the plugin's architectural commitment — **functional core, imperative shell** (see [CLAUDE.md](../CLAUDE.md) Key Principles) — prunes tests that violate it, promotes tests that almost get it right, and keeps tests that already conform, so the PR ships with a curated, reviewable test suite.
 
-**When uncertain, judge by shape — don't default.** If the test asserts **structure** (counts, enum membership, types, mock call sequences, internal state) → PRUNE. If it asserts **behavior** (inputs → outputs, error modes, contract boundaries) → KEEP. This is a pruning pass, not a purge — but tests that only mirror the implementation are exactly what it exists to remove. A blanket "when uncertain, KEEP" default lets scaffolding ship by inertia; the shape of the assertion is the signal.
+Under that commitment, every test should fall into one of two shapes:
+- **Pure-core unit test**: a function in the pure core, values in / values out, no mocks, no I/O, no time, no randomness.
+- **Shell integration test**: a shell entry point, exercised against real I/O (test DB, tmpdir, fake-backed HTTP from recorded real calls). Mocks permitted only at justified boundaries — when the real collaborator is external (third-party API with no sandbox), expensive (real money per invocation), non-deterministic in ways you can't control (real wall clock for timing-sensitive tests), or absent in the test environment — and each mock must be named with its justification.
+
+Tests that don't fit either shape — most commonly, "unit tests" that mock internal modules — are signals of a core/shell boundary problem. The default action is to prune them and surface the architecture fix, not to keep them as documentation of a broken seam.
+
+**When uncertain, judge by shape — don't default to KEEP.** The historical "when uncertain, KEEP" guidance is reversed for two shapes: mock-on-internal-module tests → PRUNE or PROMOTE (never let them persist as KEEP); and tautological structural assertions (counts, enum membership, types, internal state that only mirror the implementation) → PRUNE. For unambiguously behavior-asserting tests with no mock concerns, KEEP remains the default. A blanket "when uncertain, KEEP" lets scaffolding ship by inertia; the shape of the assertion is the signal.
 
 This is the first step in the per-plan PR gate: `/drvr:assess <plan>` → `/drvr:docs-artifacts <plan>` → `/drvr:open-pr <plan>`. Do not skip steps.
 
@@ -52,44 +58,72 @@ If you discover tests from earlier plans in the diff (because the Feature Branch
 
 ## Step 3: Categorize Each Test
 
-Evaluate each test using judgment. The categories:
+Evaluate each test against the core/shell rules. The categories:
 
 ### PRUNE — Remove after assessment
 
-Signals:
-- Asserts exact mock call signatures (`.toHaveBeenCalledWith(exact, args)` on internal methods)
-- Tests pure wiring with no behavioral assertion
-- Breaks on any refactor without catching real bugs
-- Setup is longer than the test itself
-- Duplicates coverage from a behavioral test
-- Tests implementation details (private method calls, internal state)
-- **Tautological structural assertions** — the assertion mirrors the implementation by construction. Example: a test that asserts an enum has exactly three variants when the enum itself lists those three variants; a test that asserts a class exposes N methods when those methods are the class definition; a test that asserts a config dict has K keys when those keys are the dict literal. These tests pass iff the implementation is unchanged and catch no real bug — they only re-state the implementation in a different syntax.
+The test is a symptom of a boundary problem, has no future use, and shouldn't survive curation. Either the architecture is wrong (a follow-up will fix it) or the test never asserted anything load-bearing.
 
-### KEEP — Valuable long-term
+Strong PRUNE signals:
+- **Mocks an internal module** — the test asserts behavior of something the codebase owns by mocking its collaborators. This is the strongest PRUNE signal. If the covered behavior is important, the right fix is to extract a pure core and write a real unit test against it; the mock-based test should not survive in the meantime.
+- **Asserts exact mock call signatures** (`.toHaveBeenCalledWith(exact, args)` on internal methods) — tests the call sequence, not the outcome.
+- **Tests pure wiring with no behavioral assertion** — "this constructor was called" type tests.
+- **Setup longer than the test itself** — visible symptom of over-mocking; the seams are wrong.
+- **Tests implementation details** — private method calls, internal state inspection, class-internal collaborator interactions.
+- **Breaks on any refactor without catching real bugs** — coupled to structure, not behavior.
+- **Duplicates coverage from a behavior-asserting test** — the behavioral one is the keeper.
+- **Tautological structural assertions** — the assertion mirrors the implementation by construction (an enum asserted to have exactly the three variants it lists; a class asserted to expose the N methods it defines; a config dict asserted to have the K keys of its literal). These pass iff the implementation is unchanged and catch no real bug — they only re-state the implementation in a different syntax.
 
-Signals:
-- Asserts observable behavior (inputs → outputs)
-- Only coverage for an important edge case
-- Tests a contract boundary (API, public interface, integration point)
-- Would catch a real bug on regression
-- Tests error handling or failure modes
+### KEEP — Valuable long-term, already conforming
 
-### PROMOTE — Rewrite to assert behavior
+Strong KEEP signals:
+- **Pure-core unit test, no mocks** — takes values in, asserts on the returned value. Reads as documentation of what the function does.
+- **Shell integration test against real I/O** — exercises a shell entry point against a real test DB, tmpdir, or fake-backed HTTP from recorded real calls. Asserts an observable outcome.
+- **Mock only at a justified boundary, with the justification named** — external (third-party with no sandbox), expensive (real money per invocation), non-deterministic in ways you can't control, or absent in the test environment. The mock is at the edge, not inside, and the test or plan documents which category it fits.
+- **Reads as documentation** — a reader could use this test to understand what the code does without reading the implementation. This is the bar.
+- **Tests a contract boundary** — public API, integration point, error handling, failure mode that the code explicitly handles.
 
-Signals:
-- Covers important behavior but tests it through implementation details
-- Scaffolding that validates something worth keeping, but the wrong way
-- Could be rewritten to assert the same behavior through the public interface
+### PROMOTE — Rewrite to conform
 
-**Key constraint**: A test that is the only coverage for an important **behavior** — even if implemented through mocks or with awkward setup — stays (KEEP, or PROMOTE if it tests behavior through implementation details). What does *not* qualify: tests whose only "coverage" is structural (the enum still has these three variants, the class still has these methods, the config still has these keys). Structural-only coverage is tautology, not coverage. The goal is removing tests that mirror the implementation, while preserving tests that catch real bugs.
+The test covers behavior worth keeping, but in a shape that violates the architecture. The fix is a rewrite, not a deletion. Two common cases:
+
+- **Mock-heavy test of internal logic that could be tested through a pure-core extraction.** Rewrite: extract the pure core (record as a follow-up architecture task if it's nontrivial), then assert values-in / values-out against the extracted function with no mocks.
+- **Implementation-detail test that should be a behavioral test through the public interface.** Rewrite: assert the observable outcome rather than the internal call sequence.
+
+PROMOTE is a stronger signal than PRUNE that there's architecture work to follow up on. Surface it.
+
+**Key constraint (revised):** A mock-heavy test that is the only coverage for an important edge case becomes **PROMOTE**, not KEEP — keeping it as-is preserves a boundary failure indefinitely; promoting it forces the extract-and-rewrite that should have happened in the first place (the follow-up is tracked in the assessment report). What does *not* qualify for KEEP or PROMOTE at all is structural-only "coverage" — a test whose only assertion mirrors the implementation (the enum still has these three variants, the class still has these methods, the config still has these keys). Structural-only coverage is tautology, not coverage; it's a PRUNE.
+
+The historical guidance "when uncertain, KEEP" is reversed for mock-heavy tests: **when uncertain about a mock-heavy test, PROMOTE.** For tests with no mocks against internal modules, KEEP-when-uncertain still applies.
 
 ---
 
 ## Step 4: Code Quality Review
 
+This step always runs the **core/shell boundary check** (independent of any codebase standards artifact), then layers codebase-specific standards on top if a standards artifact exists.
+
+### 4a: Core/Shell Boundary Check (always runs)
+
+Audit the implementation files for violations of the functional-core / imperative-shell commitment. This check runs whether or not the codebase has its own CLAUDE.md — the commitment comes from the plugin, not the codebase's standards.
+
+**Verdicts**: each row is PASS, FAIL, or **N/A** (decomposition genuinely doesn't apply — trivial routing, framework-mandated shape, or shell-only feature per the plan). N/A rows are recorded but don't contribute to FAIL counts and don't trigger fix workflows.
+
+For each implementation file, classify the code into pure-core and shell sections (using the plan's Architecture Fit > Core/Shell Decomposition as the authoritative classification — if the plan declared shell-only, apply only the shell rules and mark pure-core checks N/A). Then flag:
+
+- **I/O bleeding into pure-core code** — a function classified as core that reaches for the filesystem, network, database, time, randomness, or mutable shared state. FAIL.
+- **Substantive logic in a shell function** — a function classified as shell that contains branching, calculation, or state machinery that should have been extracted into the core. FAIL. **Exception (N/A)**: routing/dispatch branching that IS the feature in a shell-only plan; framework-mandated shape (e.g., a Django view's required structure) where extraction would produce a single-line wrapper with no behavior of its own.
+- **Internal-module mocking in tests** — already surfaced as PRUNE/PROMOTE in Step 3; mirror those here as architecture findings. **Exception (N/A)**: a mock whose justification fits the Mocking Rules (external / expensive / non-deterministic / absent) and is documented in the test or plan.
+- **Pure-core functions never called from the shell** — dead pure code suggests the boundary was drawn but not wired up. WARN.
+
+Record findings in the compliance table with `Standard: §FCIS Core/shell boundary` and the specific violation or N/A reason.
+
+For each FAIL, suggest a concrete fix: which logic to extract, which I/O to push outward, which test to rewrite. For each N/A, briefly note why it's N/A (one line — "shell-only plan, routing dispatch", "mock of LLM client — justified as expensive in tests") so reviewers can audit the exceptions.
+
+### 4b: Codebase Standards Review (only if standards artifact exists)
+
 If a codebase standards artifact exists (`research/NN-codebase-standards.md`), review implementation code against the documented standards.
 
-**If no standards artifact exists, skip this step entirely.**
+**If no standards artifact exists, skip 4b entirely. 4a still runs.**
 
 1. **Read the standards artifact** — get the Applicable Sections and Key Rules
 2. **Identify implementation files** — from the implementation logs, identify all source files modified or created. If implementation logs don't enumerate all files, fall back to `git diff --name-only <base-branch>...HEAD` to identify modified files.
@@ -99,10 +133,14 @@ If a codebase standards artifact exists (`research/NN-codebase-standards.md`), r
    - Classify as PASS (compliant) or FAIL (violation found)
 4. **For each FAIL**, note the specific violation and suggest a fix
 
-Build a compliance table:
+Build a compliance table (rows from 4a and 4b combined):
 
 | File | Standard | Status | Detail |
 |------|----------|--------|--------|
+| `path/to/core.py` | §FCIS Core/shell boundary | FAIL | `compute_total` is classified as core but reads from DB on line 18 — extract DB read into shell, pass values into compute_total |
+| `path/to/shell.py` | §FCIS Core/shell boundary | FAIL | `handle_request` contains discount calculation logic — extract into core function `apply_discount(items, coupon) -> total` |
+| `path/to/routes.py` | §FCIS Core/shell boundary | N/A | Shell-only plan, routing dispatch — branching IS the feature |
+| `tests/test_llm.py` | §FCIS Core/shell boundary | N/A | Mock of `LLMClient` — justified as expensive (real calls cost money per invocation) |
 | `path/to/file.py` | §6 Error handling | PASS | Narrow try/except used |
 | `path/to/file.py` | §4 Data structures | FAIL | Uses raw dict on line 42, should be Pydantic model |
 
@@ -129,9 +167,9 @@ Write to `assessment/<plan>-test-curation.md` (per-plan filename — one assessm
 
 | Category | Count | Action |
 |----------|-------|--------|
-| PRUNE | N | Delete — scaffolding, no longer needed |
-| PROMOTE | N | Rewrite — valuable behavior, wrong approach |
-| KEEP | N | No change — durable tests |
+| PRUNE | N | Delete — mock-heavy, implementation-detail, or boundary-failure test |
+| PROMOTE | N | Rewrite — behavior worth keeping, needs pure-core extraction to test cleanly |
+| KEEP | N | No change — already conforms to core/shell rules |
 | **Total** | **N** | |
 
 ## Coverage Impact
@@ -148,8 +186,8 @@ Write to `assessment/<plan>-test-curation.md` (per-plan filename — one assessm
 Tests recommended for removal.
 
 ### <test-file>:<test-name>
-**Reason**: <why this is scaffolding>
-**Risk**: <what we lose — usually "none, covered by <other test>">
+**Reason**: <why this fails core/shell — mocks an internal module / tests implementation details / is shell wiring with no behavioral assertion / etc.>
+**Risk**: <what we lose — usually "none, covered by <other test>"; if this was the only coverage for an important behavior, this should be PROMOTE not PRUNE>
 
 ---
 
@@ -174,9 +212,10 @@ Durable tests — no changes needed.
 
 ## Code Quality Review
 
-_Only include if a codebase standards artifact exists_
+_Always includes the core/shell boundary check (§FCIS). Codebase-specific standards rows are added only if a standards artifact exists._
 
-**Standards source**: `research/NN-codebase-standards.md`
+**Core/shell boundary source**: plugin CLAUDE.md, Key Principles
+**Codebase standards source** (if applicable): `research/NN-codebase-standards.md`
 
 | File | Standard | Status | Detail |
 |------|----------|--------|--------|
@@ -269,7 +308,7 @@ After completion, surface the next gate step explicitly:
 - This command is mandatory before `/drvr:docs-artifacts <plan>` — the per-plan PR gate enforces it
 - One assessment artifact per plan: `assessment/<plan>-test-curation.md`
 - Scope is per-plan — assess only tests introduced or modified by THIS plan
-- When uncertain about a test, judge by what it asserts: structural / implementation-mirroring (enum membership, method counts, mock call shapes, internal state) → PRUNE; behavioral (inputs → outputs, error modes, contract boundaries) → KEEP. A blanket "default to KEEP" lets scaffolding ship by inertia, which defeats the assess phase's purpose.
-- Tautological structural assertions (e.g., "the enum has three variants" against a three-variant enum literal) are the canonical PRUNE case — they pass iff the implementation is unchanged and catch no real bug.
-- The assessment report persists as documentation of test curation decisions for that plan
+- **Uncertainty default depends on the test's shape.** For mock-on-internal-module tests, default to PRUNE or PROMOTE — leaving them as KEEP perpetuates a boundary failure. For tautological structural assertions (enum membership, method counts, mock call shapes, internal state that mirror the implementation) → PRUNE; the canonical case is "the enum has three variants" against a three-variant enum literal, which passes iff the implementation is unchanged and catches no real bug. For behavior-asserting tests with no internal mocks, default to KEEP — losing real coverage is worse than carrying a marginal test.
+- The §FCIS core/shell boundary check in Step 4a runs regardless of whether the codebase has its own standards artifact — it comes from the plugin's commitment, not the codebase's
+- The assessment report persists as documentation of test curation decisions for that plan and as a record of architecture follow-ups identified
 - For phase detection rules, see [/drvr:orchestrate](orchestrate.md) and [sdlc-orchestration](../skills/sdlc-orchestration/SKILL.md)

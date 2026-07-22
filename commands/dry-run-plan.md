@@ -8,6 +8,8 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Agent
 
 Walk through a plan as if implementing it to identify gaps, missing context, and potential issues before actual implementation begins.
 
+The dry-run is also the gate that catches **core/shell boundary failures** before they reach implementation. See [`CLAUDE.md`](../CLAUDE.md) Key Principles. Plans that lack a Core/Shell Decomposition section (neither pure-core listed nor a justified shell-only declaration), propose mocks of pure-core logic or unjustified mocks of internal modules, or tangle I/O into pure-core items are flagged as HIGH-severity gaps and must be fixed before materialization. Shell-only declarations (for thin CRUD, glue, webhook forwarders, etc.) are acceptable when the rationale is specific and credible.
+
 ## Workflow
 
 ### Step 1: Locate the Plan
@@ -50,6 +52,12 @@ For each task in the plan, walk through it as if implementing:
 11. **Platform**: Are there platform-specific assumptions (e.g., bash version, OS utilities)?
 12. **Standards**: If a codebase standards artifact exists (search the feature's `research/` directory for a file containing `## Standards Source`), do the plan's constraints cover the applicable standards for this task's files? Match the artifact's Applicable Sections against the task's file paths. (Check once per unique file-type group — if multiple tasks touch the same language/framework, check once and reference that finding for the others.)
 13. **Concreteness**: Does the plan have a `## Data Structures & Callables` section? If present, does each rollup row have a corresponding inline snippet in its Owning Task? For modified items, do the snippet signatures match the current codebase (use `get_file_documentation` for verification)? For plans with minimal code surface or that predate this rule (no section at all), downgrade to MEDIUM and note the reason.
+14. **Core/Shell Decomposition present**: Does the plan's `## Architecture Fit` contain a `### Core/Shell Decomposition` subsection naming pure-core items and shell items, OR declaring shell-only with rationale? If absent entirely: HIGH-severity gap.
+15. **Shell-only rationale is justified, if used**: If the plan declares "Pure core: (none — shell-only feature)", is the Rationale specific and credible? Acceptable: "thin CRUD endpoint, all logic is HTTP routing and DB write"; "webhook forwarder, just re-shapes payload and enqueues"; "wires Stripe SDK to our queue, no business logic". Not acceptable: "doesn't fit," "everything is I/O," or no rationale at all. Vague rationale: MEDIUM-severity gap (push back, look harder for extraction). For verified shell-only features, skip checks 15a, 17, and 18; only 16 and the mocking check (new 19) apply.
+16. **Pure-core items are actually pure** (only if not shell-only): For each item listed under "Pure core," walk through what the task's implementation would need to do. If it would need to perform I/O, read time, read randomness, mutate shared state, or call a shell function, the classification is wrong — HIGH-severity gap.
+17. **Shell items don't carry hidden logic** (only if not shell-only): For each item listed under "Imperative shell," check whether substantive logic (branching, calculation, state machinery) belongs in the core instead. If yes — MEDIUM-severity gap (extract the logic). Routing/dispatch branching in shell-only features doesn't count — it IS the feature.
+18. **Every unit test maps to a pure-core item** (only if not shell-only) and every integration test maps to a shell item. If a unit test references a shell item or vice versa: MEDIUM-severity gap. For shell-only features, the test strategy should be integration-only; presence of a Unit Tests subsection in a shell-only plan is a LOW-severity gap (delete the subsection).
+19. **Mocks in test strategy are justified**: For each mock proposed in `## Test Strategy`, is it named with a justification fitting Mocking Rules (external / expensive / non-deterministic / absent)? Mocks of internal modules with no justification, or whose justification doesn't fit those categories: HIGH-severity gap (architectural failure or invalid justification). Mocks of pure-core logic: HIGH-severity gap (boundary failure). Mocks with credible justification: acceptable.
 
 Classify each gap found using the severity criteria below.
 
@@ -203,6 +211,14 @@ Default severities are starting points — override based on the specific gap.
 | **Rollup/snippet mismatch** | Rollup lists an item but no inline snippet in Owning Task (or vice versa) | MEDIUM |
 | **Signature drift on modification** | Plan modifies an existing callable; snippet signature doesn't match codebase | HIGH |
 | **Collision on addition** | Plan adds a name that already exists in the target file | HIGH |
+| **Missing Core/Shell Decomposition** | Plan has no `### Core/Shell Decomposition` subsection under Architecture Fit (neither pure-core items listed nor a shell-only declaration) | HIGH |
+| **Vague shell-only rationale** | Plan declares "Pure core: none" but rationale is generic ("doesn't fit", "everything is I/O") rather than specific (names the type of work) | MEDIUM |
+| **Pure-core item that isn't pure** | Item classified as core but task would require I/O, time, randomness, or shared state | HIGH |
+| **Shell item carrying logic** | Item classified as shell but contains substantive branching/calculation that belongs in core. Routing/dispatch branching in shell-only features doesn't count. | MEDIUM |
+| **Mock of pure-core logic** | Test would mock to exercise pure-core logic | HIGH |
+| **Unjustified mock of internal module** | Test mocks an internal module without naming a justification that fits Mocking Rules (external / expensive / non-deterministic / absent) | HIGH |
+| **Test/item classification mismatch** | A unit test references a shell item, or an integration test references a pure-core item | MEDIUM |
+| **Unit Tests in shell-only plan** | Shell-only feature has a Unit Tests subsection — should be integration-only | LOW |
 
 ## Notes
 

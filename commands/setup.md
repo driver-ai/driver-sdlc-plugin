@@ -354,14 +354,14 @@ Features follow a phased development lifecycle. Each phase has a dedicated skill
 |-------|----------------|-------------|
 | Intent | `drvr:intent-guidance` | Mine the author's tacit knowledge, produce `research/00-intent.md` |
 | Research | `drvr:research-guidance` | Why-What-How methodology, document organization, completion criteria |
-| Planning | `drvr:planning-guidance` | TDD-first task design, test strategy, architecture fit, task breakdown |
-| Validation | `/drvr:dry-run-plan` | Walk through plan as-if implementing, severity-classified gaps |
-| Materialization | `drvr:materialize-tasks` | Convert plan tasks into standalone task docs for sub-agent execution |
-| Implementation | `drvr:implementation-guidance` | Plan-driven task execution, deviation tracking, commit discipline |
+| Planning | `drvr:planning-guidance` | Functional-core / imperative-shell architecture, TDD-first task design, test strategy derived from architecture, task breakdown |
+| Validation | `/drvr:dry-run-plan` | Walk through plan as-if implementing, severity-classified gaps including core/shell boundary violations |
+| Materialization | `drvr:materialize-tasks` | Convert plan tasks into standalone task docs carrying core/shell classification for sub-agent execution |
+| Implementation | `drvr:implementation-guidance` | Plan-driven task execution, deviation tracking (including "needs a mock" as boundary trigger), commit discipline |
 | Review | `drvr:sdlc-orchestration` | Present deviations for user approval before bookkeeping |
 | Bookkeeping | `drvr:implementation-guidance` | Update plan status, overview, cascade check |
-| Assessment | `/drvr:assess` | Curate test suite — categorize, prune scaffolding, promote valuable tests |
-| Internal Review | `/drvr:review` | Review code against standards, auto-fix violations |
+| Assessment | `/drvr:assess` | Curate test suite against the core/shell commitment — prune mock-heavy and implementation-detail tests, promote behavior coverage needing pure-core extraction |
+| Internal Review | `/drvr:review` | Review code against §FCIS and codebase standards, auto-fix codebase-standard violations |
 | Handoff | `/drvr:docs-artifacts` | Generate feature-overview, architecture, testing-guide, risk-assessment |
 | Open PR | `/drvr:open-pr` | Create PR from handoff docs via gh CLI |
 | PR Review | `drvr:sdlc-orchestration` | Track review status, suggest next steps |

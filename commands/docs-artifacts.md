@@ -222,6 +222,26 @@ _Only files modified by this plan's commits (`git diff {base_branch}...{feature_
 
 {Brief technical summary scoped to this plan's changes}
 
+## Functional Core, Imperative Shell
+
+This feature was designed around the plugin's functional-core / imperative-shell commitment (see plugin CLAUDE.md). Reviewers should verify the boundary is intact in the diff.
+
+**Pure core** (no I/O, no time, no randomness, no mutable shared state — values in, values out):
+
+| Item | File | Purpose | Tested by |
+|------|------|---------|-----------|
+| `{function or type}` | `{path}` | {one-line} | `{test file/name}` (values in / values out, no mocks) |
+
+**Imperative shell** (performs I/O, calls into the core):
+
+| Item | File | I/O performed | Tested by |
+|------|------|---------------|-----------|
+| `{entry point}` | `{path}` | {HTTP / DB / filesystem / time / random / etc.} | `{integration test file/name}` (real I/O) |
+
+**Mocks used in tests, with justification**: {list every mock, with the hard-external-boundary justification — third-party API without sandbox, cost-bearing service, hardware absent in test. If no mocks: "None."}
+
+**Architecture follow-ups identified during assessment**: {if any §FCIS findings were left as follow-up work rather than fixed before merge, list them with proposed extraction. If none: "None."}
+
 ## Components Touched
 
 ### {Component Name}
