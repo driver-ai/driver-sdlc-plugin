@@ -27,7 +27,7 @@ Run these prerequisite checks in order. Each is a hard gate — stop on first fa
    - If missing: **BLOCK**: "Per-plan handoff documentation for `<plan>` has not been generated. Run `/drvr:docs-artifacts <plan>` first."
 
 3. **Per-plan assessment artifact** — Check `assessment/<plan>-test-curation.md`:
-   - If missing: **BLOCK**: "Per-plan assessment for `<plan>` is missing. Run `/drvr:assess <plan>` first — the per-plan PR gate is assess → docs → open-pr."
+   - If missing: **BLOCK**: "Per-plan assessment for `<plan>` is missing. Run `/drvr:assess <plan>` first — the per-plan PR gate is assess → docs → open-pr." If a feature-wide `assessment/test-curation-<date>.md` exists instead, this feature predates 1.2.0 — see [/drvr:setup](setup.md) → **In-Flight Features (1.1.0 → 1.2.0)**.
 
 4. **Plan Environment** — Read `plans/<plan>.md` `## Environment` section to get:
    - Codebase path
@@ -91,7 +91,7 @@ The PR body **must be self-contained**. A reviewer who has not seen other PRs in
 4. Capture the PR URL from output.
 5. Do NOT update FEATURE_LOG or other artifacts until PR creation is confirmed successful.
 
-**Stack note:** if `<effective-base-branch>` is an upstream plan's still-live Feature Branch, this PR shows only THIS plan's commits in the diff view (GitHub computes the diff against the base). Reviewers will not see upstream PR changes mixed in — that's the point of stacking.
+**Stack note:** if `<effective-base-branch>` is an upstream plan's still-live Feature Branch, this PR shows only THIS plan's commits in the diff view (GitHub computes the diff against the base). Reviewers will not see upstream PR changes mixed in — that's the point of stacking. When the upstream PR later merges, GitHub **retargets** this PR onto the upstream's base but does not rebase this branch; if the upstream was squash- or rebase-merged, rebase this branch onto the new base to keep the diff scoped (see sdlc-orchestration → Per-Plan PR Review → Merge).
 
 ### Step 6: Update Per-Plan Artifacts
 

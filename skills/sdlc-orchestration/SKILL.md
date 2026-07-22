@@ -247,7 +247,14 @@ After re-running `/drvr:docs-artifacts <plan>`, suggest updating the PR body wit
 
 When a plan's PR is approved and ready to merge. User reports approval or `gh pr view` shows approved status.
 
-**Advisory:** "Plan `<plan>` PR approved. Merge when ready. If downstream plan PRs exist on this branch, merging this PR will update their base — they may rebase automatically on the next push."
+**Advisory:** "Plan `<plan>` PR approved. Merge when ready."
+
+**Stacked-PR mechanic (surface only if downstream plan PRs are stacked on this branch):** When this PR merges, GitHub **retargets** any PR based on this branch onto this PR's base — it does *not* rebase the downstream branch. Whether the downstream also needs a manual rebase depends on the merge strategy:
+
+- **Squash or rebase merge** → this plan's commits are rewritten under new SHAs. The downstream branch still carries the original commits, so its diff will show this plan's changes (duplicated) until it is rebased onto the new base. Tell the user to rebase the downstream branch before its PR is reviewed.
+- **Merge commit** → the original SHAs are preserved on the base, so the retargeted downstream diff is already scoped to just that plan; no rebase needed.
+
+Let the user perform any rebase — don't orchestrate it. If the interface itself changed (not just the base), see the Stacked-PR caveat under Revision and run cascade-check.
 
 Record `pr_approved_<plan>` event in FEATURE_LOG. After merge: record `pr_merged_<plan>` event, advance this plan's status in the PR Stack table.
 

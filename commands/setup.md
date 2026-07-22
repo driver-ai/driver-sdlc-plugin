@@ -182,6 +182,28 @@ Each row describes what changed between template versions and how to migrate exi
 | `implementation-guidance` | `drvr:implementation-guidance` |
 | `sdlc-orchestration` | `drvr:sdlc-orchestration` |
 
+### In-Flight Features (1.1.0 → 1.2.0)
+
+The Migration Registry above migrates a project's **`CLAUDE.md`** to the per-plan model. It does **not** restructure feature artifacts already on disk. A feature that entered its post-implementation phases under 1.1.0 has 1.1.0-shaped artifacts that the per-plan commands do not recognize:
+
+| 1.1.0 artifact | 1.2.0 expectation |
+|----------------|-------------------|
+| `assessment/test-curation-<date>.md` (feature-wide) | `assessment/<plan>-test-curation.md` (per-plan) |
+| flat `driver-docs/{feature-overview,architecture,testing-guide,risk-assessment}.md` | `driver-docs/<plan>/*` + `driver-docs/00-feature-overview.md` rollup |
+| single Feature Branch per codebase | per-plan branches derived from a Branch Prefix |
+| feature-wide `pr_created` / `pr_merged` FEATURE_LOG events | per-plan `pr_created_<plan>` / `pr_merged_<plan>` events |
+
+Because of this, `/drvr:assess <plan>`, `/drvr:docs-artifacts <plan>`, and `/drvr:open-pr <plan>` will **BLOCK** on a feature scaffolded under 1.1.0 — they look for `assessment/<plan>-test-curation.md` and `driver-docs/<plan>/`, which don't exist yet.
+
+**Recommended:** finish any feature already past implementation on the 1.1.0 flow. Pin the plugin to the version the feature started on and run its single-PR handoff (`/drvr:assess` → `/drvr:docs-artifacts` → `/drvr:open-pr`) to completion. Adopt the per-plan model for features that start fresh under 1.2.0.
+
+**If you must move an in-flight feature to per-plan**, migrate its artifacts by hand before running the per-plan gate — this is deliberately manual, since how a feature-wide assessment maps onto individual plans is a judgment call:
+
+1. Rename `assessment/test-curation-<date>.md` → `assessment/<plan>-test-curation.md` for the plan you're shipping (split it if it covered multiple plans).
+2. Move the flat `driver-docs/*.md` under `driver-docs/<plan>/` and create the `driver-docs/00-feature-overview.md` cross-plan rollup.
+3. In `plans/00-overview.md`, replace the single Feature Branch with a PR Stack table (one row per plan) and set each plan's Base Branch from its `depends_on` (feature parent if independent; upstream plan's Feature Branch if dependent).
+4. Backfill any `pr_created` / `pr_merged` entries in `FEATURE_LOG.md` to their `_<plan>` forms.
+
 ### Step 3C: Clone Team Repo
 
 1. **Ask for clone URL** (if not provided as argument):
