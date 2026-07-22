@@ -148,6 +148,7 @@ Do NOT navigate to or modify files outside this directory.
 - Shell items MUST keep substantive logic in the core they call. Branching, calculation, or state machinery in the shell is a violation; extract into the core first. **Exception for shell-only plans**: routing/dispatch branching IS the feature, not a violation.
 - Tests MUST NOT mock to exercise pure-core logic — that's a boundary failure.
 - Mocks of internal modules in shell integration tests are acceptable ONLY when the real collaborator is external (third-party with no sandbox), expensive (real money per invocation), non-deterministic in ways you can't control (real wall-clock for timing-sensitive tests), or absent in the test environment. Each such mock must be named with its justification — a comment on the mock or a note in the test docstring. "The real thing is slow" or "I don't want to set up the DB" are not acceptable justifications.
+- Code MUST be self-standing: understandable by someone reading only the source, with no access to this task doc, the plan, or any process artifact. Comment the non-obvious **why** (a subtle decision, a workaround, or a deviation from a normal standard) in plain terms, never the **how**. Never put SDLC/process references in code or comments — no task numbers, deviation or decision IDs (`D003`, `DEC-005`), plan names, dry-run gap numbers, or acceptance-criteria IDs. Deviations and decisions belong in the implementation log and `DECISIONS.md`.
 
 ## Goal
 <copied from plan — verbatim>
@@ -178,19 +179,21 @@ Read the plan for full architectural context if needed.
 2. Read the plan for full context, including its Core/Shell Decomposition in Architecture Fit
 3. Read the code quality standards at the source path above
 4. Implement exactly what's specified — no extras
-5. Respect the Core/Shell rules above. If your code would violate them, stop and report instead of working around.
-6. Verify your code follows the standards
-7. Run tests after implementation (use test command from Codebase section if present, otherwise follow Pre-flight Phase 4.3 discovery). Tests must not mock internal modules — if they do, the boundary is wrong.
-8. Report what you built, files touched, any deviations (especially core/shell boundary deviations), and standards compliance
+5. Keep the code self-standing (see Rules above): comment the non-obvious **why** only; never put SDLC/process references (task numbers, deviation/decision IDs, plan names) in code or comments
+6. Respect the Core/Shell rules above. If your code would violate them, stop and report instead of working around.
+7. Verify your code follows the standards
+8. Run tests after implementation (use test command from Codebase section if present, otherwise follow Pre-flight Phase 4.3 discovery). Tests must not mock internal modules — if they do, the boundary is wrong.
+9. Report what you built, files touched, any deviations (especially core/shell boundary deviations), and standards compliance
 ```
 
 **If no Code Quality Standards section** (no standards artifact found), omit that section and use a shorter Instructions list:
 1. Change directory to the codebase root
 2. Read the plan for full context, including its Core/Shell Decomposition in Architecture Fit
 3. Implement exactly what's specified — no extras
-4. Respect the Core/Shell rules above. If your code would violate them, stop and report instead of working around.
-5. Run tests after implementation. Tests must not mock internal modules — if they do, the boundary is wrong.
-6. Report what you built, files touched, and any deviations (especially core/shell boundary deviations)
+4. Keep the code self-standing (see Rules above): comment the non-obvious **why** only; never put SDLC/process references (task numbers, deviation/decision IDs, plan names) in code or comments
+5. Respect the Core/Shell rules above. If your code would violate them, stop and report instead of working around.
+6. Run tests after implementation. Tests must not mock internal modules — if they do, the boundary is wrong.
+7. Report what you built, files touched, and any deviations (especially core/shell boundary deviations)
 
 **Frontmatter rules:**
 - `created` and `updated` use `YYYY-MM-DD` format (to pass `test_date_format` validation)
