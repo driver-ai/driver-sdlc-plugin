@@ -104,7 +104,7 @@ Create a new projects directory from scratch.
    }
    ```
 
-6. **Create `CLAUDE.md`** in the new directory. Generate it from the template below, replacing `{{TEAM_NAME}}` with the directory name from step 2 and `{{DATE}}` with today's date. Leave the Codebases table as a placeholder — codebases are configured per-feature during `/drvr:feature` setup. Write the result to `<parent>/<name>/CLAUDE.md`.
+6. **Create `CLAUDE.md`** in the new directory. Read the canonical template from `${CLAUDE_PLUGIN_ROOT}/templates/CLAUDE.md.template` (fall back to globbing for `templates/CLAUDE.md.template` under the plugin directory if the env var is unset), then replace `{{TEAM_NAME}}` with the directory name from step 2 and `{{DATE}}` with today's date. Leave the Codebases table as a placeholder — codebases are configured per-feature during `/drvr:feature` setup. Write the result to `<parent>/<name>/CLAUDE.md`.
 
 7. **Git init** in the new directory:
    ```bash
@@ -130,7 +130,7 @@ Check for required files and fill gaps.
 
    | File | Check | If Missing |
    |------|-------|------------|
-   | `CLAUDE.md` | Glob for `CLAUDE.md` | Offer to create from the CLAUDE.md template below (ask for project name first) |
+   | `CLAUDE.md` | Glob for `CLAUDE.md` | Offer to create from `${CLAUDE_PLUGIN_ROOT}/templates/CLAUDE.md.template` (ask for project name first) |
    | `.gitignore` | Glob for `.gitignore` | Offer to create using the .gitignore content from Step 3A |
    | `.mcp.json` | Glob for `.mcp.json` | Create with `driver-mcp` server using the .mcp.json content from Step 3A |
 
@@ -142,10 +142,10 @@ Check for required files and fill gaps.
 
 3. **Template version check** — If CLAUDE.md exists, read the first line. Look for `<!-- drvr:template-version:X.Y.Z -->`.
 
-   - **If found and matches current version (1.1.0):** Skip migration. Report: "CLAUDE.md is up to date (template v1.1.0)."
+   - **If found and matches current version (1.2.0):** Skip migration. Report: "CLAUDE.md is up to date (template v1.2.0)."
    - **If found but outdated:** Look up the migration path in the Migration Registry below. Apply each migration in sequence, asking user approval for each.
    - **If not found:** Treat as pre-versioning (version 0). Apply the full migration path from v0 → current.
-   - **If version is higher than current (1.1.0):** Warn: "CLAUDE.md has template version X.Y.Z which is newer than this plugin's current version (1.1.0). Skipping migration." and skip.
+   - **If version is higher than current (1.2.0):** Warn: "CLAUDE.md has template version X.Y.Z which is newer than this plugin's current version (1.2.0). Skipping migration." and skip.
 
    After all migrations are applied, update the version comment on line 1 to the current version. If no version comment exists, add it as the first line. Before adding, scan the file for any existing `<!-- drvr:template-version:` comments and remove them to prevent duplicates.
 
@@ -157,6 +157,7 @@ Each row describes what changed between template versions and how to migrate exi
 |------|----|---------|----------------|
 | (none) | 1.0.0 | Initial versioned template. Commands qualified with `drvr:` prefix. Skills qualified in tables. | 1. Replace 8 unqualified command names with `drvr:`-prefixed versions (see table below). 2. Replace 5 unqualified skill names with `drvr:`-prefixed versions in Skills and Phase-Skill Mapping tables. 3. Add `<!-- drvr:template-version:1.0.0 -->` as first line. |
 | 1.0.0 | 1.1.0 | Intent phase, internal review, open-pr, post-PR lifecycle, expanded agents list. | 1. Add Intent row (`drvr:intent-guidance`) to Phase-Skill Mapping table. 2. Add Internal Review (`/drvr:review`), Open PR (`/drvr:open-pr`), PR Review, Revision, Merge, Verification, Shipped, Retro rows to Phase-Skill Mapping. 3. Add 5 commands to Commands table: `/drvr:context`, `/drvr:review`, `/drvr:driverize`, `/drvr:un-driverize`, `/drvr:open-pr`. 4. Add `drvr:intent-guidance` to Skills table. 5. Add 7 agents to Agents table: commit-log, decisions-log, features-list, security-review, standards-review, test-coverage, dependency-analysis. 6. Update lifecycle diagram to include Intent phase and full post-assess flow. 7. Update version comment to `1.1.0`. |
+| 1.1.0 | 1.2.0 | Per-plan PR model — each plan ships as its own stacked/parallel PR; the assess → review → docs → open-pr gate runs once per plan; `driver-docs/` becomes centralized per-plan; the Codebases table uses a Branch Prefix instead of a single Feature Branch. | 1. In the Phase-Skill Mapping table, rename the post-assessment phases to their per-plan forms — Assessment → **Per-plan Assessment** (`/drvr:assess <plan>`), Internal Review → **Per-plan Internal Review** (`/drvr:review <plan>`), Handoff → **Per-plan Handoff** (`/drvr:docs-artifacts <plan>`), Open PR → **Per-plan Open PR** (`/drvr:open-pr <plan>`), plus per-plan PR Review / Revision / Merge / Verification — and add a **Next Plan** row. 2. Replace the single-feature lifecycle diagram with the per-plan gate diagram (assess/review/docs/open-pr run per plan, then PR Review → Revision → Merge → Verification → Next plan; all plans shipped → Feature Shipped). 3. Add the **One plan = one PR, stacked** and **Each PR must stand alone** Key Principles. 4. In the Codebases table, replace the `Feature Branch` column with `Branch Prefix`; add the note that each plan gets its own branch (default `<prefix>/<NN-plan-slug>`). 5. Update the Project Structure block: mark `plans/` "one plan = one PR", `assessment/` as per-plan (`<plan>-test-curation.md`), and `driver-docs/` as centralized per-plan (`00-feature-overview.md` + `<plan>/`). 6. Ensure `/drvr:open-pr` is in the Commands table. 7. Update version comment to `1.2.0`. |
 
 **Command name replacements** (v0 → v1.0.0):
 
@@ -260,219 +261,12 @@ Print a summary of everything that was done:
 
 ## CLAUDE.md Template
 
-Use this template when creating CLAUDE.md for a new projects directory. Replace `{{TEAM_NAME}}` with the project name and `{{DATE}}` with today's date.
+The canonical CLAUDE.md template is a **single source of truth** at
+`${CLAUDE_PLUGIN_ROOT}/templates/CLAUDE.md.template` — the same file the plugin's
+tests validate. When creating a new projects directory (Step 3A) or filling a gap
+in an existing repo (Step 3B), read that file, substitute `{{TEAM_NAME}}` with the
+project name and `{{DATE}}` with today's date, and write the result. When migrating
+an existing CLAUDE.md, apply the Migration Registry steps above in sequence.
 
-````markdown
-<!-- drvr:template-version:1.1.0 -->
-# {{TEAM_NAME}} — SDLC Project Instructions
-
-This repository organizes development work by feature, with each feature containing its own lifecycle of artifacts. It is managed by the [Driver SDLC Plugin (drvr)](https://github.com/driver-ai/driver-sdlc-plugin) for Claude Code.
-
----
-
-## Project Structure
-
-```
-{{TEAM_NAME}}/
-├── CLAUDE.md                # Agent instructions (this file)
-├── .mcp.json                # MCP server configuration (gitignored)
-├── .gitignore
-├── features/                # Feature development projects
-│   └── <feature-name>/
-│       ├── FEATURE_LOG.md   # Lifecycle state — the source of truth
-│       ├── research/        # Problem exploration and design decisions
-│       ├── plans/           # Implementation plans
-│       │   ├── 00-overview.md  # Multi-plan overview (when needed)
-│       │   └── NN-plan-name/   # Directory named after plan file (sans .md)
-│       │       └── tasks/      # Materialized task documents
-│       │           └── NN-task-name.md
-│       ├── dry-runs/        # Plan validation results
-│       ├── implementation/  # Implementation logs per plan
-│       ├── assessment/      # Test suite curation results
-│       ├── tests/           # Markdown test plans (optional)
-│       │   └── results/     # Timestamped test results
-│       └── driver-docs/     # Handoff documentation
-```
-
-| Folder | Purpose | When Created |
-|--------|---------|-------------|
-| `FEATURE_LOG.md` | Source of truth for lifecycle state | `/drvr:feature` scaffolding |
-| `research/` | Problem statements, explorations, trade-off analysis | `/drvr:feature` scaffolding |
-| `plans/` | Implementation plans with concrete steps | Planning phase |
-| `dry-runs/` | Plan validation results with gap analysis | `/drvr:dry-run-plan` |
-| `implementation/` | Implementation logs tracking deviations per plan | Implementation phase |
-| `assessment/` | Test suite curation results | `/drvr:assess` |
-| `tests/` | Markdown test plans executed by LLM agents | When manual testing is needed |
-| `driver-docs/` | Handoff documentation | `/drvr:docs-artifacts` |
-
-Use `/drvr:feature <name>` to scaffold a new feature project. Use `/drvr:orchestrate <feature-path>` to resume an existing feature.
-
----
-
-## Frontmatter Schema
-
-All artifacts use YAML frontmatter for structured metadata.
-
-**Required fields** (all types):
-```yaml
----
-type: <type>
-status: <status>
-created: "YYYY-MM-DD"
-updated: "YYYY-MM-DD"
----
-```
-
-**Types:** `research`, `plan`, `task`, `implementation_log`, `feature_log`, `decision`, `deviation`, `learning`, `test_plan`, `test_result`, `assessment`, `open_question`
-
-**Statuses:** `not_started`, `in_progress`, `complete`, `approved`, `accepted`, `pending_review`, `resolved`, `open`, `confirmed`, `unverified`
-
-**Type-specific fields:**
-- `task`: `plan` (parent plan name), `task_number` (sequential position, integer), `depends_on` (list of task paths), `materialized_at` (ISO 8601 timestamp)
-- `decision`: `topic`, `choice`
-- `deviation`: `severity` (low/medium/high), `task` (source task)
-- `plan`: `depends_on`, `blocks` (for dependency graph resolution)
-
----
-
-## SDLC Lifecycle
-
-Features follow a phased development lifecycle. Each phase has a dedicated skill that provides guidance.
-
-```
-/drvr:feature -> Intent -> Research -> Planning -> Validation -> Materialization -> Implementation -> Review -> Bookkeeping -> Next Plan -> ...
-                                                                                                                                          |
-                                                                                                                             All plans complete
-                                                                                                                                          |
-                                                                                                                                          v
-                                                                                                /drvr:assess -> [/drvr:review] -> /drvr:docs-artifacts -> /drvr:open-pr -> PR Review <-> Revision -> Merge -> Verification -> Shipped
-```
-
-### Phase -> Skill Mapping
-
-| Phase | Skill / Command | What It Does |
-|-------|----------------|-------------|
-| Intent | `drvr:intent-guidance` | Mine the author's tacit knowledge, produce `research/00-intent.md` |
-| Research | `drvr:research-guidance` | Why-What-How methodology, document organization, completion criteria |
-| Planning | `drvr:planning-guidance` | Functional-core / imperative-shell architecture, TDD-first task design, test strategy derived from architecture, task breakdown |
-| Validation | `/drvr:dry-run-plan` | Walk through plan as-if implementing, severity-classified gaps including core/shell boundary violations |
-| Materialization | `drvr:materialize-tasks` | Convert plan tasks into standalone task docs carrying core/shell classification for sub-agent execution |
-| Implementation | `drvr:implementation-guidance` | Plan-driven task execution, deviation tracking (including "needs a mock" as boundary trigger), commit discipline |
-| Review | `drvr:sdlc-orchestration` | Present deviations for user approval before bookkeeping |
-| Bookkeeping | `drvr:implementation-guidance` | Update plan status, overview, cascade check |
-| Assessment | `/drvr:assess` | Curate test suite against the core/shell commitment — prune mock-heavy and implementation-detail tests, promote behavior coverage needing pure-core extraction |
-| Internal Review | `/drvr:review` | Review code against §FCIS and codebase standards, auto-fix codebase-standard violations |
-| Handoff | `/drvr:docs-artifacts` | Generate feature-overview, architecture, testing-guide, risk-assessment |
-| Open PR | `/drvr:open-pr` | Create PR from handoff docs via gh CLI |
-| PR Review | `drvr:sdlc-orchestration` | Track review status, suggest next steps |
-| Revision | `drvr:sdlc-orchestration` | Guide revision cycle |
-| Merge | `drvr:sdlc-orchestration` | Track merge, verify CI |
-| Verification | `drvr:sdlc-orchestration` | Advisory post-merge checks |
-| Shipped | `drvr:sdlc-orchestration` | Terminal — suggest retro |
-| Retro | `/drvr:retro` | Evaluate session quality, identify improvements |
-
-### Key Principles
-
-- **User controls all decisions** — skills suggest, the user decides. No auto-fixing, no silent bookkeeping.
-- **Deviations are reviewed** — after implementation, deviations are presented for approval before bookkeeping.
-- **Plans are the source of truth** — implementation builds exactly what the plan specifies, nothing more.
-- **Research before building** — the SDLC is front-loaded: most time goes into Research and Planning.
-
----
-
-## Commands
-
-| Command | Purpose |
-|---------|---------|
-| `/drvr:setup` | Set up this projects directory (first-time configuration) |
-| `/drvr:feature <name>` | Scaffold a new feature project with FEATURE_LOG.md |
-| `/drvr:orchestrate <path>` | Resume a feature — read log, report state, suggest next action |
-| `/drvr:dry-run-plan <plan>` | Walk through a plan to identify gaps before implementation |
-| `/drvr:assess` | Curate test suite after implementation — categorize, prune, promote |
-| `/drvr:review` | Run internal standards review — check code against standards, auto-fix violations |
-| `/drvr:docs-artifacts` | Generate handoff documentation for code review |
-| `/drvr:open-pr [feature-path]` | Open a pull request from handoff documentation |
-| `/drvr:context <task>` | Gather codebase context for a specific task via Driver MCP |
-| `/drvr:retro` | Evaluate session quality, patterns, and improvements |
-| `/drvr:driverize` | Install Driver enforcement stack — hooks, shadow agents, context injection |
-| `/drvr:un-driverize` | Remove Driver enforcement stack — restore backups and remove artifacts |
-
-## Skills
-
-| Skill | Purpose |
-|-------|---------|
-| `drvr:intent-guidance` | Mine author's tacit knowledge at feature start |
-| `drvr:research-guidance` | Why-What-How methodology, document organization |
-| `drvr:planning-guidance` | TDD-first plans, test strategy, task breakdown |
-| `drvr:materialize-tasks` | Materialize approved plan tasks into standalone task docs |
-| `drvr:implementation-guidance` | Plan-driven execution, deviation tracking, bookkeeping |
-| `drvr:sdlc-orchestration` | Lifecycle coordination, phase transitions |
-
-## Agents
-
-| Agent | Purpose |
-|-------|---------|
-| `driver-task-context` | Gather task-specific context from Driver MCP |
-| `cascade-check` | Analyze implementation deviations against downstream plans |
-| `handoff-analyzer` | Synthesize process artifacts + git + Driver context for handoff |
-| `commit-log` | Extract detailed commit history for handoff documentation |
-| `decisions-log` | Extract design decisions from research docs and plans |
-| `features-list` | Catalog all capabilities added in a feature branch |
-| `security-review` | Analyze code changes for security concerns |
-| `standards-review` | Review code against codebase standards and plan criteria |
-| `test-coverage` | Map tests to implementation, identify coverage gaps |
-| `dependency-analysis` | Review dependency changes, license compliance, vulnerabilities |
-
----
-
-## Codebases
-
-| Codebase | Repo | Local Path | Default Branch | Description |
-|----------|------|------------|----------------|-------------|
-| _Add your codebases here_ | | | | |
-
----
-
-## Engineering Guidelines
-
-### Patterns We Follow
-
-_Add your team's coding standards here. Examples:_
-- _Naming conventions_
-- _Error handling patterns_
-- _Code organization rules_
-
-### Patterns We Avoid
-
-_Add anti-patterns your team has agreed to avoid. Examples:_
-- _No mocking the database in integration tests_
-- _No generic dict types for structured data_
-
-### Testing Strategy
-
-_Describe your team's testing approach. Examples:_
-- _Test framework and commands_
-- _Unit vs. integration test boundaries_
-- _Coverage expectations_
-
----
-
-## MCP Integrations
-
-| Integration | Purpose | When to Use |
-|-------------|---------|-------------|
-| **Driver MCP** | Codebase architecture, file docs, code maps | Starting any research or planning |
-| _Add additional MCP servers here_ | | |
-
----
-
-## Key References
-
-| Document | Purpose |
-|----------|---------|
-| _Add links to external resources here_ | |
-
----
-
-_Generated by `/drvr:setup` on {{DATE}}_
-````
+Do not embed a second copy of the template here — keeping it in one place ensures
+the scaffold, the migrations, and the tests never drift.

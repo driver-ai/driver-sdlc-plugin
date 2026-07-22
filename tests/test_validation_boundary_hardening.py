@@ -826,11 +826,15 @@ class TestBranchAwareness(unittest.TestCase):
         self.assertIn("Branch Prefix", self.feature_cmd)
         self.assertRegex(self.feature_cmd, r"\|[^|]*Base Branch[^|]*\|[^|]*Branch Prefix[^|]*\|")
 
-    def test_claude_template_codebases_table_has_two_branch_columns(self):
-        """CLAUDE.md template Codebases table has Base Branch and Feature Branch in table header."""
+    def test_claude_template_codebases_table_has_base_branch_and_prefix_columns(self):
+        """CLAUDE.md template Codebases table has Base Branch and Branch Prefix columns.
+
+        Per-plan model: no single feature branch — per-plan branches derive from the
+        Branch Prefix, so the Codebases table pairs Base Branch with Branch Prefix.
+        """
         self.assertIn("Base Branch", self.claude_template)
-        self.assertIn("Feature Branch", self.claude_template)
-        self.assertRegex(self.claude_template, r"\|[^|]*Base Branch[^|]*\|[^|]*Feature Branch[^|]*\|")
+        self.assertIn("Branch Prefix", self.claude_template)
+        self.assertRegex(self.claude_template, r"\|[^|]*Base Branch[^|]*\|[^|]*Branch Prefix[^|]*\|")
 
     def test_research_guidance_validates_feature_branch(self):
         """research-guidance Step 4 references 'Feature Branch'."""
@@ -1340,7 +1344,7 @@ class TestInternalReviewStructural(unittest.TestCase):
         self.assertIn("standards-review", self.template_md)
 
     def test_review_phase_in_template(self):
-        self.assertIn("| Internal Review |", self.template_md)
+        self.assertIn("| Per-plan Internal Review |", self.template_md)
 
     def test_sdlc_orch_has_review_transition(self):
         self.assertIn("### Per-Plan Assessment → Per-Plan Internal Review", self.sdlc_orch)
