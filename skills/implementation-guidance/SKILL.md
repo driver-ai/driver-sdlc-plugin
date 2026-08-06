@@ -47,7 +47,7 @@ Implementation builds only what the plan specifies. Nothing more.
 **Core principles** (always apply):
 - **Only what's in the plan** — No bonus features, no "while I'm here" improvements
 - **No hypothetical futures** — Build for now, not for imagined requirements
-- **Self-standing code** — The code must be understandable by someone reading only the source, with no access to the plan, task docs, or any process artifact. Comment the non-obvious **why** — a subtle design decision, a workaround, or a deviation from a normal standard whose reason a reader couldn't infer — never the **how**. When you comment, state the actual reason in plain terms (e.g., `// batched because the upstream API rate-limits at 10 req/s`), not a pointer to where it's recorded. **Never reference SDLC/process artifacts in code or comments**: no task numbers (`Task 3`), deviation or decision IDs (`D003`, `DEC-005`), plan names, dry-run gap numbers, or acceptance-criteria IDs. They are meaningless to someone reading only the source. Deviations and decisions live in the implementation log and `DECISIONS.md`, not in code.
+- **Self-standing code** — The code must be understandable by someone reading only the source, with no access to the plan, task docs, or any process artifact. Comment the non-obvious **why** — a subtle design decision, a workaround, or a deviation from a normal standard whose reason a reader couldn't infer — never the **how**. When you comment, state the actual reason in plain terms (e.g., `// batched because the upstream API rate-limits at 10 req/s`), not a pointer to where it's recorded. **Never reference SDLC/process artifacts in code or comments**: no task numbers (`Task 3`), deviation references (`see deviation 3`) or decision IDs (`DEC-005`), plan names, dry-run gap numbers, or acceptance-criteria IDs. They are meaningless to someone reading only the source. Deviations and decisions live in the implementation log and `DECISIONS.md`, not in code.
 - **No mocks of pure-core logic** — If a test needs to mock to exercise pure-core logic, stop. The boundary in the plan is wrong. Log a deviation and surface it; do not paper over the architectural problem with a mock. Mocks of internal modules in shell integration tests are acceptable only when the real collaborator is external, expensive, non-deterministic, or absent in test — and each must be named with its justification (typically a comment on the mock or a note in the test docstring). Such a justification comment is itself a good example of a self-standing **why** comment: it names the real reason (`// mocked: real Stripe calls cost money per invocation`), not a process reference.
 
 **Default practices** (override via plan constraints, codebase standards, or project CLAUDE.md):
@@ -494,7 +494,7 @@ The code you write must stand on its own. Someone reading only the source — wi
 
 - Comments explain **why**, not **what** or **how**. The code already shows how; a comment earns its place only when the reason isn't self-evident from the code — a non-obvious design decision, a workaround, or a deviation from a normal standard.
 - When you do comment, state the actual reason in plain terms (e.g., `// batched because the upstream API rate-limits at 10 req/s`), not a pointer to where it's recorded.
-- **Never reference SDLC/process artifacts in code or comments.** No task numbers (`Task 3`), deviation or decision IDs (`D003`, `DEC-005`), plan names, dry-run gap numbers, or acceptance-criteria IDs. They mean nothing to a reader who only has the source. Report deviations and decisions in your final message (they go in the implementation log and `DECISIONS.md`) — never as code comments.
+- **Never reference SDLC/process artifacts in code or comments.** No task numbers (`Task 3`), deviation references (`see deviation 3`) or decision IDs (`DEC-005`), plan names, dry-run gap numbers, or acceptance-criteria IDs. They mean nothing to a reader who only has the source. Report deviations and decisions in your final message (they go in the implementation log and `DECISIONS.md`) — never as code comments.
 - Do not narrate the process (`// implements Task 3`, `// satisfies acceptance criterion 2`) and do not leave TODO breadcrumbs that reference the plan.
 
 ## Task: <name from task doc>
@@ -515,7 +515,7 @@ The code you write must stand on its own. Someone reading only the source — wi
 2. Read the plan file for full architectural context, including the Core/Shell Decomposition in Architecture Fit
 3. Read the code quality standards document at the source path above
 4. Implement exactly what's specified in the Goal — no extras
-5. Keep the code self-standing (see Code Self-Sufficiency above): comment the non-obvious **why** only, and never put SDLC/process references (task numbers, deviation/decision IDs, plan names) in code or comments
+5. Follow the Code Self-Sufficiency rules above
 6. Respect the core/shell rules above. If your code would violate them, stop and report instead of working around.
 7. Verify your code follows the listed standards rules
 8. Run tests after implementation. Tests must not mock to exercise pure-core logic. Mocks of internal modules in shell integration tests are acceptable only when justified (external / expensive / non-deterministic / absent) — and each must carry a comment naming the justification.
@@ -530,7 +530,7 @@ Include the full task spec — don't summarize. Copy constraints verbatim.
 1. Change directory to the codebase root above
 2. Read the plan file for full architectural context, including the Core/Shell Decomposition in Architecture Fit
 3. Implement exactly what's specified in the Goal — no extras
-4. Keep the code self-standing (see Code Self-Sufficiency above): comment the non-obvious **why** only, and never put SDLC/process references (task numbers, deviation/decision IDs, plan names) in code or comments
+4. Follow the Code Self-Sufficiency rules above
 5. Respect the core/shell rules above. If your code would violate them, stop and report instead of working around.
 6. Run tests after implementation. Tests must not mock to exercise pure-core logic. Mocks of internal modules in shell integration tests are acceptable only when justified (external / expensive / non-deterministic / absent) — and each must carry a comment naming the justification.
 7. Report: what you built, files touched, and any deviations from the spec (especially core/shell boundary deviations)
@@ -655,8 +655,7 @@ Task docs are the persistent source of truth for task state. The implementation 
 - Skip deviation tracking
 - Commit broken state
 - Implement things not in the plan ("while I'm here...")
-- Reference SDLC/process artifacts in code or comments — task numbers, deviation/decision IDs (`D003`, `DEC-005`), plan names, dry-run gap numbers, acceptance-criteria IDs. They mean nothing to someone reading only the source; deviations and decisions belong in the implementation log and `DECISIONS.md`
-- Comment the *how*, or narrate the process (`// implements Task 3`, `// satisfies criterion 2`) — comment only the non-obvious *why*
+- Violate the **Self-standing code** principle (see Core Principles) — no process references in code or comments, no *how* comments, no process narration
 - Move to the next task with unresolved issues
 - Suggest moving to the next SDLC phase
 - Skip post-implementation bookkeeping
@@ -668,7 +667,7 @@ Task docs are the persistent source of truth for task state. The implementation 
 - Prefer extracting a pure core over adding a mock, even if extraction is more work
 - Read task docs as the execution source of truth, including the Core/Shell classification
 - Read the plan and task doc before every task
-- Write self-standing code — a reader with no process docs should understand it; reserve comments for the non-obvious *why* (a subtle decision, a workaround, or a deviation from a normal standard), stated in plain terms
+- Write self-standing code — a reader with no process docs should understand it; reserve comments for the non-obvious *why* (see Core Principles)
 - Update task doc status (`in_progress`, `complete`) during execution
 - Run the full 5-phase pre-flight before executing any task
 - Track deviations for every task, even "None"
@@ -705,7 +704,7 @@ Task docs are the persistent source of truth for task state. The implementation 
 - [ ] **Codebase resolved?** — Does the pre-flight report show the correct codebase target?
 - [ ] **Current task in_progress?** — Is the active task marked correctly?
 - [ ] **Task doc status updated?** — Is the current task marked `in_progress`? Are complete tasks marked `complete`?
-- [ ] **Self-standing code?** — Is the code understandable to someone with no access to the plan or process docs? Do comments explain the non-obvious *why* rather than the *how*, and are they free of SDLC references (task numbers, `D003`/`DEC-NNN` IDs, plan/gap names)?
+- [ ] **Self-standing code?** — Does the code meet the **Self-standing code** principle: understandable without process docs, comments give the non-obvious *why*, no process references?
 - [ ] **Deviations tracked?** — Did I compare actual vs. planned?
 - [ ] **Verified?** — Did I run a verification command before claiming this task is done?
 - [ ] **Tests passing?** — Are tests green before committing?

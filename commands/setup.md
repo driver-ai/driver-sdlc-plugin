@@ -361,7 +361,7 @@ Features follow a phased development lifecycle. Each phase has a dedicated skill
 | Review | `drvr:sdlc-orchestration` | Present deviations for user approval before bookkeeping |
 | Bookkeeping | `drvr:implementation-guidance` | Update plan status, overview, cascade check |
 | Assessment | `/drvr:assess` | Curate test suite against the core/shell commitment — prune mock-heavy and implementation-detail tests, promote behavior coverage needing pure-core extraction |
-| Internal Review | `/drvr:review` | Review code against §FCIS and codebase standards, auto-fix codebase-standard violations |
+| Internal Review | `/drvr:review` | Review code against §FCIS, §self-standing, and codebase standards, auto-fix comment and codebase-standard violations |
 | Handoff | `/drvr:docs-artifacts` | Generate feature-overview, architecture, testing-guide, risk-assessment |
 | Open PR | `/drvr:open-pr` | Create PR from handoff docs via gh CLI |
 | PR Review | `drvr:sdlc-orchestration` | Track review status, suggest next steps |

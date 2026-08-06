@@ -11,12 +11,13 @@ allowed-tools:
 
 # Standards Review Agent
 
-Specialized agent that reviews code changes against two layers of standards:
+Specialized agent that reviews code changes against three layers of standards:
 
-1. **Functional core / imperative shell** (§FCIS) — the plugin's own architectural commitment. Runs unconditionally on every review.
-2. **Codebase-specific standards** — rules captured from the codebase's own CLAUDE.md during research. Runs only if a standards artifact path is supplied.
+1. **Functional core / imperative shell** (§FCIS) — the plugin's own architectural commitment. Runs unconditionally on every review (Step 2a).
+2. **Comment self-sufficiency** (§self-standing) — the plugin's commitment that code is understandable from the source alone, without process artifacts. Runs unconditionally on every review (Step 2c).
+3. **Codebase-specific standards** — rules captured from the codebase's own CLAUDE.md during research. Runs only if a standards artifact path is supplied (Step 2b).
 
-Output identifies violations of both, checks plan acceptance criteria, verifies test coverage against the plan's test strategy, and proposes concrete fixes for each finding.
+Output identifies violations of all three, checks plan acceptance criteria, verifies test coverage against the plan's test strategy, and proposes concrete fixes for each finding.
 
 ## Input
 
@@ -60,7 +61,7 @@ The plugin commits to a functional-core / imperative-shell architecture (see plu
    - Mock of an internal module with no justification or a justification that doesn't fit those categories: FAIL.
 6. Propose concrete fixes for each FAIL: which logic to extract, which I/O to push outward, which test to rewrite as values-in/values-out against an extracted pure-core function. For each N/A, briefly note the reason (one line) so reviewers can audit the exceptions.
 
-All §FCIS rows are reported under the `§FCIS` standard identifier in the output table.
+All §FCIS rows are reported under the `§FCIS` standard identifier in the output table. Emit a row for each FAIL and each N/A; do not emit a per-file PASS row. PASS is reported in aggregate on the mandatory §FCIS Summary line, so "checked and clean" stays distinguishable from "not checked."
 
 ### Step 2b: Codebase Standards Review (only if standards artifact path supplied)
 
@@ -81,9 +82,11 @@ The code must stand on its own — someone reading only the source, with no acce
 
 1. Filter the changed files to **source and test files**.
 2. For each file, scan comments and docstrings for:
-   - **Process references** — task numbers (`Task 3`), deviation or decision IDs (`D003`, `DEC-005`), plan names, dry-run gap numbers, or acceptance-criteria IDs. Any such reference: FAIL with line number. Proposed fix: replace with the actual reason in plain terms, or delete the comment if the code is self-evident.
+   - **Process references** — task numbers (`Task 3`), deviation references (`see deviation 3`) or decision IDs (`DEC-005`), plan names, dry-run gap numbers, or acceptance-criteria IDs. Any such reference: FAIL with line number. Proposed fix: replace with the actual reason in plain terms, or delete the comment if the code is self-evident.
    - **How-not-why comments** — a comment that merely restates what the adjacent code does (`// increment i by one`). FAIL with line number. Proposed fix: delete.
 3. A comment that explains a non-obvious **why** — a subtle design decision, a workaround, or a deviation from a normal standard, stated in plain terms — is PASS. A justified-mock comment naming its real reason (external / expensive / non-deterministic / absent) is PASS, not a violation.
+
+Emit a row for each FAIL; do not emit a per-file PASS row. PASS is reported in aggregate on the §self-standing Summary line, which is mandatory even when there are zero findings — its absence means the check did not run.
 
 ### Step 3: Acceptance Criteria Check
 
@@ -111,12 +114,12 @@ Produce a structured markdown report with three sections:
 
 #### Standards Compliance
 
-The table includes `§FCIS` rows (always present, from Step 2a), `§self-standing` rows (always present, from Step 2c), and codebase-standards rows (from Step 2b, if a standards artifact was supplied). Status is PASS, FAIL, or N/A.
+The table lists every **FAIL** and **N/A** row from all three checks. Per-file PASS rows are not enumerated — PASS is reported in aggregate in the Summary, which always carries one line per always-run standard (§FCIS from Step 2a, §self-standing from Step 2c) whether or not it found anything. A missing Summary line means the check did not run. Codebase-standards rows (Step 2b) appear only if a standards artifact was supplied.
 
 | File | Standard | Status | Detail | Proposed Fix |
 |------|----------|--------|--------|-------------|
 | `src/checkout.py` | §FCIS | FAIL | Line 18: `compute_total` is classified as core but calls `db.fetch_items()` | Extract DB read into shell wrapper; pass items as a list to `compute_total` |
-| `src/queue.py` | §self-standing | FAIL | Line 30: comment `# see D003 for rationale` references a deviation ID | Replace with the reason itself (e.g. `# retry with backoff — upstream returns 429 under burst`) or delete |
+| `src/queue.py` | §self-standing | FAIL | Line 30: comment `# see deviation 3 for rationale` points at the implementation log instead of stating the reason | Replace with the reason itself (e.g. `# retry with backoff — upstream returns 429 under burst`) or delete |
 | `src/api.py` | §FCIS | FAIL | Line 47: `handle_login` (shell) contains password-hashing logic | Extract `verify_password(hash, candidate) -> bool` as a pure-core function |
 | `tests/test_pricing.py` | §FCIS | FAIL | Line 12: mocks internal `PricingRepository` with no justification | Extract pure-core `calculate_price(items, coupon)` and assert values in / values out against it; delete the mock-based test |
 | `src/routes.py` | §FCIS | N/A | Shell-only plan, routing dispatch — branching IS the feature | — |
@@ -137,13 +140,17 @@ The table includes `§FCIS` rows (always present, from Step 2a), `§self-standin
 
 #### Summary
 
-- **Standards**: N checks (M FAIL)
+Always emit one line per always-run standard, even when it found nothing — a missing line means the check did not run.
+
+- **§FCIS**: N files checked (M FAIL, K N/A)
+- **§self-standing**: N files checked (M FAIL)
+- **Codebase standards**: N checks across M files (K FAIL) — or `not run (no standards artifact supplied)`
 - **Acceptance Criteria**: N criteria (M UNMET)
 - **Test Coverage**: N planned tests (M MISSING)
 
 ## Severity Guidelines
 
-- **Standards Compliance** (both §FCIS and codebase): FAIL = explicit violation. PASS = compliant. §FCIS FAIL is high-severity by default — it indicates an architecture problem, not a style nit.
+- **Standards Compliance** (§FCIS, §self-standing, and codebase): FAIL = explicit violation. PASS = compliant. §FCIS FAIL is high-severity by default — it indicates an architecture problem, not a style nit. §self-standing FAIL is low-severity by default — it's a comment-level fix that doesn't change behavior, so it's safe to auto-fix.
 - **Acceptance Criteria**: MET = fully satisfied. UNMET = not satisfied. PARTIAL = partially satisfied.
 - **Test Coverage**: FOUND = test exists as planned. MISSING = planned but not written. RENAMED = written under different name. EXTRA = written but not planned.
 
@@ -166,7 +173,9 @@ If no issues are found across all three sections, return:
 
 No issues found.
 
-- **Standards**: N checks (0 FAIL)
+- **§FCIS**: N files checked (0 FAIL)
+- **§self-standing**: N files checked (0 FAIL)
+- **Codebase standards**: N checks across M files (0 FAIL) — or `not run (no standards artifact supplied)`
 - **Acceptance Criteria**: N criteria (0 UNMET)
 - **Test Coverage**: N planned tests (0 MISSING)
 ```

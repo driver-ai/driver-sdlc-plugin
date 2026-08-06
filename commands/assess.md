@@ -97,7 +97,7 @@ The historical guidance "when uncertain, KEEP" is reversed for mock-heavy tests:
 
 ## Step 4: Code Quality Review
 
-This step always runs the **core/shell boundary check** (independent of any codebase standards artifact), then layers codebase-specific standards on top if a standards artifact exists.
+This step always runs two plugin-level checks — the **core/shell boundary check** (4a) and the **comment self-sufficiency check** (4c) — independent of any codebase standards artifact. Codebase-specific standards (4b) layer on top if a standards artifact exists.
 
 ### 4a: Core/Shell Boundary Check (always runs)
 
@@ -130,7 +130,20 @@ If a codebase standards artifact exists (`research/NN-codebase-standards.md`), r
    - Classify as PASS (compliant) or FAIL (violation found)
 4. **For each FAIL**, note the specific violation and suggest a fix
 
-Build a compliance table (rows from 4a and 4b combined):
+### 4c: Comment Self-Sufficiency (always runs)
+
+Audit the implementation files for comments that only make sense to someone holding the process artifacts. This check runs whether or not the codebase has its own CLAUDE.md — the commitment comes from the plugin, not the codebase's standards.
+
+Scan comments and docstrings in changed source and test files for:
+
+- **Process references** — task numbers (`Task 3`), deviation references (`see deviation 3`), decision IDs (`DEC-005`), plan names, dry-run gap numbers, or acceptance-criteria IDs. FAIL. Fix: state the reason in plain terms, or delete the comment if the code is self-evident.
+- **How-not-why comments** — a comment that merely restates what the adjacent code does (`# increment i by one`). FAIL. Fix: delete.
+
+A comment that explains a non-obvious **why** — a subtle design decision, a workaround, or a justified mock naming its real reason (external / expensive / non-deterministic / absent) — is PASS, not a violation.
+
+Record findings in the compliance table with `Standard: §self-standing`.
+
+Build a compliance table (rows from 4a, 4b, and 4c combined):
 
 | File | Standard | Status | Detail |
 |------|----------|--------|--------|
@@ -138,6 +151,7 @@ Build a compliance table (rows from 4a and 4b combined):
 | `path/to/shell.py` | §FCIS Core/shell boundary | FAIL | `handle_request` contains discount calculation logic — extract into core function `apply_discount(items, coupon) -> total` |
 | `path/to/routes.py` | §FCIS Core/shell boundary | N/A | Shell-only plan, routing dispatch — branching IS the feature |
 | `tests/test_llm.py` | §FCIS Core/shell boundary | N/A | Mock of `LLMClient` — justified as expensive (real calls cost money per invocation) |
+| `path/to/queue.py` | §self-standing | FAIL | Line 30: comment `# see deviation 3 for rationale` points at the implementation log instead of stating the reason — replace with the reason itself (e.g. `# retry with backoff — upstream returns 429 under burst`) or delete |
 | `path/to/file.py` | §6 Error handling | PASS | Narrow try/except used |
 | `path/to/file.py` | §4 Data structures | FAIL | Uses raw dict on line 42, should be Pydantic model |
 

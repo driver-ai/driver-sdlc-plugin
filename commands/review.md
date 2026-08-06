@@ -83,7 +83,7 @@ Parse agent output into three categories:
 
 | Category | Source | Auto-fixable? |
 |----------|--------|---------------|
-| **Standards Compliance** | Agent checks against §FCIS (always) + codebase standards (if artifact present). §FCIS rows are tagged `§FCIS` in the Standard column. | Yes for codebase-standard rows; §FCIS rows usually require architectural extraction and should be presented for user judgment rather than auto-fixed. |
+| **Standards Compliance** | Agent checks against §FCIS (always) + §self-standing (always) + codebase standards (if artifact present). Rows are tagged `§FCIS`, `§self-standing`, or the codebase standard's name in the Standard column. | Yes for `§self-standing` rows (comment edits — no behavior change) and codebase-standard rows; `§FCIS` rows usually require architectural extraction and should be presented for user judgment rather than auto-fixed. |
 | **Acceptance Criteria** | Agent checks against plan criteria | No (manual) |
 | **Test Coverage** | Agent checks against plan test strategy | No (manual) |
 
