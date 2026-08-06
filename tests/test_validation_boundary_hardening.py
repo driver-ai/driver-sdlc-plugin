@@ -815,17 +815,26 @@ class TestBranchAwareness(unittest.TestCase):
         self.assertIn("base branch", lower)
         self.assertIn("feature branch", lower)
 
-    def test_feature_cmd_codebases_table_has_two_branch_columns(self):
-        """feature.md Step 6 template has Base Branch and Feature Branch in table header."""
-        self.assertIn("Base Branch", self.feature_cmd)
-        self.assertIn("Feature Branch", self.feature_cmd)
-        self.assertRegex(self.feature_cmd, r"\|[^|]*Base Branch[^|]*\|[^|]*Feature Branch[^|]*\|")
+    def test_feature_cmd_codebases_table_has_base_branch_and_prefix_columns(self):
+        """feature.md Step 6 Codebases table has Base Branch and Branch Prefix columns.
 
-    def test_claude_template_codebases_table_has_two_branch_columns(self):
-        """CLAUDE.md template Codebases table has Base Branch and Feature Branch in table header."""
+        Per-plan model: there is no single feature branch — per-plan branches are
+        generated from the Branch Prefix, so the feature-level table pairs Base
+        Branch with Branch Prefix.
+        """
+        self.assertIn("Base Branch", self.feature_cmd)
+        self.assertIn("Branch Prefix", self.feature_cmd)
+        self.assertRegex(self.feature_cmd, r"\|[^|]*Base Branch[^|]*\|[^|]*Branch Prefix[^|]*\|")
+
+    def test_claude_template_codebases_table_has_base_branch_and_prefix_columns(self):
+        """CLAUDE.md template Codebases table has Base Branch and Branch Prefix columns.
+
+        Per-plan model: no single feature branch — per-plan branches derive from the
+        Branch Prefix, so the Codebases table pairs Base Branch with Branch Prefix.
+        """
         self.assertIn("Base Branch", self.claude_template)
-        self.assertIn("Feature Branch", self.claude_template)
-        self.assertRegex(self.claude_template, r"\|[^|]*Base Branch[^|]*\|[^|]*Feature Branch[^|]*\|")
+        self.assertIn("Branch Prefix", self.claude_template)
+        self.assertRegex(self.claude_template, r"\|[^|]*Base Branch[^|]*\|[^|]*Branch Prefix[^|]*\|")
 
     def test_research_guidance_validates_feature_branch(self):
         """research-guidance Step 4 references 'Feature Branch'."""
@@ -1214,12 +1223,12 @@ class TestPostPRLifecycle(unittest.TestCase):
 
     def test_orchestration_has_post_pr_transitions(self):
         transitions = [
-            "### Handoff → Open PR",
-            "### Open PR → PR Review",
-            "### PR Review → Revision",
-            "### PR Review → Merge",
-            "### Merge → Verification",
-            "### Verification → Shipped",
+            "### Per-Plan Handoff → Per-Plan Open PR",
+            "### Per-Plan Open PR → Per-Plan PR Review",
+            "### Per-Plan PR Review → Revision",
+            "### Per-Plan PR Review → Merge",
+            "### Per-Plan Merge → Per-Plan Verification",
+            "### All Plan PRs Shipped → Feature Shipped",
             "### Any Post-PR → Closed",
         ]
         for t in transitions:
@@ -1326,7 +1335,7 @@ class TestInternalReviewStructural(unittest.TestCase):
         self.assertIn("standards-review", self.claude_md)
 
     def test_review_phase_in_claude_md(self):
-        self.assertIn("| Internal Review |", self.claude_md)
+        self.assertIn("| Per-plan Internal Review |", self.claude_md)
 
     def test_review_in_template_commands(self):
         self.assertIn("/drvr:review", self.template_md)
@@ -1335,21 +1344,23 @@ class TestInternalReviewStructural(unittest.TestCase):
         self.assertIn("standards-review", self.template_md)
 
     def test_review_phase_in_template(self):
-        self.assertIn("| Internal Review |", self.template_md)
+        self.assertIn("| Per-plan Internal Review |", self.template_md)
 
     def test_sdlc_orch_has_review_transition(self):
-        self.assertIn("### Assessment → Internal Review", self.sdlc_orch)
+        self.assertIn("### Per-Plan Assessment → Per-Plan Internal Review", self.sdlc_orch)
 
     def test_sdlc_orch_review_phase_detection(self):
-        self.assertIn("Internal review complete", self.sdlc_orch)
+        self.assertIn("internal_review_complete", self.sdlc_orch)
 
     def test_review_in_commands_list(self):
         self.assertIn('"review"', self.test_structural)
 
     def test_review_in_lifecycle_diagram(self):
+        # Prefix match tolerates both the feature-level `[/drvr:review]` (template)
+        # and the per-plan `[/drvr:review <plan>]` (CLAUDE.md) forms.
         for name, content in [("CLAUDE.md", self.claude_md), ("template", self.template_md)]:
             with self.subTest(file=name):
-                self.assertIn("[/drvr:review]", content)
+                self.assertIn("[/drvr:review", content)
 
     def test_review_in_orchestration_events(self):
         self.assertIn("/drvr:review", self.sdlc_orch)
