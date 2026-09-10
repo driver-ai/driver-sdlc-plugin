@@ -1,12 +1,72 @@
 ---
 description: Dry run a plan to identify gaps before implementation
 argument-hint: "[plan-name]"
-allowed-tools: Read, Write, Edit, Glob, Grep, Agent
+allowed-tools: Read, Write, Edit, Bash, Glob, Grep, Agent, Skill
 ---
 
 # /drvr:dry-run-plan Command
 
 Walk through a plan as if implementing it to identify gaps, missing context, and potential issues before actual implementation begins.
+
+## Entry: Delivery, Authority, and Organization
+
+Read [Symphony workflow](../references/symphony-workflow.md) and
+[Linear organization](../references/linear-organization.md). Their authority, durable-record,
+checkpoint, and recovery rules apply to both paths. Recover **Delivery: Symphony** or
+**Delivery: Local** from established task context; do not infer it from a repository name.
+Resolve missing delivery before publishing an execution contract. Existing authority to
+prepare or repair a plan includes routine factual fixes and affected rechecks.
+
+## Symphony Preparation: Dry Run
+
+Run this procedure for Symphony preparation, then stop before the Local procedure. Use
+direct source and Linear inspection throughout. Do not invoke Driver MCP or Driver-backed
+context, cascade, or handoff agents.
+
+1. **Locate the authoritative plan.** Use the supplied path/Linear link or the current
+   durable record. Read the plan, intent, relevant decisions, and unresolved operations.
+   An existing local plan/log remains canonical; Linear-native work uses the operator
+   document's working plan, Current State, Decisions, and append-only Activity Log.
+   Do not create local task documents or a parallel mutable plan for this check.
+2. **Walk each task.** Verify target repository/path, branch/base and source revision,
+   affected dirty files, exact changes, applicable standards, acceptance criteria, actor,
+   dependencies, relevant failure cases, and validation commands. Read current files and
+   interfaces directly; check tool/CLI/platform assumptions against their actual source
+   or version. Separate observed facts, inference, and unknown deployment state.
+3. **Check fit and simplicity.** Does the plan solve the agreed problem with the smallest
+   useful change, reuse existing mechanisms, and avoid duplicate sources of truth? Verify
+   pure-core/I/O boundaries where code warrants them. Prose/configuration work does not
+   fail merely for lacking callable snippets, a pure core, or test tasks. Check meaningful
+   validation for the proposed behavior; do not invent a suite to satisfy a template.
+4. **Check delivery boundaries.** Confirm one reviewable delivery per eventual issue/PR,
+   real dependencies, and operator/worker separation. Inspect relevant linked work and
+   downstream consumers directly when a finding affects them. Use the organization
+   reference to deduplicate or preserve tangents and deferrals with their provenance.
+   Missing workflow or target facts leave an explicit draft, not invented execution facts.
+5. **Repair within authority.** Classify and record consequential findings with evidence,
+   affected artifact, resolution, and remaining risk. Correct clear factual or consistency
+   errors, verify source/revision and current state before updating affected
+   plans/specifications, and rerun affected checks. Load the full
+   [linear-issue skill](../skills/linear-issue/SKILL.md) before changing an active worker
+   specification and use its rework procedure.
+   Surface a material design/scope/commitment choice before dependent work; severity alone
+   does not decide whether a fix needs permission. Do not ask separately to fix and recheck,
+   repeat unchanged failures, or silently replace an active worker specification.
+6. **Persist the result.** Append attempts, confirmed fixes/check outcomes, unresolved choices,
+   and the next action in the existing durable home. Keep earlier findings as history and
+   append corrections; update its current verdict. Follow shared checkpoint rules for
+   owned commits, uncertain writes, and pending synchronization. A failed check or save is
+   not a successful result.
+7. **Return the actionable verdict.** Explain what is ready and what still prevents handoff.
+   Continue authorized affected repair or issue preparation; load the full
+   [linear-issue skill](../skills/linear-issue/SKILL.md) for worker preparation. A passed
+   dry run does not authorize local implementation, dispatch, merge, or deployment.
+
+## Local Dry-Run Procedure
+
+All remaining methods, templates, and classifications apply to **Delivery: Local**. The
+shared authority and checkpoint rules still apply; preserve actual Local execution gates
+and honor explicit user instructions over plugin defaults.
 
 The dry-run is also the gate that catches **core/shell boundary failures** before they reach implementation. See [`CLAUDE.md`](../CLAUDE.md) Key Principles. Plans that lack a Core/Shell Decomposition section (neither pure-core listed nor a justified shell-only declaration), propose mocks of pure-core logic or unjustified mocks of internal modules, or tangle I/O into pure-core items are flagged as HIGH-severity gaps and must be fixed before materialization. Shell-only declarations (for thin CRUD, glue, webhook forwarders, etc.) are acceptable when the rationale is specific and credible.
 
@@ -63,7 +123,7 @@ Classify each gap found using the severity criteria below.
 
 ### Step 4: Check Architecture Fit
 
-If the plan modifies source code or references codebase patterns, spawn the `driver-task-context` agent to verify accuracy:
+For Local delivery, if the plan modifies source code or references codebase patterns, spawn the `driver-task-context` agent to verify accuracy:
 
 ```
 Dry running a plan for <feature>. Need to verify:
@@ -160,20 +220,22 @@ Check the "All plans ready" box only if every individual plan's verdict is "Read
 
 Present the manifest to the user.
 
-### Step 7: Present Gaps and Offer to Fix
+### Step 7: Repair and Present Remaining Gaps
 
-Present the results to the user, organized by severity (HIGH first). The user reviews all gaps — even LOW severity gaps may trigger insights about missed requirements.
+Repair factual and consistency errors within established authority, and recheck affected
+plan sections and evidence. Apply the shared checkpoint rules to record each consequential
+finding, correction, and confirmed outcome. Make an owned scoped commit after reviewing
+the exact diff; exclude unrelated staged files. Preserve earlier findings with appended
+corrections rather than erasing their history.
 
-After the user has reviewed:
-> "Would you like me to update the plan to address these gaps?"
+Present results by severity (HIGH first), including repairs made and any material choice
+still needed. A repair request already authorizes its affected recheck; do not ask twice.
+When a fix requires a new design, scope, or commitment decision, explain the alternatives
+and continue independent work while that decision remains open. Honor a request for
+review only. Do not repeat an unchanged failed check.
 
-If the user approves fixes:
-1. Apply the agreed fixes to the plan file
-2. Mark fixed gaps as `[FIXED]` in the dry-run results (prepend to Description)
-3. Commit: `git commit -m "fix: Address dry-run gaps for plan <name>"`
-
-If the user wants to re-validate after fixes:
-> "Want to re-run the dry-run to verify the fixes?"
+Keep the verdict current and distinguish confirmed fixes, unresolved failures, and pending
+persistence. A passed review preserves the Local materialization and implementation gates.
 
 ---
 
@@ -225,5 +287,5 @@ Default severities are starting points — override based on the specific gap.
 - Results are written to `dry-runs/` for the historical record
 - Be thorough — the goal is to catch issues BEFORE implementation
 - Present ALL gaps to the user for review, regardless of severity
-- The user decides which gaps to fix — don't auto-apply fixes
+- Repair clear errors within established authority; ask about material choices before dependent work
 - Severity helps prioritize review, not skip it

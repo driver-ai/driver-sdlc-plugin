@@ -13,15 +13,26 @@ description: |
 
 You coordinate the feature development lifecycle. You know which phase we're in, ensure the right skill is active, manage transitions between phases, and handle session resumption.
 
-## CRITICAL: User Controls All Decisions
+## Entry: delivery, authority, and durable state
 
-You manage process, not decisions. Present information, suggest next steps, but the user decides:
-- Whether to move to the next phase
-- Whether deviations are acceptable or need rework
-- Whether bookkeeping should proceed
-- Which plan to work on next
+Read [the shared operating rules](../../references/symphony-workflow.md) and [Linear organization](../../references/linear-organization.md). Resolve delivery from the established task, carry prior authority forward, and use the existing durable home. Routine bookkeeping, repairs, and authorized transitions do not require repeated permission. Surface material choices the user has not made.
 
-"Next unblocked plan is 01b" is a suggestion. "Ready to implement?" is overstepping.
+### Symphony preparation and resumption
+
+Use this path for `Delivery: Symphony`; it ends before the Local lifecycle below. If delivery is unresolved, continue intent/research using the shared rules and resolve delivery before execution or handoff.
+
+1. **Locate the effort:** accept an issue, project, initiative, existing feature path, or work described in the conversation. Read the canonical intent/plan and Current State, Decisions, and recent appended activity. Search relevant Linear records; do not demand a local overview or create duplicate working artifacts.
+2. **Reconcile:** verify live Linear ownership, relations, state and worker activity; check relevant source revisions, recorded commits, and local changes. Never commit unknown dirty files on resumption. Resolve uncertain previous writes by ID or scoped search before retrying them. Record corrections and pending outcomes.
+3. **Identify the next useful phase:** missing or changed intent → intent guidance; consequential unknowns → research; evidence sufficient to select work → planning; drafted plan → dry-run its affected paths; approved, verified scope → full [linear-issue skill](../linear-issue/SKILL.md). Local task-document counts, assessment files, and local implementation logs are not Symphony readiness gates.
+4. **Revisit organization:** reuse matching work, split independent PRs, add true dependency relations, and capture tangents with origin/value/deferral reason/revisit condition in their proper backlog or a named pending record. Only add hierarchy when the scope benefits from it.
+5. **Continue within authority:** activate the relevant skill and perform the authorized next step. Repair clear plan/source errors and repeat affected checks. For cascades, inspect only related plans/issues and changed interfaces directly, retaining source and upstream commit verification. Do not call legacy Driver-backed agents. Surface material design choices or ownership changes before committing to them.
+6. **Checkpoint and report:** append meaningful activity/outcomes in the canonical log, update Current State, and make an owned commit for local artifacts using the shared checkpoint rules. Report delivery, canonical home, current phase, verified organization, pending work, and next action. Do not claim dispatch, implementation, or deployed configuration was verified by preparation.
+
+The operator document is not a worker Workpad. Do not watch or coordinate another user task unless asked. Issue preparation ends with unarmed issues; explicit arming, local execution, merge, and deployment have separate authority boundaries.
+
+## Local lifecycle
+
+The remaining lifecycle, file conventions, and callee prerequisites apply to `Delivery: Local`. The shared authority and checkpoint rules still apply. Explicit user-provided execution specifications take precedence over the default materialized-task workflow; route through implementation-guidance's corresponding entry path rather than pretending local prerequisites were satisfied.
 
 ---
 
@@ -47,9 +58,9 @@ When a user returns to a feature ("returning to feature/X", "resume feature X", 
 
    1. Run `git status --porcelain` in the feature directory, filtering for `.md` files in artifact directories (`research/`, `plans/`, `implementation/`, `assessment/`, `driver-docs/`, `dry-runs/`)
    2. Also check `FEATURE_LOG.md` and `DECISIONS.md`
-   3. If uncommitted artifacts found: report what was found and commit them
-   4. Commit message: `chore: Commit SDLC artifacts from previous session`
-   5. Then proceed with normal state reporting
+   3. If uncommitted artifacts are found, inspect their diffs and provenance. Preserve unknown or unrelated changes; finding a file does not establish ownership.
+   4. Save and commit only verified task-owned work under the [shared checkpoint rules](../../references/symphony-workflow.md#checkpoint-meaningful-work), excluding unrelated staged files. Record saved versus committed versus pending work.
+   5. Reconcile the log with actual source/commit state, append any correction, then proceed with state reporting.
 
 4. **Check for in-progress work:**
    - `research/00-intent.md` missing → phase is **Intent**. Suggest: "Intent has not been captured. Activate `intent-guidance` to start."
@@ -130,14 +141,14 @@ When the user signals "let's plan" or "ready to plan":
 7. Edge cases: If N = 0 and M = 0: "No research docs found." If N > 0 and M = 0: "N research docs. No open questions." If N = 0 and M > 0: "No research docs found, but M open questions remain in X."
 8. Known limitations: (a) only `- ` bullet-format questions are detected — research-guidance enforces this format, but older features using numbered lists or unbulleted prose require manual review. (b) The scanner has no fenced-code-block awareness — `## Open Questions` inside triple-backtick blocks would be matched. No real research files have this pattern at column 0, so the risk is theoretical.
 
-This is informational — the user decides whether to proceed or resolve questions first.
+This is informational. Continue when existing authorization covers the transition; surface only unresolved questions that change the planned outcome or next action.
 
 - Activate `drvr:planning-guidance`
 
 ### Planning → Validation
 When a plan is written:
 - If the feature has an overview with interface contracts, run consumer validation: check whether downstream plans' assumptions match this plan's definitions
-- Suggest: "Want to run `/drvr:dry-run-plan <name>`?"
+- Run `/drvr:dry-run-plan <name>` when validation is within the existing authorization; otherwise identify it as the next action. Do not ask again after approval already covers it.
 
 ### Validation → Materialization
 When the plan is approved and ready for materialization:
@@ -154,13 +165,13 @@ When the plan is approved and ready for materialization:
 ### Materialization → Implementation
 When materialization is complete:
 - **Task doc gate** — Verify task docs exist in `plans/<plan>/tasks/` AND count matches plan task count. If count mismatch: BLOCK. "Task doc count (N) does not match plan task count (M). Re-run `materialize-tasks`."
-- The user decides whether to proceed
+- Continue if implementation is already authorized; otherwise report readiness without starting execution.
 
 ### Implementation → Review Deviations
 When implementation-guidance reports all tasks complete:
 - **Present the deviation summary** from the implementation log
-- Let the user review each deviation
-- Ask: "Are these deviations acceptable, or would you like to go back and address any of them?"
+- Record routine factual repairs and previously authorized deviations without another approval loop.
+- Ask only about unresolved deviations that change scope, design, or material tradeoffs.
 - If the user wants changes → return to implementation for rework
 - If the user approves → proceed to bookkeeping
 
@@ -171,7 +182,7 @@ After the user approves deviations, execute all bookkeeping steps automatically 
 - Verify upstream plan commits — read the implementation log for commit hashes. For each, verify the commit exists locally via `git rev-parse --verify <hash>^{commit}`. If missing: WARN. "Commit `<hash>` not found in local git history — cascade-check results may be unreliable. Proceed?"
 - Spawn [cascade-check](../../agents/cascade-check.md) agent to analyze whether deviations affect downstream plans
 - Present cascade results to user (pause only if design-impact decisions are flagged)
-- Commit bookkeeping: `"chore: Update plan status and overview for plan <name>"`
+- Commit reviewed task-owned bookkeeping under the shared checkpoint rules; preserve unrelated staged work and append the commit outcome.
 
 ### Bookkeeping → Per-Plan PR Gate (REQUIRED)
 
@@ -239,7 +250,7 @@ When review comments on a plan's PR require code changes.
 
 **Advisory:** "Make changes on `<Feature Branch>`, push, optionally re-run `/drvr:docs-artifacts <plan>` to update the PR docs."
 
-After re-running `/drvr:docs-artifacts <plan>`, suggest updating the PR body with `gh pr edit <number> --body <new-body>` (read body from `driver-docs/<plan>/*`). This is a lightweight loop — no full implementation-guidance workflow.
+After re-running `/drvr:docs-artifacts <plan>`, update the PR body within existing authority using a structured tool argument or `gh pr edit <number> --body-file <prepared-file>` (read body from `driver-docs/<plan>/*`). This is a lightweight loop — no full implementation-guidance workflow.
 
 **Stacked-PR caveat:** if a revision changes Plan N's interface in a way downstream plans depend on, surface that explicitly — downstream branches may need to be rebased or downstream plans updated. Use the cascade-check agent if the change is non-trivial.
 
@@ -379,7 +390,7 @@ Append a row to the log table:
 | <YYYY-MM-DD> | <event description> | `<artifact path>` |
 ```
 
-Update the "Current State" header to reflect the new phase and active work.
+Update the "Current State" header to reflect the new phase and active work. Preserve earlier events; append corrections and meaningful attempts/outcomes, including pending writes and saved/committed status, under the shared recovery rules.
 
 ---
 

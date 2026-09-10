@@ -1,14 +1,51 @@
 ---
 name: materialize-tasks
 description: |
-  Materialize approved plan tasks into standalone task documents for sub-agent execution.
-  Each task doc embeds everything a sub-agent needs: codebase root, absolute paths, standards,
-  and explicit instructions. Use after plan approval and dry-run validation.
+  Turn an approved plan into a Symphony issue handoff or Local task documents.
+  Route Symphony preparation through the bundled linear-issue skill; Local task docs embed
+  codebase root, paths, standards, and execution instructions. Use after plan validation.
   Trigger phrases: "materialize tasks", "materialize tasks for plan X", "re-materialize",
   "create task docs".
 ---
 
 # Materialize Tasks
+
+## Select the Handoff Before Materializing
+
+Read the [operating contract](../../references/symphony-workflow.md) and
+[Linear organization rules](../../references/linear-organization.md). Use the explicit
+task context and existing recorded delivery choice; a repository name does not select
+a workflow. Preserve the user's authorization across steps. If delivery is unresolved,
+continue useful intent/research and resolve it before producing execution instructions.
+
+### Delivery: Symphony — Prepare Issues
+
+1. **Load the complete [linear-issue skill](../linear-issue/SKILL.md) now**, before
+   the dry-run, task-directory, codebase-table, or Local template gates below. Its full
+   issue template and handoff checks define the output.
+2. Reuse the approved plan and its existing durable log. For Linear-native work, use
+   the operator document established during intent/research. Record current source
+   revisions and resolve the applicable external `WORKFLOW.md` as the issue skill
+   requires; do not treat repository configuration as verified deployment state.
+3. Search and reuse existing work, then prepare one self-contained issue per PR with
+   real dependencies and separate operator-only work. Follow the issue skill's rules
+   for new Backlog issues, existing state/labels, and active-spec rework. Capture
+   deferred work with its origin and revisit condition in its appropriate destination.
+4. Checkpoint the intended writes, verify their results, and append issue IDs/links,
+   outcomes, and remaining decisions to the existing log. Report prepared and pending
+   work separately. Do not create local task docs or start execution as a consequence
+   of preparing issues. Do not dispatch workers or create an operator Workpad.
+
+Return after the issue handoff. The remaining sections describe **Delivery: Local**
+task-document materialization and do not apply to Symphony preparation. No Driver
+setup, discovery, context agent, or other indirect Driver call belongs on this path.
+
+If the user explicitly requests local implementation using an already self-contained
+Linear issue or other execution spec, route to [implementation-guidance](../implementation-guidance/SKILL.md)
+with that spec and the existing authorization; creating a second task-doc spec is not
+a prerequisite. If the user asks to create Local task docs, follow the method below.
+
+## Delivery: Local — Task Documents
 
 After plan approval and dry-run gap verification, materialize each task as a standalone document. Task docs embed everything a sub-agent needs for atomic, self-contained execution — codebase root, absolute paths, standards, and explicit instructions. The task doc IS the sub-agent's execution contract.
 
@@ -36,10 +73,10 @@ After approval, verify that outstanding dry-run gaps do not block materializatio
 
 **Find the latest dry-run:** Match dry-run files whose filename begins with the plan's filename stem (without `.md`). For example, for plan `01-bilateral-materialization-gate.md`, match files in `dry-runs/` starting with `01-bilateral-materialization-gate-`. Sort matched files by file modification time (most recent first) — filename-based sorting is unreliable since dry-run files use inconsistent suffixes like `-deep`, `-round4`.
 
-- **If no dry-run files match:** WARN. "No dry-run found for this plan. Consider running `/drvr:dry-run-plan` to validate before materializing. Proceed without dry-run verification?"
+- **If no dry-run files match:** WARN. Run the applicable dry-run within the user's existing authorization, or record an explicitly accepted exception. Ask only if the missing validation requires a new decision.
 - **If files found:** Read the latest. Scan the gap table for rows whose Description column is NOT prefixed with `[FIXED]`. Count unfixed rows by severity:
   - Any unfixed HIGH or MEDIUM gaps → BLOCK. "N HIGH/MEDIUM gaps remain unfixed in the latest dry-run. Fix these gaps before materializing."
-  - Only unfixed LOW gaps → WARN. "N LOW-severity gaps remain unfixed. These are minor — proceed with materialization?"
+  - Only unfixed LOW gaps → WARN. Report and fix clear factual gaps within scope, then recheck the affected content. Record an accepted deferral; ask only for a material choice.
   - All gaps fixed or no gap table → proceed.
 
 ---
@@ -96,7 +133,7 @@ For each `### Task N` in the plan's `## Task Breakdown`:
 
 **If no `### Task N` sections are found**, report "No tasks found in plan — skipping materialization" and return without creating the `tasks/` directory.
 
-**If `plans/<plan-name>/tasks/` already exists with task docs**, WARN: "Task docs already exist for this plan. Re-materializing will overwrite incomplete tasks. Completed tasks (status: complete) will be preserved. Proceed?" For each task: if a corresponding task doc exists and is `status: complete`, skip it (preserve). If `not_started` or `in_progress`, overwrite it. If no corresponding task doc exists (new task added to revised plan), create it. After writing, report: "N created, M overwritten, K preserved."
+**If `plans/<plan-name>/tasks/` already exists with task docs**, inspect the diff and recorded task state before replacing content. Preserve completed tasks and any incomplete implementation history. Update incomplete task specs only when the requested re-materialization authorizes the change; uncertain ownership or an active actor requires reconciliation first. If no corresponding task doc exists (new task added to the revised plan), create it. After writing, report: "N created, M updated, K preserved."
 
 **Create the directory** `plans/<plan-name>/tasks/` if it doesn't exist. The `<plan-name>` is the plan filename without its `.md` extension — the plan `.md` file and its directory coexist as siblings under `plans/`.
 
@@ -216,7 +253,7 @@ After writing all task docs, run a quick metadata check:
 4. **All task numbers** are sequential and unique
 5. **Task dependency targets** reference existing task files within the `tasks/` directory
 
-Report: "Checkpoint 1: N/5 checks passed." If any check fails, report the specific failure and ask the user how to proceed.
+Report: "Checkpoint 1: N/5 checks passed." Repair clear errors within the approved scope and recheck affected fields. If a failure needs a new target or scope decision, report the unresolved prerequisite and request that decision.
 
 ---
 
@@ -231,6 +268,11 @@ Report: "Checkpoint 1: N/5 checks passed." If any check fails, report the specif
 | <date> | Tasks materialized for plan <name> (<N> tasks, codebase: <name>) | `plans/<plan>/tasks/` |
 ```
 Update the Current State header to reflect the new phase.
+
+Follow the shared checkpoint rules before and after multi-step writes: append meaningful
+attempts and outcomes, inspect owned paths/diffs, and commit only this task's changes.
+Distinguish artifacts saved on disk from commits confirmed in git. On a resumed or
+uncertain write, reconcile the files and IDs before retrying; do not commit unknown dirt.
 
 ---
 

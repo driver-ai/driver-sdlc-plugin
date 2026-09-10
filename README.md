@@ -1,8 +1,51 @@
-# drvr — SDLC Plugin for Claude Code
+# drvr — SDLC Plugin for Codex and Claude Code
 
 A Claude Code plugin that guides structured feature development through a full software development lifecycle. Features move through Research, Planning, Validation, Implementation, Review, and Handoff phases -- each supported by specialized skills, commands, and agents that keep work organized, traceable, and thorough.
 
-## What You Can Build
+## Symphony preparation
+
+Start with the work you want to accomplish. You do not need to know whether it is an
+Initiative, Project, or Issue yet. drvr helps clarify intent, challenge assumptions,
+research the source, and organize work as its scope becomes clear. It searches for
+existing work, splits independently reviewable changes, and captures tangents with
+their origin, value, deferral reason, and revisit condition.
+
+Tell drvr whether the outcome is **Symphony preparation** or **Local implementation**.
+It records that delivery choice from task context; a repository name does not select it.
+Intent and research can start before the choice is settled. For example:
+
+> Use drvr to prepare this work for Symphony. Start with intent and research, organize
+> it in Linear as we learn, and preserve anything we defer.
+
+Symphony preparation uses direct repository and Linear access, with no Driver MCP
+setup or retrieval. Existing local plans/logs remain the durable home; work starting
+in Linear uses an existing issue or one operator document as appropriate. Decisions
+and meaningful activity are append-only, and resumption reconciles those records with
+current source and Linear state. Local artifacts are saved and committed during work
+after reviewing ownership; the bundled hooks are disabled.
+
+The six phase/orchestration skills remain separate and share
+[operating rules](references/symphony-workflow.md) and
+[Linear organization rules](references/linear-organization.md). The seventh skill,
+[`drvr:linear-issue`](skills/linear-issue/SKILL.md), owns the full self-contained worker
+issue template and readiness gates. Materialization and implementation entry points
+route Symphony preparation there before any Local task-document gates.
+
+drvr is operator guidance, not a runtime harness. Preparing issues leaves them unarmed.
+Routine work continues under existing authorization; material scope/design decisions,
+worker dispatch, merge, and deployment keep their applicable authority boundaries.
+The relevant Symphony `WORKFLOW.md` is an external input, and inspecting its source
+does not verify the deployed revision.
+
+## Validation and feedback
+
+For the alpha, use the plugin in normal work and bring back specific friction or
+confusion. Basic package, skill, reference, and issue-contract checks support that
+feedback; no synthetic behavioral test program is required. After a local plugin
+update, begin a new task to pick up the installed version. Work using Symphony for
+Vanta stays separate from development of this plugin.
+
+## Local development capabilities
 
 drvr doesn't limit what you build -- it changes how much you can attempt. The structured lifecycle means you can take on work that would normally feel too risky or too large for a single developer:
 
@@ -16,9 +59,12 @@ The plugin handles the structure so you can focus on the hard part: deciding wha
 
 ## Prerequisites
 
-- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) installed and configured
-- A [Driver](https://driverai.com) account with your codebases onboarded
-- `python3` available in PATH — required for the laziness detector hook
+- Codex or Claude Code with drvr installed.
+- For Symphony preparation: access to the target repository, applicable workflow source, and Linear.
+- For explicit Local Driver workflows: a [Driver](https://driverai.com) account with the relevant codebases onboarded.
+
+Python and `jq` are not active hook prerequisites. The dormant scripts retain their
+source dependencies only for maintainers who choose to work on them.
 
 ## Installation
 
@@ -42,6 +88,10 @@ claude --plugin-dir /path/to/driver-sdlc-plugin --permission-mode auto
 ```
 
 ## Getting Started
+
+For Symphony, use the preparation example above or `/drvr:setup` with explicit Symphony
+context. It checks source and Linear readiness without configuring Driver or scaffolding
+a projects repository. The setup walkthrough below is for the Local projects workflow.
 
 > **Note:** This plugin orchestrates many tools, agents, and file operations across its lifecycle phases. For the best experience, run Claude Code with `--permission-mode auto`, which approves routine tool calls automatically while still flagging unusual operations:
 >
@@ -82,7 +132,7 @@ The drvr plugin works from a dedicated projects repository — separate from you
 
 The drvr plugin generates most artifacts through guided workflows. Your job is to provide the thinking; the plugin handles the structure.
 
-## SDLC Workflow
+## Local SDLC workflow
 
 ```
 /drvr:feature --> Intent --> Research --> Planning --> Validation --> Materialization --> Implementation --> Review --> Bookkeeping --> Next Plan --> ...
@@ -110,7 +160,7 @@ The drvr plugin generates most artifacts through guided workflows. Your job is t
 
 The drvr plugin is intentionally front-loaded: most time goes into Research and Planning. Implementation should be mechanical -- executing a well-validated plan.
 
-## Usage Scenarios
+## Local usage scenarios
 
 ### Easy: Understanding a Codebase
 
@@ -325,30 +375,22 @@ Agents are specialized workers that run in isolated context. They are spawned by
 
 ## Hooks
 
-Hooks are automatically registered when the plugin is installed via `hooks/hooks.json` — no manual configuration needed.
+`hooks/hooks.json` contains an empty `hooks` object. The bundled laziness detector,
+skill tracker, and session-end artifact committer are inactive. Their scripts and
+existing tests remain available as dormant source; this version does not block writes,
+collect hook telemetry, or auto-commit on session end. The skills actively maintain
+logs and commit reviewed task-owned artifacts at meaningful checkpoints.
 
-### laziness-detector (PreToolUse)
-
-Blocks Write and Edit operations that contain lazy code patterns: TODO/FIXME comments, `NotImplementedError`, empty function bodies, placeholder returns, and similar stubs across Python, TypeScript, JavaScript, Swift, Go, Java, and C#. Test files are excluded.
-
-### track-skill-load (PreToolUse)
-
-Tracks which skills are loaded during a session by appending skill names to a session-scoped temp file. Used for phase tracking and observability during retrospectives.
-
-### commit-artifacts (SessionEnd)
-
-Auto-commits uncommitted SDLC artifacts (research docs, plans, implementation logs, feature logs) when a Claude Code session ends. Acts as a safety net to prevent artifact loss from session crashes or forgotten commits. Scans all feature directories for uncommitted `.md` files in artifact directories and commits them with a descriptive message. Follows the fail-open pattern — never blocks session termination.
-
-All hooks resolve their configuration via the `CLAUDE_PLUGIN_ROOT` environment variable (set by Claude Code) with a fallback to relative path resolution for backward compatibility. They follow a fail-open pattern — errors never block user operations.
+The explicit Local `/drvr:driverize` command manages a separate enforcement stack;
+it is not part of Symphony preparation. Updating drvr does not remove unrelated
+project hooks or uninstall global connectors.
 
 ## Friction Tracking
 
-Observational friction logging -- detects wrong-tool usage, wrong-path edits, and laziness blocks during sessions.
-
-- **Enable**: Set `"friction_tracking": true` in `~/.driver/config.json`
-- **Data**: Events logged to `/tmp/driver-friction-{SESSION_ID}.log` in JSONL format
-- **Review**: Run `/drvr:retro` -- the Friction Events section summarizes session friction
-- **Reference**: See `hooks/friction-taxonomy.md` for the full taxonomy
+The bundled tracker is inactive, including when an old `.driver` setting enables
+friction tracking. `/drvr:retro` can use an explicitly identified historical log, but
+does not assume that the newest temporary log belongs to the current session.
+Feedback from normal use is the primary source of behavioral improvements.
 
 ## Customization
 
@@ -359,7 +401,7 @@ There are two levels of customization:
 
 ## Troubleshooting
 
-**MCP connection failures**
+**Local Driver MCP connection failures**
 - Run `/drvr:setup` -- it verifies MCP connectivity and reports issues
 - Verify your Driver API token is valid and configured in Claude Code
 - Check network connectivity to Driver's API
@@ -376,15 +418,15 @@ There are two levels of customization:
 
 **Session resumption**
 - Use `/drvr:orchestrate <feature-path>` to pick up where you left off
-- The drvr plugin reads `FEATURE_LOG.md` to determine current state and suggest next actions
+- drvr reads the established local log or Linear working record, then checks current source and Linear state before continuing
 
 ## Key Gotchas
 
 - **Driver shows committed state, not local changes.** Uncommitted code will not appear in Driver's documentation. Commit your work before querying Driver for updated context.
 - **Codebase names must match exactly.** Use `get_codebase_names` via Driver MCP to verify the exact name before passing it to tools.
 - **Large Driver responses should go through the agent.** Calling Driver MCP directly for architecture overviews or onboarding guides can consume significant context. Route these through `driver-task-context` instead.
-- **Plans are the source of truth during implementation.** The drvr plugin enforces plan-driven development. Deviations are tracked, not prevented, but they must be reviewed before bookkeeping proceeds.
-- **The laziness detector skips test files.** Patterns like TODO and NotImplementedError in test files are intentionally allowed.
+- **Plans are the source of truth during implementation.** The drvr plugin enforces plan-driven development. Deviations are recorded; unresolved material decisions need review, while routine authorized bookkeeping continues.
+- **Bundled hooks are inactive.** Save and checkpoint work during the session; there is no automatic session-end commit.
 - **`.mcp.json` is gitignored.** It may contain API keys, so `/drvr:setup` creates it locally but does not commit it. Each team member needs to run `/drvr:setup` on their own machine to get their local `.mcp.json`.
 - **Select the correct command when multiple plugins are installed.** For example, typing `/drvr:feature` in Claude Code may match commands from other plugins — make sure to select the one with the full name `drvr:feature` in the list below. Here's a screenshot that shows an example:
 

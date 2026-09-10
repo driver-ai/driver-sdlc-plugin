@@ -2,14 +2,64 @@
 name: intent-guidance
 description: |
   Guide intent mining at the very start of a feature — extract the author's tacit knowledge,
-  domain context, constraints, and definition of done before codebase research begins. Produces
-  `research/00-intent.md` which becomes the canonical reference for all downstream phases.
+  domain context, constraints, and definition of done before codebase research begins. Captures
+  intent in the established local feature artifacts or Linear operator document.
   Trigger phrases: "capture intent", "intent mining", "start intent", "mine intent".
   Do NOT activate for: "let's research", "explore the codebase", "gather context" —
   those activate research-guidance.
 ---
 
 # Intent Mining
+
+## Entry: Delivery, Authority, and Organization
+
+Read [Symphony workflow](../../references/symphony-workflow.md) and
+[Linear organization](../../references/linear-organization.md) before choosing an artifact
+or applying phase prerequisites. Their authority, durable-record, checkpoint, and recovery
+rules apply to both delivery paths below.
+
+Record **Delivery: Symphony** for an established request to prepare Symphony worker work,
+or **Delivery: Local** for local implementation. Use explicit task context; the repository
+name does not select delivery. Intent can proceed while delivery is unresolved. Clarify
+before choosing an execution path or publishing an execution contract.
+
+### Meaningful Intent Challenge
+
+Challenge assumptions that could change the outcome: is the stated problem supported,
+what is the smallest useful result, can an existing mechanism do the job, and what would
+make this work unnecessary or unsuccessful? Surface one or a few consequential tensions
+from the actual context, including duplicate sources of truth, premature abstraction,
+or a costly mechanism without an observed need. Explain the tradeoff and record the
+resolution. Do not impose an interview quota or relitigate settled intent without new evidence.
+
+### Symphony or Unresolved Delivery
+
+1. Read the established intent, current summary, relevant decisions, and recent history.
+   Reuse context already supplied. Read known Linear records or source documents as needed
+   to recover context and organize the work; substantive technical investigation belongs
+   in research. Do not invoke Driver MCP or a Driver-backed agent.
+2. Capture the problem, why now, desired outcome, domain context, constraints, exclusions,
+   definition of done, and the author's key notes. Ask only for material missing information.
+   Apply the meaningful challenge above while preserving the author's voice.
+3. Keep scope and placement provisional where appropriate. Search/reuse the smallest useful
+   Linear home using the organization reference. Capture tangents and deferrals with their
+   origin, value, deferral reason, destination or uncertainty, and revisit condition.
+   Creating an Initiative or Project is not an intent prerequisite.
+4. Save working intent in the canonical home: existing local feature artifacts remain in
+   use; Linear-native work uses the operator document's working intent section, Current
+   State, Decisions, and append-only Activity Log. Reuse an already durable plan/log rather
+   than create another editable record. Follow the shared checkpoint/recovery rules.
+5. Reflect the agreed intent and unresolved decisions to the user. Continue to research
+   when it is within the existing request; ask only for a material decision still needed.
+   Record the actual next action and any pending save/synchronization.
+
+This completes the intent procedure for Symphony or unresolved delivery. Do not continue
+into the Local artifact procedure below.
+
+## Local Intent Procedure
+
+The remaining sections apply to **Delivery: Local**. Shared authority and safe bookkeeping
+still apply; an explicit user instruction takes precedence over these plugin defaults.
 
 You are guiding the Intent phase at feature start. Your job is to get the author talking
 about what they want to build and why, then capture it in `research/00-intent.md`. This
@@ -20,11 +70,10 @@ an exhaustive interview. Get in, capture intent, get out.
 
 ## CRITICAL: Intent Is Not Research
 
-Research (Why-What-How) explores *the codebase*. Intent explores *the author's head*. Do not
-call `gather_task_context` or any other tools that investigate external data — no codebase
-exploration, no file reading, no MCP calls. The focus is entirely on the author's intent.
-Research and discovery come later. Intent is a conversational phase; its output is the
-author's framing of the problem.
+Research (Why-What-How) investigates the technical problem. Intent captures the author's
+framing. Read existing intent, briefs, decisions, and known organization records to recover
+context without making the author repeat it. Defer substantive codebase investigation to
+research; intent does not require `gather_task_context` or another technical context agent.
 
 ## CRITICAL: Smooth Transition to Research
 
@@ -109,15 +158,20 @@ H2 sections (include what's relevant, leave others brief):
    | <date> | Intent captured | research/00-intent.md |
    ```
 4. Update FEATURE_LOG Current State: `**Phase**: Research (Why-What-How)`.
-5. Tell the author: "Intent captured. Say 'let's research' to start research."
+5. If research is already authorized, record the transition and continue. Otherwise report
+   that intent is captured and research is the next available phase.
+
+Apply the meaningful intent challenge above before treating an unresolved material
+assumption as confirmed. Save and commit only owned artifact changes using the shared
+checkpoint rules; report a pending save or commit honestly.
 
 ## Anti-Patterns
 
 **Do NOT:**
-- Investigate external data — no codebase exploration, no MCP calls, no file reading outside the feature dir
+- Turn intent into a technical investigation; context recovery and organization reads are allowed
 - Run the author through a long questionnaire — get them talking, capture what they say
 - Block the flow when the author wants to move to research
-- Auto-advance without the author confirming intent is captured
+- Treat an unresolved material intent decision as confirmed; existing confirmation need not be repeated
 
 **DO:**
 - Get in, capture intent, get out — this phase should be brief
@@ -127,7 +181,8 @@ H2 sections (include what's relevant, leave others brief):
 
 ## Before Responding Checklist
 
-- [ ] **Author's voice captured?** — Is their thinking in the doc, not paraphrased?
+- [ ] **Author's voice captured?** — Are their key notes preserved without inventing quotes?
+- [ ] **Meaningful challenge?** — Are consequential assumptions and their resolutions visible?
 - [ ] **Key areas covered?** — Problem, context, constraints, ruled-out?
 - [ ] **Not blocking?** — Am I letting the author move on when they're ready?
 - [ ] **FEATURE_LOG updated?** — Did I record the transition at Step 4?

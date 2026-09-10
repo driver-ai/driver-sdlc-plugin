@@ -1,12 +1,54 @@
 ---
-description: Start a new feature project with research, plans, and implementation structure
-argument-hint: <project-name> [--prd <path>] [--brief <path>]
-allowed-tools: Read, Write, Edit, Bash, Glob
+description: Start or organize evolving Symphony work, or scaffold a Local feature project
+argument-hint: <work description, Linear link, or project-name> [--prd <path>] [--brief <path>]
+allowed-tools: Read, Write, Edit, Bash, Glob, Skill
 ---
 
 # /drvr:feature Command
 
-Create a new feature project with research, plans, and implementation structure.
+## Select Delivery Before Scaffolding
+
+Read the [operating contract](../references/symphony-workflow.md) and
+[Linear organization rules](../references/linear-organization.md). Select delivery from
+the explicit request or existing task record, never from the repository name alone.
+Reuse context and prior authorization. Unresolved work may enter intent/research;
+resolve the delivery choice before selecting an execution path.
+
+### Delivery: Symphony
+
+1. Accept a work description, existing issue/project/initiative, or vague starting
+   point. Read supplied briefs and existing related records; search for matching work
+   before creating anything. Do not require a new project name or hierarchy choice.
+2. Reuse existing local intent/research/plan and append-only logs when present. For
+   Linear-native work, follow the shared durable-home rules: a small effort may use
+   its existing issue; substantial research or cross-issue history uses one reused
+   or new operator document. Keep **Current State**, **Working Notes** for intent,
+   research, and plan, **Decisions**, and an append-only **Activity Log** there.
+   Link related Linear entities from this home. Direct issue preparation with an
+   existing durable plan/log needs no new document or project to host one.
+3. Record the known outcome, scope, open questions, delivery choice, and next action
+   in that home. Native Linear fields remain authoritative for state, relationships,
+   and ownership; log entries record observed changes and reasoning. Keep history
+   append-only when correcting an earlier observation.
+4. Apply the organization rules as intent develops: reuse the smallest useful entity,
+   split only when independent work warrants it, and preserve tangents with problem,
+   value, origin, deferral reason, destination or uncertainty, and revisit condition.
+   Do not invent owners, priorities, deadlines, or parent entities.
+5. Checkpoint intended writes, verify returned IDs and content, and append outcomes.
+   If the durable home is unavailable, keep a named local draft with pending sync;
+   reconcile it before creating or retrying remote records. Report the canonical
+   home and continue the user's requested phase through `drvr:intent-guidance` or
+   the relevant phase skill. Use the complete `drvr:linear-issue` skill for issue specs.
+
+**Return here.** This path does not read `.driver` configuration, run legacy setup,
+create the Local scaffold below, discover Driver codebase names, invoke Driver context
+agents, or create local execution task docs. A Linear project/initiative is optional
+until the work merits one; organizing preparation does not start a worker or code work.
+
+## Delivery: Local — Feature Scaffold
+
+The remaining workflow creates a Local feature project with research, plans, and
+implementation structure. Use it when that delivery and artifact layout are selected.
 
 ## Workflow
 
@@ -257,17 +299,29 @@ After creating the structure:
    produces `research/00-intent.md` and gates entry into research."
 3. Note that `/drvr:orchestrate <feature-path>` can be used to resume this feature in future sessions
 
-Commit the scaffolded feature project to the projects repo:
+Review and commit the owned scaffold paths from the feature directory. Include the
+decision log, and preserve any existing confirmed intent or inherited content:
 
+```bash
+git status --short
+git diff -- FEATURE_LOG.md DECISIONS.md research/00-intent.md research/00-overview.md
+git diff --cached --name-only
+git add -- FEATURE_LOG.md DECISIONS.md research/00-intent.md research/00-overview.md
+git diff --cached -- FEATURE_LOG.md DECISIONS.md research/00-intent.md research/00-overview.md
+git commit --only -m "chore: Initialize feature project — <name>" -- FEATURE_LOG.md DECISIONS.md research/00-intent.md research/00-overview.md
 ```
-git add FEATURE_LOG.md research/ && git commit -m "chore: Initialize feature project — <name>"
-```
+
+Use only the paths actually created or changed by this task. If a path contains
+unrelated edits, isolate ownership first; path scoping does not separate edits inside
+one file. Append the outcome and verified commit to the existing log, distinguishing
+saved from committed. Do not sweep up other staged work or repeat an uncertain write
+without checking what succeeded.
 
 ## Notes
 
-- The `/drvr:feature` command only handles scaffolding
+- For Delivery: Local, `/drvr:feature` handles scaffolding; the early Symphony path organizes the durable starting record
 - Research methodology is handled by the `research-guidance` skill
-- Deep codebase context is handled by `driver-task-context` agent
+- Deep codebase context for the legacy Local workflow is handled by `driver-task-context`; Symphony uses native source research
 - `FEATURE_LOG.md` tracks lifecycle state — each skill updates it at transitions
 - Resume with `/drvr:orchestrate <feature-path>` in future sessions
 - Config is stored per-user in `~/.driver/config.json`

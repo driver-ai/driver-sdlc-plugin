@@ -6,6 +6,12 @@ description: |
 
 # Linear issue
 
+## Entry: organization and recovery
+
+Read [the shared operating rules](../../references/symphony-workflow.md) and [Linear organization](../../references/linear-organization.md). This skill prepares a Symphony handoff. Resolve intended delivery and established authority first; the plugin's repository does not determine either the worker target or the Linear destination.
+
+Reuse the existing plan and durable log. If the request is still intent or research, use the corresponding phase skill and return here when a plan exists. Direct issue preparation does not require Driver MCP, a projects directory, local task documents, or local implementation. Keep meaningful attempts/outcomes and decisions in the canonical operator record, never in the worker's Workpad. Use the shared checkpoint/recovery rules for local artifacts and uncertain Linear writes.
+
 ## What this is for
 
 Symphony is a runtime that polls one Linear project for issues delegated to Driver Symphony (assigned to it in Linear's picker, which keeps a person as the assignee) that sit in an active state, clones the target repository into a fresh workspace, and hands each issue to a coding agent, the worker. The worker has no conversation history and no access to anything outside the repository and the issue. Its prompt is the body of the `WORKFLOW.md` selected for that Symphony deployment with the issue's title and description pasted in. It plans, implements, validates, opens one pull request, and reports on the issue. A human reviews the PR and moves the issue on. Another human, the operator, prepares the issue, does what the worker cannot (repository settings, secrets, deployments), and arms it: assigns it to Driver Symphony and moves it to Todo. Symphony dispatches nothing else.
@@ -19,7 +25,7 @@ An issue here is therefore not a note to a teammate. It is the complete specific
 
 ## Inputs
 
-1. The plan: whatever document or conversation decided what to build and how. Research notes behind it are transient; only verified facts survive into the issue, and anything of lasting value is landed in the repository by a task of the issue.
+1. The plan: whatever document or conversation decided what to build and how. Preserve its durable research and decision history in the established home; inline the verified facts needed for execution so the worker can act without that history. Material the resulting repository needs belongs in a task of the issue.
 2. The Linear target: resolve the team, project, milestone if applicable, and dependencies from the established effort and current Linear records. Do not infer the destination from the plugin repository.
 3. The relevant Symphony `WORKFLOW.md`, resolved from the established deployment or repository reference. It is an external input, not a file bundled with drvr. Its clone configuration names the target repository; its prompt names the PR base branch and the rules the worker already receives. Record the source and revision, and distinguish source configuration from a verified deployed version.
 4. Access to Linear: a Linear MCP server, or the GraphQL API at `https://api.linear.app/graphql` with an API key. Access to the target repository for direct verification: `gh`, `git`, or a clone. This preparation skill does not require or invoke Driver MCP.
@@ -52,15 +58,21 @@ Fill the template below.
 
 Apply the gates below. Fix every BLOCK before writing anything to Linear.
 
+Repair clear factual or consistency errors within authorized scope and repeat affected checks. Surface material choices rather than guessing. Do not require another fix/recheck approval for an already authorized repair. A source workflow whose deployment is unverified remains a named readiness limit.
+
 ### 5. Write to Linear
 
-Create or update the issue with the description, project, and milestone: `issueCreate` or `issueUpdate`, or the equivalent tool of the Linear MCP server in use. A new issue starts in state Backlog with no label; a rewrite keeps its state and labels. Add relations with `issueRelationCreate` of type `blocks`. If the milestone description lists an order, insert the issue there.
+Before writing, search for matching work and inspect the current issue and relations. Resolve manual/operator tasks separately from worker work when their actors or delivery differ. If an existing issue may be executing, inspect its state and workpad and coordinate through the established rework path before changing its active specification; do not silently rewrite it.
+
+Create or update the issue with the description and established project/milestone, if any: `issueCreate` or `issueUpdate`, or the equivalent tool of the Linear MCP server in use. A new issue starts in state Backlog with no label and no worker delegate; a rewrite keeps its state, labels, assignee, and delegate. Add verified dependencies with `issueRelationCreate` of type `blocks`. If the milestone description lists an order, insert the issue there.
+
+Record intended changes before a multi-step write. Read back the issue and relations, and append returned IDs/URLs and outcomes to the canonical log. After an unknown outcome, retrieve by ID or search before retrying; leave ambiguous writes pending. Do not create a duplicate or report an unverified write as successful.
 
 ### 6. Report
 
-Return the issue URL, the operator tasks that must be done before arming, and the arming step. Do not arm.
+Return the issue URL, verified organization and dependencies, deferred/pending items, the operator tasks that must be done before arming, and the arming step. Do not arm. Update canonical Current State and append the handoff outcome; no separate mutable task-document copy is needed.
 
-After the run, read the worker's Confusions in the workpad. A confusion is an ambiguity the worker had to resolve on its own; when the same kind appears twice, the issue template or this file changes.
+When the user supplies run feedback or asks for a retrospective, read the relevant worker's Confusions in the workpad. A confusion is an ambiguity the worker had to resolve on its own; repeated confusion is evidence for improving this skill. Do not start monitoring or coordinate another task merely because an issue was prepared.
 
 ## Issue template
 

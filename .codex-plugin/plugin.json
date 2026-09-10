@@ -1,0 +1,38 @@
+{
+  "name": "drvr",
+  "version": "1.1.0+codex.20260623154407",
+  "description": "Structured SDLC guidance for Local development and Symphony issue preparation.",
+  "author": {
+    "name": "Driver AI",
+    "url": "https://github.com/driver-ai"
+  },
+  "homepage": "https://github.com/driver-ai/driver-sdlc-plugin",
+  "repository": "https://github.com/driver-ai/driver-sdlc-plugin",
+  "license": "MIT",
+  "keywords": [
+    "sdlc",
+    "driver",
+    "feature-development",
+    "planning",
+    "research"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "drvr",
+    "shortDescription": "Organize, research, and prepare reviewable development work.",
+    "longDescription": "Guides intent, research, planning, validation, and delivery. Prepares Symphony issues with evolving Linear organization and durable history, using direct source access. Retains Local development workflows.",
+    "developerName": "Driver AI",
+    "category": "Productivity",
+    "capabilities": [
+      "Interactive",
+      "Write"
+    ],
+    "websiteURL": "https://github.com/driver-ai/driver-sdlc-plugin",
+    "brandColor": "#2563EB",
+    "defaultPrompt": [
+      "Start a new drvr feature workflow.",
+      "Resume my current drvr feature.",
+      "Help me plan this feature with drvr."
+    ]
+  }
+}

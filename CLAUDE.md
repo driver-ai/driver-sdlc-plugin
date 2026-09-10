@@ -1,8 +1,16 @@
-# drvr — SDLC Plugin for Claude Code
+# drvr — SDLC Plugin for Codex and Claude Code
 
 This plugin guides structured feature development through a phased SDLC lifecycle: Research, Planning, Validation, Implementation, Review, and Ship. It provides skills (always-on guidance), commands (user-invoked actions), and agents (spawnable specialists) that coordinate the process.
 
-The user drives all decisions. The plugin suggests, organizes, and tracks -- but never acts autonomously.
+The operator directs the outcome; the plugin organizes work and carries existing authority forward. drvr supplies phase guidance, not a runtime harness.
+
+## Delivery and shared operating rules
+
+Read [the shared operating rules](references/symphony-workflow.md) and [Linear organization](references/linear-organization.md) before selecting a phase. Record `Delivery: Symphony` for worker preparation or `Delivery: Local` for implementation managed in this task. Resolve the choice from explicit task context, never the repository name. Unresolved intent and research can proceed until that choice matters.
+
+For Symphony, follow each entry's Symphony path and return before the Local methods. Use direct source and Linear access, reuse the existing durable home, and finish preparation through the full `drvr:linear-issue` skill. Do not run Driver MCP, its configuration/discovery or indirect agents, local task scaffolding, or worker execution from this path. Keep meaningful append-only history; native Linear fields remain authoritative for current organization.
+
+The structure, task-document schema, per-plan PR lifecycle, and Driver methods below describe the default Local workflow. They do not add prerequisites to Symphony preparation. Shared authority, proportionate engineering, and owned checkpoint rules apply to both. Explicit user instructions take precedence over plugin defaults. Existing project templates are not bulk-migrated.
 
 > **Permission mode:** This plugin works best with `--permission-mode auto` due to the volume of tool calls across phases. Mention this to users who report excessive permission prompts.
 
@@ -10,7 +18,7 @@ The user drives all decisions. The plugin suggests, organizes, and tracks -- but
 
 ## Project Structure
 
-Running `/drvr:feature <name>` scaffolds this structure:
+For Local work using a projects repository, `/drvr:feature <name>` scaffolds this structure:
 
 ```
 <feature>/
@@ -70,7 +78,7 @@ Each PR's body is generated from that plan's `driver-docs/<plan>/` so a reviewer
 
 ## Frontmatter Schema
 
-All artifacts use YAML frontmatter for structured metadata.
+Local scaffolded artifacts use YAML frontmatter for structured metadata. Linear-native working records use the shared durable-record layout; do not impose local file schemas on them.
 
 ### Required Fields
 
@@ -143,6 +151,8 @@ The per-plan PR gate runs **once per plan**, not once per feature: after each pl
 
 ### Phase-Skill Mapping
 
+For Symphony, Intent → Research → Planning → Validation uses the phase skills' Symphony paths, then **Handoff → `drvr:linear-issue`**. Both materialization and implementation entry points route preparation there before Local gates. The rows after validation below describe Local execution; preparing a handoff never starts it.
+
 > **Backward compatibility**: Old command references without `drvr:` prefix (e.g., `/feature`, `/docs-artifacts`) are equivalent to their qualified versions.
 
 | Phase | Skill / Command | What It Does | Entry Signal |
@@ -189,13 +199,13 @@ Because each plan ships as its own PR, post-implementation events (assessment, d
 ## Key Principles
 
 - **Functional core, imperative shell** -- software produced through this plugin separates a pure logical core (functions taking values in and returning values out -- no I/O, no time, no randomness, no mutable shared state) from a thin imperative shell that performs I/O and calls into the core. This is an architectural commitment, not a testing strategy: the testing strategy follows from it. Pure-core code is unit-tested with values in / values out and no mocks. Shell code is integration-tested against real I/O. A "unit test" that needs mocks is a signal the core/shell boundary is broken -- fix the architecture, not the test. When the surrounding code isn't in this shape, the plugin steers each new feature toward extracting a pure core anyway. See the Engineering Practices section for how this commitment flows through each phase.
-- **User controls all decisions** -- skills suggest, the user decides. No auto-fixing, no silent bookkeeping.
-- **Deviations are reviewed** -- after implementation, deviations are presented for user approval before bookkeeping proceeds.
+- **Carry authority forward** -- continue routine research, organization, factual repairs, affected checks, and bookkeeping within scope. Surface unresolved material choices; do not ask repeatedly for an already authorized action.
+- **Deviations are recorded** -- report repairs and authorized deviations; obtain decisions for material changes outside established authority. Append corrections and outcomes without rewriting history.
 - **Severity helps prioritize, not skip** -- dry-run gaps are classified LOW/MEDIUM/HIGH but all are presented for review.
 - **Plans are the source of truth** -- implementation builds exactly what the plan specifies, nothing more.
 - **One plan = one PR, stacked** -- each plan ships on its own branch, branched off the prior plan's branch. The per-plan PR gate (assess → docs → open-pr) runs after each plan's bookkeeping, before the next plan starts.
 - **Each PR must stand alone** -- the PR body comes from `driver-docs/<plan>/` and includes feature context, this plan's purpose, architecture, test plan, risks, and stack position. A reviewer who hasn't seen the rest of the stack should be able to evaluate the change.
-- **Skills use Driver MCP tools for codebase context** -- `gather_task_context` for synthesized context, `get_code_map` for navigation, `get_file_documentation` for symbol details -- rather than manual file parsing. Always call `gather_task_context` via a native subagent -- the subagent is a concurrency primitive that keeps the main conversation unblocked and enables parallel calls trivially.
+- **Local Driver workflows use Driver MCP tools for codebase context** -- `gather_task_context` for synthesized context, `get_code_map` for navigation, `get_file_documentation` for symbol details -- rather than manual file parsing. Always call `gather_task_context` via a native subagent -- the subagent is a concurrency primitive that keeps the main conversation unblocked and enables parallel calls trivially.
 
 ---
 
@@ -249,7 +259,7 @@ Symphony issue preparation through `drvr:linear-issue` uses direct repository an
 
 ---
 
-## Driver MCP
+## Driver MCP — Local workflows only
 
 The plugin integrates with Driver MCP to query codebase architecture, implementation details, and documentation. Driver provides pre-computed, exhaustive context for codebases.
 
@@ -287,6 +297,8 @@ The plugin integrates with Driver MCP to query codebase architecture, implementa
 
 ### Functional Core, Imperative Shell
 
+Apply KISS, DRY, and YAGNI before adding structure. The code-oriented default below applies where there is logic and I/O to separate. Prose/configuration work does not need an invented core, test framework, or fixture program. For the Symphony drvr alpha, validate package/skill/reference integrity and improve behavior from normal use and user feedback.
+
 This plugin treats the **functional core, imperative shell** decomposition (Bernhardt; also Hexagonal / Ports-and-Adapters) as a load-bearing architectural commitment, not a stylistic preference. It is enforced through every phase:
 
 - **Research** identifies the natural core/shell decomposition for the feature -- what's pure logic, what's I/O -- so planning has the seam in hand. See [`drvr:research-guidance`](skills/research-guidance/SKILL.md).
@@ -303,7 +315,7 @@ This plugin treats the **functional core, imperative shell** decomposition (Bern
 
 This plugin also discovers and enforces your codebase's coding standards. During research, it searches for CLAUDE.md files relative to the target codebase and captures applicable standards as a research artifact. These standards flow through planning (as constraints), implementation (in subagent prompts), and assessment (as a quality review). If your codebase doesn't have a CLAUDE.md, the plugin asks if you have standards elsewhere or proceeds without quality constraints.
 
-Add team-specific engineering guidelines to your project's `CLAUDE.md` -- the plugin will discover and enforce them automatically. Team standards layer on top of the core/shell commitment; they do not override it.
+Add team-specific engineering guidelines to your project's `CLAUDE.md` -- the plugin will discover and enforce them automatically. Respect applicable codebase standards and explicit user direction. Surface architectural tradeoffs in proportion to the work.
 
 ---
 
@@ -312,8 +324,9 @@ Add team-specific engineering guidelines to your project's `CLAUDE.md` -- the pl
 These rules govern how the plugin operates during all phases.
 
 - **Verify file paths exist before editing** -- use Glob or find to confirm paths before making changes
-- **Research existing codebase patterns before implementing** -- use Driver MCP to understand conventions
+- **Research existing codebase patterns before implementing** -- use direct source for Symphony; use the selected Local context method for Local work
 - **Run tests and verification before declaring any task complete** -- never mark done without confirmation
-- **When a dry-run identifies gaps, fix ALL of them** -- do not skip any, regardless of severity
-- **Use parallel agents for research; for implementation, independent tasks run in parallel with worktree isolation, dependent tasks run sequentially**
-- **Follow existing codebase patterns** -- ask the user before deviating from established conventions
+- **Resolve dry-run findings within scope** -- repair clear errors and repeat affected checks; record or surface material choices instead of adding scope silently
+- **Use delegation when it serves an authorized task** -- use worktree isolation for independent implementation when needed and keep dependent work ordered; Symphony preparation never delegates to Driver-backed agents
+- **Follow existing codebase patterns** -- surface material deviations; continue routine repairs already within authority
+- **Checkpoint owned work** -- save meaningful outcomes and append history actively, review exact paths, and exclude unrelated staged changes from commits. The bundled hooks are disabled; no session-end safety net is active.

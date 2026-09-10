@@ -1,9 +1,21 @@
 <!-- drvr:template-version:1.2.0 -->
 # {{TEAM_NAME}} — SDLC Project Instructions
 
-This repository organizes development work by feature, with each feature containing its own lifecycle of artifacts. It is managed by the [Driver SDLC Plugin (drvr)](https://github.com/driver-ai/driver-sdlc-plugin) for Claude Code.
+This repository organizes development work by feature, with each feature containing its own lifecycle of artifacts. It is managed by the [Driver SDLC Plugin (drvr)](https://github.com/driver-ai/driver-sdlc-plugin) for Codex and Claude Code.
 
 ---
+
+## Delivery and shared rules
+
+Start with the installed `drvr:sdlc-orchestration` entry and read its shared operating and Linear organization references through the plugin's actual path. Do not resolve plugin references relative to this generated projects repository.
+
+Record `Delivery: Symphony` for worker preparation or `Delivery: Local` for implementation managed in the current task, based on explicit context rather than repository name. Existing authorization persists; continue routine organization, factual repairs, affected checks, and bookkeeping. Surface unresolved material decisions. User instructions take precedence over plugin defaults.
+
+For Symphony, use each skill's early Symphony path: direct source and Linear access, evolving organization, a single durable working home, and append-only history. Finish through the full `drvr:linear-issue` skill before Local task-document or implementation gates. No Driver setup/discovery/retrieval, indirect Driver agents, or local task scaffolding is required. Preparation does not arm workers or authorize implementation, deployment, or merge.
+
+Reuse existing local artifacts, or the existing Linear operator record; do not maintain two mutable plans/logs. Native Linear fields remain authoritative for current state. Save and commit reviewed task-owned local artifacts at useful checkpoints, exclude unrelated staged work, and never commit unknown dirt on resume. The bundled hooks are disabled.
+
+The project scaffold, schemas, and code-oriented lifecycle below describe the default Local workflow. Do not migrate existing project templates merely to prepare Symphony work.
 
 ## Project Structure
 
@@ -114,6 +126,8 @@ The per-plan PR gate runs **once per plan**, not once per feature: after each pl
 
 ### Phase -> Skill Mapping
 
+Symphony uses the Intent, Research, Planning, and Validation skills' Symphony paths, then **Handoff → `drvr:linear-issue`**. Materialization and implementation entry points route preparation to that handoff before Local gates. The execution rows below apply to Local work.
+
 | Phase | Skill / Command | What It Does |
 |-------|----------------|-------------|
 | Intent | `drvr:intent-guidance` | Mine the author's tacit knowledge and produce `research/00-intent.md` before codebase research |
@@ -140,8 +154,8 @@ The per-plan PR gate runs **once per plan**, not once per feature: after each pl
 - **Functional core, imperative shell** — features produced through this plugin separate a pure logical core (functions taking values in and returning values out — no I/O, no time, no randomness, no mutable shared state) from a thin imperative shell that performs I/O and calls into the core. Pure-core code is unit-tested with values in / values out and no mocks; shell code is integration-tested against real I/O. A "unit test" that needs mocks is a signal the boundary is broken — fix the architecture, not the test. The plugin steers each new feature toward extracting a pure core even when the surrounding code isn't in this shape.
 - **One plan = one PR, stacked** — each plan ships on its own branch (independent plans in parallel off the feature parent; dependent plans stacked on their upstream). The per-plan PR gate (assess → docs → open-pr) runs after each plan's bookkeeping, before the next plan starts.
 - **Each PR must stand alone** — the PR body comes from `driver-docs/<plan>/` and includes feature context, this plan's purpose, architecture, test plan, risks, and stack position. A reviewer who hasn't seen the rest of the stack should be able to evaluate the change.
-- **User controls all decisions** — skills suggest, the user decides. No auto-fixing, no silent bookkeeping.
-- **Deviations are reviewed** — after implementation, deviations are presented for approval before bookkeeping.
+- **Carry authority forward** — perform routine authorized work and report outcomes; ask about unresolved material decisions, not repeated repair/bookkeeping permission.
+- **Deviations are recorded** — append repairs and outcomes; surface material scope/design changes outside prior authority.
 - **Plans are the source of truth** — implementation builds exactly what the plan specifies, nothing more.
 - **Research before building** — the SDLC is front-loaded: most time goes into Research and Planning.
 
@@ -171,7 +185,8 @@ The per-plan PR gate runs **once per plan**, not once per feature: after each pl
 | `drvr:planning-guidance` | TDD-first plans, test strategy, task breakdown |
 | `drvr:materialize-tasks` | Materialize approved plan tasks into standalone task docs |
 | `drvr:implementation-guidance` | Plan-driven execution, deviation tracking, bookkeeping |
-| `drvr:sdlc-orchestration` | Lifecycle coordination, phase transitions |
+| `drvr:sdlc-orchestration` | Lifecycle coordination, phase transitions, durable recovery and organization |
+| `drvr:linear-issue` | Full self-contained Symphony issue preparation from a plan; leaves execution unarmed |
 
 ## Agents
 
@@ -211,7 +226,7 @@ _Add anti-patterns your team has agreed to avoid. Examples:_
 
 ### Testing Strategy
 
-The plugin's default testing strategy is **derived from the functional core / imperative shell commitment**, not designed independently:
+Choose verification in proportion to the work. Apply KISS, DRY, and YAGNI; prose/configuration changes do not need an invented pure core or a synthetic test program. The Symphony drvr alpha uses package/skill/reference checks and feedback from normal use. For code with logic and I/O, the default strategy follows the functional core / imperative shell design:
 
 - **Pure-core unit tests**: values in, values out, no mocks. One per pure-core function.
 - **Shell integration tests**: real I/O against real dependencies (test DB, tmpdir, fake-backed HTTP from recorded real calls). Mocks only at hard external boundaries (third-party APIs without sandboxes, cost-bearing services, hardware absent in test).
@@ -228,7 +243,7 @@ _Add team-specific testing notes below (test framework, commands, real-dependenc
 
 | Integration | Purpose | When to Use |
 |-------------|---------|-------------|
-| **Driver MCP** | Codebase architecture, file docs, code maps | Starting any research or planning |
+| **Driver MCP** | Codebase architecture, file docs, code maps | Explicit Local Driver workflows only |
 | _Add additional MCP servers here_ | | |
 
 ---

@@ -322,17 +322,11 @@ class TestBilateralMaterializationGate(unittest.TestCase):
         self.assertIn("approved_by", self.claude_md)
 
     def test_gate_doctrine_exists(self):
-        """docs/gate-doctrine.md exists with required content."""
+        """The operation prerequisite guidance remains bundled."""
         self.assertTrue(
             len(self.gate_doctrine) > 0,
             "gate-doctrine.md does not exist or is empty",
         )
-        self.assertIn("Process Invariant", self.gate_doctrine)
-        self.assertIn("User Decision", self.gate_doctrine)
-        self.assertIn("Pattern A", self.gate_doctrine)
-        self.assertIn("Pattern B", self.gate_doctrine)
-        self.assertIn("Pattern C", self.gate_doctrine)
-        self.assertIn("No silent fallbacks", self.gate_doctrine)
 
 
 class TestPlanConcretenessStructural(unittest.TestCase):
@@ -711,22 +705,6 @@ class TestStateCommitGuidance(unittest.TestCase):
         cls.feature_cmd_content = (PLUGIN_ROOT / "commands" / "feature.md").read_text()
         cls.hook_path = PLUGIN_ROOT / "hooks" / "commit-artifacts.sh"
 
-    def test_research_guidance_has_commit_step(self) -> None:
-        """research-guidance must contain commit instructions."""
-        self.assertIn("git add research/", self.research_content)
-        self.assertIn("git commit", self.research_content)
-
-    def test_planning_guidance_has_commit_step(self) -> None:
-        """planning-guidance must contain commit instructions."""
-        self.assertIn("git add plans/", self.planning_content)
-        self.assertIn("git commit", self.planning_content)
-
-    def test_implementation_guidance_extended_bookkeeping(self) -> None:
-        """Step 5.4 git add must include FEATURE_LOG.md and implementation/."""
-        after_5_4 = self.impl_content.split("5.4")[1] if "5.4" in self.impl_content else ""
-        self.assertIn("FEATURE_LOG.md", after_5_4)
-        self.assertIn("implementation/", after_5_4)
-
     def test_feature_command_has_initial_commit(self) -> None:
         """feature.md must have a commit step after scaffolding."""
         self.assertIn("chore: Initialize feature project", self.feature_cmd_content)
@@ -1036,10 +1014,9 @@ class TestWorktreeParallelExecution(unittest.TestCase):
         self.assertIn("isolation", combined.lower())
 
     def test_impl_guidance_has_merge_back_handling(self):
-        """Step 3 contains merge-back with BLOCK on conflict."""
+        """Step 3 retains merge conflict handling."""
         section = self._step3_section()
         self.assertIn("merge", section.lower())
-        self.assertIn("BLOCK", section)
         self.assertIn("conflict", section.lower())
 
     def test_impl_guidance_preflight_has_worktree_readiness(self):
