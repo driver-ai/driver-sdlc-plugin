@@ -302,6 +302,9 @@ Skills activate automatically based on the current SDLC phase or trigger phrases
 | **implementation-guidance** | Plan-driven task execution, subagent delegation for context gathering, deviation tracking, and commit discipline. | Trigger phrases: "let's implement", "start implementing", "ready to build", "execute the plan" |
 | **materialize-tasks** | Converts approved plan tasks into standalone task docs for sub-agent execution. Validates dry-run gaps, resolves codebase target, embeds standards. | Trigger phrases: "materialize tasks", "materialize tasks for plan X", "re-materialize", "create task docs" |
 | **sdlc-orchestration** | Coordinates phase transitions, loads the right skills, manages bookkeeping, and handles session resumption. | Trigger phrases: "where are we", "what's next", "resume feature", "feature status" |
+| **linear-issue** | Prepare or rewrite one self-contained Linear issue for a Symphony worker; preserve the operator/worker boundary and leave it unarmed. | An existing plan and a request to write, rewrite, or check readiness of its issue. |
+
+The canonical [Linear issue skill](skills/linear-issue/SKILL.md) is bundled with drvr. Supply the relevant Symphony workflow and target repository context; issue preparation uses direct source and Linear access without Driver MCP.
 
 ## Agents
 

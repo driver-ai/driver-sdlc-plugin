@@ -228,6 +228,9 @@ Because each plan ships as its own PR, post-implementation events (assessment, d
 | `drvr:materialize-tasks` | Materialize approved plan tasks into standalone task documents for sub-agent execution. |
 | `drvr:implementation-guidance` | Guide implementation with plan-driven task lists, subagent delegation, deviation tracking, and commit discipline. |
 | `drvr:sdlc-orchestration` | Lifecycle coordination -- phase transitions, session resumption, and bookkeeping management. |
+| `drvr:linear-issue` | Prepare a self-contained Symphony Linear issue from an existing plan using the current workflow and direct repository evidence; leave execution unarmed. |
+
+Symphony issue preparation through `drvr:linear-issue` uses direct repository and Linear access. Driver MCP retrieval, local task materialization, and local implementation are not prerequisites for this handoff. The relevant Symphony workflow is resolved separately from the plugin repository.
 
 ### Agents
 

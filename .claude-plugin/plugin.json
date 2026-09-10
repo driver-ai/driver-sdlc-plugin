@@ -8,7 +8,8 @@
     "./skills/planning-guidance",
     "./skills/implementation-guidance",
     "./skills/materialize-tasks",
-    "./skills/sdlc-orchestration"
+    "./skills/sdlc-orchestration",
+    "./skills/linear-issue"
   ],
   "agents": [
     "./agents/driver-task-context.md",
