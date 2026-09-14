@@ -1,6 +1,6 @@
 # drvr — SDLC Plugin for Codex and Claude Code
 
-A Claude Code plugin that guides structured feature development through a full software development lifecycle. Features move through Research, Planning, Validation, Implementation, Review, and Handoff phases -- each supported by specialized skills, commands, and agents that keep work organized, traceable, and thorough.
+A Codex and Claude Code plugin that guides structured feature development through a full software development lifecycle. Features move through Research, Planning, Validation, Implementation, Review, and Handoff phases -- each supported by specialized skills, commands, and agents that keep work organized, traceable, and thorough.
 
 ## Symphony preparation
 
@@ -73,6 +73,22 @@ Clone the repository:
 ```bash
 git clone https://github.com/driver-ai/driver-sdlc-plugin.git
 ```
+
+### Codex
+
+With a Codex CLI that supports `codex plugin`, add the cloned repository as a
+marketplace source, then install its `drvr` plugin:
+
+```bash
+codex plugin marketplace add /path/to/driver-sdlc-plugin
+codex plugin add drvr@drvr
+```
+
+The marketplace and plugin are both named `drvr`. Start a new Codex task after
+installation to load the plugin's skills. After pulling an updated checkout, run
+`codex plugin add drvr@drvr` again and start a new task.
+
+### Claude Code
 
 Add the plugin as a marketplace source, then install:
 

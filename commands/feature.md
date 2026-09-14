@@ -299,8 +299,9 @@ After creating the structure:
    produces `research/00-intent.md` and gates entry into research."
 3. Note that `/drvr:orchestrate <feature-path>` can be used to resume this feature in future sessions
 
-Review and commit the owned scaffold paths from the feature directory. Include the
-decision log, and preserve any existing confirmed intent or inherited content:
+Record the scaffold outcome in `FEATURE_LOG.md` before the checkpoint below. Review
+and commit the owned scaffold paths from the feature directory. Include the decision
+log, and preserve any existing confirmed intent or inherited content:
 
 ```bash
 git status --short
@@ -309,13 +310,16 @@ git diff --cached --name-only
 git add -- FEATURE_LOG.md DECISIONS.md research/00-intent.md research/00-overview.md
 git diff --cached -- FEATURE_LOG.md DECISIONS.md research/00-intent.md research/00-overview.md
 git commit --only -m "chore: Initialize feature project — <name>" -- FEATURE_LOG.md DECISIONS.md research/00-intent.md research/00-overview.md
+git status --short -- FEATURE_LOG.md DECISIONS.md research/00-intent.md research/00-overview.md
 ```
 
 Use only the paths actually created or changed by this task. If a path contains
 unrelated edits, isolate ownership first; path scoping does not separate edits inside
-one file. Append the outcome and verified commit to the existing log, distinguishing
-saved from committed. Do not sweep up other staged work or repeat an uncertain write
-without checking what succeeded.
+one file. Report the verified commit SHA and whether the owned scaffold paths are
+clean in the user-facing response, distinguishing saved from committed. Do not append
+the SHA to `FEATURE_LOG.md` after committing; that would leave the log dirty again.
+Do not sweep up other staged work or repeat an uncertain write without checking what
+succeeded.
 
 ## Notes
 
