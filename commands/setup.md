@@ -1,12 +1,43 @@
 ---
-description: Set up a projects directory for the drvr plugin
-argument-hint: "[clone-url]"
-allowed-tools: Read, Write, Edit, Bash, Glob, Grep, AskUserQuestion, mcp__driver-mcp__get_codebase_names
+description: Check readiness for Symphony preparation or set up a Local drvr projects directory
+argument-hint: "[Symphony context | clone-url]"
+allowed-tools: Read, Write, Edit, Bash, Glob, Grep, AskUserQuestion, Skill
 ---
 
 # /drvr:setup Command
 
-Set up a projects directory for the drvr plugin. This command is idempotent — safe to re-run at any time.
+## Select Delivery Before Setup
+
+Read the [operating contract](../references/symphony-workflow.md) and
+[Linear organization rules](../references/linear-organization.md). Resolve delivery
+from the request and existing task record; a repository named Symphony alone is not
+a selector. Reuse prior answers and authorization. If delivery is still unresolved,
+continue useful intent/research and establish the execution path before setup writes.
+
+### Delivery: Symphony
+
+1. Reuse the known source repository/branch/revision and durable plan/log or operator
+   document. Check source access with native file/git or repository tools. Record what
+   was checked and what is still unknown; do not inspect unrelated work.
+2. Check the available Linear connection with a read of the named issue, project,
+   initiative, or team. If no entity is chosen yet, use the relevant team/context;
+   setup does not require choosing a hierarchy or creating an issue.
+3. Report source and Linear readiness, the durable home, and any specific missing
+   access. If access is unavailable, continue useful local preparation and record a
+   named draft/pending sync as the shared contract directs.
+4. Continue the requested phase through the relevant skill. Creating or rewriting
+   an issue must use the complete bundled `drvr:linear-issue` skill.
+
+**Return here.** Symphony setup does not read or write `~/.driver/config.json`, discover
+or configure Driver MCP, invoke Driver agents, write `.mcp.json`, install hooks, scaffold
+a projects repo, or run the template migrations below. Existing local artifacts remain
+their canonical home. These checks do not prove worker deployment or authorize dispatch.
+
+## Delivery: Local — Projects Directory Setup
+
+The remaining method sets up a Local projects directory. It is idempotent; inspect
+existing files and preserve their contents when rerunning. The Driver configuration
+steps belong only to this explicitly selected legacy Local workflow.
 
 ## Config Path
 
@@ -113,9 +144,16 @@ Create a new projects directory from scratch.
 
 8. **Initial commit**:
    ```bash
-   cd <parent>/<name> && git add CLAUDE.md .gitignore && git commit -m "Initialize SDLC projects directory"
+   git -C <parent>/<name> status --short
+   git -C <parent>/<name> diff -- CLAUDE.md .gitignore
+   git -C <parent>/<name> diff --cached --name-only
+   git -C <parent>/<name> add -- CLAUDE.md .gitignore
+   git -C <parent>/<name> diff --cached -- CLAUDE.md .gitignore
+   git -C <parent>/<name> commit --only -m "Initialize SDLC projects directory" -- CLAUDE.md .gitignore
    ```
-   Do NOT add `.mcp.json` — it's gitignored (may contain API keys).
+   Commit only the inspected owned content. Do NOT add `.mcp.json` — it's gitignored
+   (may contain API keys). Record the confirmed commit rather than assuming a save
+   was committed; reconcile a failed or interrupted command before retrying.
 
 9. **Tell the user:**
    > "Your projects directory is ready at `<absolute-path>`. To start using it:"
@@ -135,15 +173,15 @@ Check for required files and fill gaps.
    | `.mcp.json` | Glob for `.mcp.json` | Create with `driver-mcp` server using the .mcp.json content from Step 3A |
 
    **For `.mcp.json` that exists:** Read it and check if `mcpServers.driver-mcp` is present.
-   - If `driver-mcp` is missing, warn: "Your `.mcp.json` does not include a `driver-mcp` server. The plugin requires this for codebase context. Would you like me to add it?"
-   - If the user says yes, read the existing `.mcp.json`, add the `driver-mcp` entry to `mcpServers` (preserving all existing servers), and write it back.
+   - If `driver-mcp` is missing, explain that this legacy Local context workflow uses it. Add it when existing setup authorization includes that configuration; otherwise resolve that configuration choice first.
+   - When that configuration is authorized, read the existing `.mcp.json`, add the `driver-mcp` entry to `mcpServers` (preserving all existing servers), and write it back.
 
 2. **Report what was found and what was created.**
 
 3. **Template version check** — If CLAUDE.md exists, read the first line. Look for `<!-- drvr:template-version:X.Y.Z -->`.
 
    - **If found and matches current version (1.2.0):** Skip migration. Report: "CLAUDE.md is up to date (template v1.2.0)."
-   - **If found but outdated:** Look up the migration path in the Migration Registry below. Apply each migration in sequence, asking user approval for each.
+   - **If found but outdated:** Look up the migration path in the Migration Registry below. Apply the authorized migration to this projects directory, preserving custom instructions. Do not ask again for each mechanical step or migrate other projects.
    - **If not found:** Treat as pre-versioning (version 0). Apply the full migration path from v0 → current.
    - **If version is higher than current (1.2.0):** Warn: "CLAUDE.md has template version X.Y.Z which is newer than this plugin's current version (1.2.0). Skipping migration." and skip.
 
@@ -242,7 +280,8 @@ For all paths (A, B, C), after the projects directory is set up:
    - Set or update `projects_path` to the resolved absolute path
    - Write the updated config back to `~/.driver/config.json`
 
-3. **Note:** Hooks are auto-registered via `hooks/hooks.json` — no configuration needed.
+3. **Note:** The bundled hook registry is empty. Logging and owned commits are performed
+   explicitly by the active skills; there is no hook setup step.
 
 ### Step 5: MCP Connectivity Verification
 
@@ -272,7 +311,7 @@ Print a summary of everything that was done:
 
 **Plugin configuration:**
 - ~/.driver/config.json: projects_path set to <path>
-- Hooks: auto-registered via hooks.json
+- Hooks: disabled; the active skills own logging and scoped commits
 
 **Driver MCP:** <connected (N codebases) | not connected — see above>
 

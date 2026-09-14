@@ -1,6 +1,6 @@
 {
   "name": "drvr",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "Structured SDLC workflow for feature development with Driver MCP and Claude Code",
   "skills": [
     "./skills/intent-guidance",
@@ -8,7 +8,8 @@
     "./skills/planning-guidance",
     "./skills/implementation-guidance",
     "./skills/materialize-tasks",
-    "./skills/sdlc-orchestration"
+    "./skills/sdlc-orchestration",
+    "./skills/linear-issue"
   ],
   "agents": [
     "./agents/driver-task-context.md",

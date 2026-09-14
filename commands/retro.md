@@ -21,7 +21,7 @@ Read these before analyzing:
 1. **FEATURE_LOG.md** — if the session was on a feature, read the log for full lifecycle context
 2. **Previous retros** — scan `retrospectives/INDEX.md` for recurring patterns (if it exists)
 3. **MEMORY.md** — check the project's memory directory to avoid suggesting things already captured
-4. **Friction log**: Use `Bash` to run `ls -t /tmp/driver-friction-*.log 2>/dev/null | head -1` and read the result with the Read tool. If no files found, note that no friction data is available for this session.
+4. **Friction log**: The bundled hooks are inactive. Read a historical friction log only when its path and relationship to this session are established. Do not select the newest temporary file across sessions. Otherwise note that no hook friction data was captured for this session.
 
 ### Step 3: Identify what happened
 
@@ -177,7 +177,7 @@ Follow Simplified Technical English (STE):
 
 ## Friction Events
 
-_Read from session friction log (`/tmp/driver-friction-*.log`). If no friction log exists or is empty, write "No friction data captured this session."_
+_Use only an explicitly identified log for this session. With the bundled hooks inactive, normally write "No hook friction data captured this session."_
 
 | Time | Type | Cost | Detail |
 |------|------|------|--------|

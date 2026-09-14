@@ -1,8 +1,8 @@
 ---
 name: planning-guidance
 description: |
-  Guide planning methodology with functional-core / imperative-shell architecture, TDD-first task
-  design, test strategy derived from architecture, explicit constraints, and task breakdown. Use
+  Guide planning with proportionate architecture, validation, explicit constraints, and task
+  breakdown for Local implementation or Symphony issue preparation. Use
   when transitioning from research to planning phase.
   Trigger phrases: "let's plan", "ready to plan", "move to planning", "create a plan",
   "how should we implement", "test strategy", "what should I test", "TDD", "tests first",
@@ -10,6 +10,68 @@ description: |
 ---
 
 # Planning
+
+## Entry: Delivery, Authority, and Organization
+
+Read [Symphony workflow](../../references/symphony-workflow.md) and
+[Linear organization](../../references/linear-organization.md) before applying prerequisites.
+Their authority, durable-record, checkpoint, and recovery rules apply to both paths. Use
+established task context to record **Delivery: Symphony** or **Delivery: Local**; a repository
+name does not select it. Recover available intent/research while delivery is unresolved,
+but resolve delivery before choosing an execution path or publishing an execution contract.
+
+## Symphony Preparation: Planning Procedure
+
+Use direct source and Linear evidence throughout this route. Driver MCP, Driver discovery,
+and Driver-backed context/cascade/handoff agents are not part of Symphony preparation.
+
+1. **Ingest the established record.** Read intent, research, decisions, relevant recent
+   activity, applicable standards, and actual repository/Linear state. Reuse the canonical
+   local documents or Linear operator document. Revalidate consequential source facts
+   against branch/revision and relevant dirty files; do not treat a document date as proof.
+2. **Define bounded delivery.** State the problem, resulting behavior, acceptance criteria,
+   constraints, exclusions, and smallest useful change. Apply KISS/DRY and challenge
+   unnecessary mechanisms, duplicate records, or premature abstraction. Resolve material
+   tradeoffs with the operator; use existing decisions and authority without another
+   routine approach-confirmation loop.
+3. **Fit the plan to the work.** Name actual files, interfaces, dependencies, actors, and
+   relevant failure cases. Separate meaningful pure logic from I/O when code warrants it.
+   For prose/configuration changes, explain the instruction or package behavior being
+   changed; do not invent functions, a pure core, TDD tasks, fixtures, or a test framework.
+   Reuse existing verification and propose new tests only for a concrete risk they can check.
+4. **Write the execution facts.** Include target repository, source/revision, branch/base
+   expectations, affected files, approach, ordered tasks, dependencies, acceptance criteria,
+   exact meaningful validation commands, and applicable standards. Keep assumptions and
+   unresolved environment facts explicit. Split by independently reviewable deliveries
+   (one eventual issue/PR), not a task-count quota. Preserve true dependency and actor
+   boundaries; operator prerequisites may belong in separate Manual Work.
+5. **Organize the result.** Search/reuse current Linear homes and related work before creating
+   anything. Route tangents and deferrals with the organization reference. Keep plans in
+   existing local plan artifacts or the operator document's working plan section with
+   Current State, Decisions, and append-only Activity Log. An already durable plan/log is
+   sufficient; do not create another spec or local task documents for worker preparation.
+6. **Dry-run and repair.** Walk the actual file, interface, environment, command, dependency,
+   and actor paths. Follow [dry-run-plan](../../commands/dry-run-plan.md)'s Symphony route.
+   Repair clear factual/consistency defects within current authority, directly inspect
+   affected plans/specifications, verify their source/revision and current state before
+   propagating changes, and recheck affected work. For an active worker specification,
+   load [linear-issue](../linear-issue/SKILL.md) and use its rework path. Preserve earlier rationale
+   through appended corrections. Raise material scope/design changes and unresolved
+   blockers; do not repeat an unchanged failed check or ask separately to fix and recheck.
+7. **Checkpoint and hand off.** Record the approved scope, evidence, pending operations,
+   and next action using the shared checkpoint rules. Once validated and authorized for
+   issue preparation, load the full [linear-issue skill](../linear-issue/SKILL.md); it owns
+   the worker contract and external workflow resolution. Planning alone does not authorize
+   implementation, and preparation does not authorize arming, dispatch, merge, or deployment.
+
+This completes the Symphony planning route. Do not continue into Local task-document or
+execution prerequisites below.
+
+## Local Planning Procedure
+
+The remaining methods, templates, and checklists apply to **Delivery: Local**. Preserve
+Local implementation prerequisites while applying the shared authority and checkpoint
+rules. Explicit user instructions take precedence over plugin defaults.
 
 You are creating an implementation plan for a software engineering task. You work from research output, gather deep codebase context via Driver MCP, and produce a plan specific enough that an engineer or agent can implement it mechanically — down to the level of specific files, functions, and code changes.
 
@@ -27,7 +89,7 @@ The plan's job is to design code that has this shape. The test strategy is *deri
 2. **Clarify scope** — ask the user what exactly to build, push back on vagueness
 3. **Gather broad codebase context** — use `gather_task_context` for architecture and conventions
 4. **Detail with primitive tools** — use `get_code_map`, `get_file_documentation`, `get_source_file` for specific file-level understanding
-4.5. **Confirm approach** — present the core/shell decomposition, architecture, derived test strategy, scope, and sizing for user confirmation
+4.5. **Confirm material choices** — use established direction and surface unresolved architecture, test strategy, scope, or sizing decisions
 5. **Write the plan** — environment, core/shell architecture, TDD-ordered task breakdown, acceptance criteria
 6. **Self-review** — validate the plan against the actual codebase using Driver tools, including the core/shell boundary
 7. **Approve** — user reviews, approves plan for implementation
@@ -69,7 +131,7 @@ With research context loaded, ask the user what they want to build.
 
 ## Step 3: Gather Broad Codebase Context
 
-### CRITICAL: Use `gather_task_context` — Not Native Agents
+### Local Context Prerequisite: Use `gather_task_context`
 
 `gather_task_context` is Driver MCP's primary tool. **It is your default tool for codebase context.** (Full tool name: `mcp__driver-mcp__gather_task_context` — directly callable from the main conversation.)
 
@@ -87,7 +149,7 @@ elsewhere in the codebase, and testing patterns/frameworks used."
 
 **It takes 1-3 minutes. This is expected and normal.** The tool is doing work that would take you just as long or longer to do iteratively with native tools — and it produces higher-quality dynamic context because it works from pre-computed, exhaustive documentation rather than raw source files. Wait for the full response.
 
-### CRITICAL: Do NOT Substitute Native Agents
+### Local Driver Method: Do NOT Substitute Native Agents
 
 **Do NOT use native Explore agents, subagents, or manual file-reading/grep as a substitute for `gather_task_context`.** These native tools work from raw source only. `gather_task_context` has access to pre-computed documentation that covers architecture, symbol-level details, development history, and conventions — dynamic context that native tools cannot replicate.
 
@@ -136,7 +198,9 @@ Read the actual source code. Use this to:
 
 ## Step 4.5: Confirm Approach
 
-Before writing the plan, present your proposed direction to the user. At this point you have all the codebase context from Steps 3–4 but haven't committed to a plan structure.
+Before writing the plan, recover the direction already established with the user. Present
+any material choices still unresolved using the summary below. Do not repeat an approach
+confirmation when the same direction or routine planning work is already authorized.
 
 **Present a summary covering:**
 
@@ -158,13 +222,16 @@ Before writing the plan, present your proposed direction to the user. At this po
 > - **Sizing**: [N tasks, single plan / split rationale]
 > - **Stack position**: Plan N — Base `<base-branch>` → Feature `<feature-branch>` (PR will target `<base-branch>`)
 >
-> Does this look right? (Say "looks good" to proceed, or tell me what to change.)
+> [State any material choice still needed, if one remains.]
 
 **If the user confirms** ("looks good", "yes", "proceed"): append confirmed choices to `DECISIONS.md` using the entry template in the Decision Logging section below, then proceed to Step 5. Step 4.5 decisions capture the broad direction (which pattern to follow, which framework, single vs. split). Specific design decisions with rejected alternatives are logged during Step 7 — do not duplicate.
 
-**If the user requests changes**: adjust the proposed direction and re-present. Do not proceed to Step 5 until the user confirms.
+**If the user requests changes**: apply them within the established scope. Ask only when
+an unresolved material choice blocks dependent planning; continue independent work.
 
-**Skipping**: If the user says "skip" or moves directly to "write the plan", respect that — the checkpoint is advisory, not a gate. Note "Step 4.5 skipped at user direction" and proceed.
+**Established authority**: If the user has confirmed the direction or requested the plan,
+proceed with routine planning choices. This checkpoint is advisory; record consequential
+decisions without adding a separate permission gate.
 
 ---
 
@@ -619,11 +686,11 @@ Each test case must have enough detail for a subagent to write it, AND must read
 
 ### Commit After Writing
 
-Commit the plan to the projects repo:
-
-```
-git add plans/ FEATURE_LOG.md && git commit -m "chore: Plan created — <plan name>"
-```
+Save the plan and checkpoint meaningful progress using the
+[shared checkpoint rules](../../references/symphony-workflow.md). Inspect the diff and
+ownership, stage exact owned artifact paths, and make a scoped commit excluding unrelated
+staged work. Never commit unknown dirty files discovered on resume. Distinguish saved,
+committed, and pending outcomes; no session hook performs this work for you.
 
 ---
 
@@ -715,7 +782,11 @@ Cross-feature file overlap detected:
 
 ## Step 7: Approve
 
-> **Returning to approve a prior-session plan?** If the plan was written in a prior session and the user is returning to approve, skip Steps 1-6. Read the existing plan, verify it's current (check `updated` date), and proceed with the approval flow below.
+> **Returning to approve a prior-session plan?** Read the existing plan and relevant history,
+> then verify consequential assumptions against the actual branch/revision and affected
+> working-tree files. A recent `updated` date is not source verification. Recheck affected
+> findings when source or scope changed, then use the approval flow below without repeating
+> approval already supplied for the same scope.
 
 Present the plan to the user for review.
 
@@ -726,20 +797,20 @@ Present the plan to the user for review.
 
 1. Present the plan for review
 2. Address any questions or change requests
-3. Suggest dry-run: "Want to run `/drvr:dry-run-plan <plan-name>` before approving?" — this is advisory, the user can skip
-4. After the user returns from dry-run (or declines), prompt: "Do you approve plan `<plan-name>` for implementation?"
+3. Run relevant validation/dry-run within the existing planning request, honoring an explicit
+   request to skip it. Repair clear errors and recheck affected sections.
+4. If implementation is not yet authorized, present the concrete validated plan for approval.
+   Use approval already supplied for the same scope without asking again.
 5. **If the user approves:** Write the following fields to the plan's YAML frontmatter:
    - `status: approved`
    - `approved_at: <ISO 8601 UTC timestamp>` (e.g., `2026-04-16T14:30:00Z`)
    - `approved_by: <user identity>` — use the `userEmail` setting if available in conversation context, otherwise `"user"`
 
-   Commit the approved plan:
+   Record the approval and commit only owned plan/log changes using the shared checkpoint
+   rules. Exclude unrelated staged work and report any pending persistence operation.
 
-   ```
-   git add plans/ FEATURE_LOG.md && git commit -m "chore: Plan approved — <plan name>"
-   ```
-
-6. End with: "Plan approved. Activate `drvr:materialize-tasks` to materialize task documents for plan `<plan-name>`."
+6. If materialization is already requested, continue through `drvr:materialize-tasks` and
+   its Local prerequisites. Otherwise report that the approved plan is ready for that step.
 
 **If the user declines:** List what needs to change. Do not proceed. The user controls when to re-present for approval.
 
@@ -799,7 +870,7 @@ When appending the first decision entry (replacing the `_No decisions recorded y
 - Write vague task descriptions ("implement the feature")
 - Order implementation tasks before test tasks
 - Skip the self-review step
-- Suggest moving to implementation — the user controls phase transitions
+- Infer implementation authority from planning alone; continue transitions already authorized
 
 **DO:**
 - Name the pure core and the imperative shell explicitly in Architecture Fit before designing tests
@@ -832,7 +903,7 @@ When appending the first decision entry (replacing the `_No decisions recorded y
 - [ ] **Constraints explicit?** — Specific rules, not generic advice
 - [ ] **Plan sized right?** — 5-12 tasks, one PR, one logical unit
 - [ ] **Feature log?** — Did I update `FEATURE_LOG.md` when creating plans or the overview?
-- [ ] **Approach confirmed?** — Did I present core/shell decomposition, architecture, derived test strategy, scope, and sizing before writing the plan?
+- [ ] **Material choices resolved?** — Did I use established direction and surface remaining architecture, validation, scope, or sizing decisions?
 - [ ] **Environment section?** — Does the plan include `## Environment` with codebase, branches, test commands?
 - [ ] **Standards encoded?** — If a codebase standards artifact exists, are applicable standards included as plan constraints with source citations? (These layer on top of the core/shell constraint; they do not override it.)
 - [ ] **Local state validated?** — Did the self-review include local file checks alongside Driver tool checks?

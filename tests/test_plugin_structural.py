@@ -88,6 +88,19 @@ class TestPluginJson(unittest.TestCase):
         )
 
 
+class TestHooksJson(unittest.TestCase):
+    """Tests for Codex hook configuration compatibility."""
+
+    def test_hooks_json_has_supported_top_level_schema(self):
+        """Codex hook config accepts only a top-level hooks object."""
+        hooks_json_path = PLUGIN_ROOT / "hooks" / "hooks.json"
+        with open(hooks_json_path, encoding="utf-8") as f:
+            hooks_data = json.load(f)
+
+        self.assertEqual(set(hooks_data.keys()), {"hooks"})
+        self.assertIsInstance(hooks_data["hooks"], dict)
+
+
 class TestFrontmatterSchemas(unittest.TestCase):
     """Tests for frontmatter validation across skills, agents, and commands."""
 

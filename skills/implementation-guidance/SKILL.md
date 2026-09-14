@@ -1,13 +1,76 @@
 ---
 name: implementation-guidance
 description: |
-  Guide implementation execution with plan-driven task lists, subagent delegation, deviation tracking,
-  and commit discipline. Use when transitioning from planning to implementation phase.
+  Route Symphony preparation to a complete Linear issue handoff, or guide authorized Local
+  implementation with execution specs, task tracking, verification, and commit discipline.
   Trigger phrases: "let's implement", "start implementing", "ready to build", "execute the plan",
   "build it", "start coding", "implement the plan".
 ---
 
 # Implementation Guidance
+
+## Select the Operation Before Execution
+
+Read the [operating contract](../../references/symphony-workflow.md) and
+[Linear organization rules](../../references/linear-organization.md). Resolve and record
+`Delivery: Symphony` or `Delivery: Local` from explicit task context, not a repository
+name. Existing user authorization persists; do not repeat approval prompts for routine
+steps. If the execution actor remains unclear, continue useful preparation and resolve
+that boundary before code changes or dispatch.
+
+### Delivery: Symphony — Prepare the Implementation Handoff
+
+**Load the full [linear-issue skill](../linear-issue/SKILL.md) before any Local task-doc,
+pre-flight, or execution gate below.** Its template and handoff checks remain the
+complete contract. Read the existing plan/log or operator document; resolve current
+source evidence and the external `WORKFLOW.md` separately from deployment state.
+Search/reuse issues, produce self-contained issues sized to one PR, and represent real
+dependencies and operator-only actions as the issue skill specifies. Preserve new-issue
+Backlog behavior, existing state/labels, and the active-spec rework path.
+
+Checkpoint intended writes and verify their results in the canonical durable home.
+Append issue IDs, outcomes, deferrals, and the next authorized action. Return after
+reporting the handoff. Preparing issues neither creates local task docs nor authorizes
+local execution, worker dispatch, or an operator Workpad. No Driver setup, discovery,
+context agent, cascade agent, or indirect Driver call belongs on this path.
+
+### Delivery: Local — Explicit Self-Contained Execution Spec
+
+When the user explicitly requests local implementation from an existing self-contained
+Linear issue or equivalent spec, use that spec as the execution contract. Record this
+operation and the user's authority in its existing durable log. Do not create a second
+mutable spec or require Local task documents merely to satisfy the legacy method.
+
+1. Read the complete spec, its dependencies, current source/branch, repository guidance,
+   and agreed validation. Reconcile live Linear fields and git evidence with prior log
+   entries; identify owned and inherited changes before editing. A stale path, missing
+   source, unresolved dependency, or material spec conflict must be resolved first.
+2. Execute only the authorized work, using a session task list if useful. Apply the
+   spec's architecture and proportionate checks: prose/configuration changes do not
+   require an invented pure core, mock strategy, or synthetic behavioral test suite.
+   Use native source inspection; invoke a legacy Driver-backed helper only if that
+   workflow is explicitly selected and its actual prerequisites are satisfied.
+3. Append meaningful attempts, outcomes, deviations, and recovery checkpoints to the
+   existing log as work progresses. Repair factual errors and run the affected checks
+   within scope. Preserve tangents in their appropriate backlog with origin, value,
+   deferral reason, and revisit condition; do not implement them silently.
+4. Verify the result against the spec. Inspect the owned diff and use the scoped commit
+   discipline below, preserving unrelated staged work. Record checked commands/results
+   and confirmed commits; a saved file is not yet a commit. Reconcile uncertain outcomes
+   before retrying a write or recreating an issue.
+5. Inspect affected dependent specs directly, verify referenced source commits, and
+   record factual updates or material decisions. Update the existing spec/status/log
+   and report what is implemented, verified, reviewable, and still pending. This path
+   does not automatically invoke the legacy cascade agent or per-plan command chain.
+   Any explicitly requested callee keeps its actual prerequisites; dispatch and merge
+   require their own user authorization.
+
+Return after this execution path. The remaining task-doc workflow applies when the
+user selected **Delivery: Local with materialized tasks**. Its prerequisites are scoped
+to that workflow and never override explicit user instructions; record an authorized
+exception and preserve the underlying source, ownership, and verification checks.
+
+## Delivery: Local — Materialized Task Workflow
 
 You are guiding the implementation phase of a feature development lifecycle. Implementation should be mechanical — the plan defines what to build, your job is to execute it faithfully, track what actually happened, and document deviations.
 
@@ -104,12 +167,27 @@ When appending the first decision entry (replacing the `_No decisions recorded y
 
 ## Commit Discipline
 
-**Commit at every task boundary where tests pass.**
+**Commit owned changes at meaningful task boundaries after the agreed checks pass.**
 
 1. One commit per completed task (or batched task group)
-2. Tests must pass — never commit broken state
+2. Required checks must pass — report known failures instead of claiming completion
 3. Follow the project's commit message conventions. If none exist, reference the task — e.g., `"Add webhook handler (Task 2/5)"`
-4. If tests fail, fix before committing
+4. Inspect `git status --short`, the owned diff, and already staged paths. Commit only
+   reviewed changes from this task; never sweep up unrelated staged work or unknown
+   prior-session changes. Use exact paths, including new files:
+
+   ```bash
+   git diff -- <owned-paths>
+   git diff --cached --name-only
+   git add -- <owned-paths>
+   git diff --cached -- <owned-paths>
+   git commit --only -m "<message>" -- <owned-paths>
+   ```
+
+5. Verify the resulting commit and append its hash/outcome to the existing log.
+   Record failed or uncertain attempts and reconcile source state before retrying.
+   If one file mixes owned and unrelated edits, isolate the owned change before using
+   this sequence; a path-scoped commit still includes the whole path.
 
 ---
 
@@ -126,7 +204,9 @@ When appending the first decision entry (replacing the `_No decisions recorded y
 
 ## CRITICAL: Phase Transitions
 
-**NEVER suggest moving to the next SDLC phase.** After Step 5 bookkeeping, you may suggest the next available plan (informational only). The user controls all phase transitions.
+Name the next action and proceed when it is already authorized and its prerequisites
+are satisfied. Ask at a new material decision or authority boundary, not for routine
+bookkeeping, factual repairs, or an unchanged approval already given by the user.
 
 ---
 
@@ -143,7 +223,7 @@ User specifies plan → Check plans/<plan>/tasks/ → Read all task docs → Tas
 3. **If no task docs directory, or directory exists but contains zero `.md` files**: BLOCK. "No task docs found at `plans/<plan>/tasks/`. Implementation requires materialized task documents. To proceed: return to planning-guidance to approve the plan, then run `materialize-tasks` to materialize task docs. I cannot start implementation without materialized task docs."
 4. **Check for completed tasks**: If some tasks have `status: complete` in frontmatter, report them and start from the next incomplete task
 5. **Read the plan file** for overall context (Architecture Fit, Constraints) — task docs are for individual task execution
-6. **Verify plan approval** — Read the plan file's YAML frontmatter. If `status` is not `approved`: BLOCK. "Plan '\<plan\>' has not been approved for implementation. Return to planning-guidance and approve the plan first." This check is a process invariant — it cannot be overridden.
+6. **Verify plan approval** — Read the plan file's YAML frontmatter and session authority. If implementation has not been authorized, BLOCK and request approval of the concrete plan. If the user has already approved it, record that approval and update stale frontmatter instead of requesting it again.
 7. **Detect standards artifact**: Search for `## Standards Source` in the feature's research directory. If found, extract the absolute path from the Standards Source table's Path column. Store this for subagent prompt construction.
 
 CRITICAL: Task docs are the execution source of truth. The plan provides strategic context only.
@@ -152,7 +232,7 @@ CRITICAL: Task docs are the execution source of truth. The plan provides strateg
 
 Before executing any tasks, run the 5-phase pre-flight validation. Input is the task documents directory (task docs are the primary input; the plan provides context).
 
-**Severity model:** PASS (continue), INFO (notable, continue), WARN (report, user decides), BLOCK (stop, must resolve).
+**Severity model:** PASS (continue), INFO (notable, continue), WARN (report and resolve within existing authority), BLOCK (do not execute dependent work until resolved). Ask when resolution requires a material user decision.
 
 #### Phase 1: Task Document Integrity
 
@@ -169,8 +249,8 @@ Validate the codebase target from task docs' `## Codebase` section.
 
 - **2.1 Codebase root exists** — Read the codebase root path from any task doc. Verify the path exists on disk and is a directory. If not: BLOCK.
 - **2.2 Git repository check** — Verify the codebase root is a git repo: `git -C <root> rev-parse --is-inside-work-tree`. If not: WARN.
-- **2.3 Branch check (per-plan)** — Compare `git -C <root> branch --show-current` against the Feature Branch in the task doc's `## Codebase` section (this plan's branch). If the task doc uses a single `**Branch**:` field (legacy format), compare against that. **Per-plan stacked-PR model**: each plan has its own Feature Branch, stacked off Base Branch. If the Feature Branch does not exist locally yet (`git -C <root> rev-parse --verify <branch>` fails), this is the first task on this plan — suggest: "Feature Branch `<branch>` does not exist locally. Create it off Base Branch `<base>`? (`git checkout <base> && git pull && git checkout -b <branch>`)". Mismatch with an existing branch: WARN, and report Base Branch from the task doc so the user can decide whether to create the missing branch off it. Detached HEAD: WARN.
-- **2.4 Uncommitted changes** — Run `git -C <root> status --short`. Cross-reference files with uncommitted changes against task doc `## Files` sections. Overlapping files: WARN per file. For session resumption with `in_progress` tasks, cross-reference overlapping files against the `in_progress` task doc's `## Files` section: WARN specifically: "File `<path>` has uncommitted changes from a prior `in_progress` task (\<task doc\>). These may be partial implementation artifacts. Review or discard before restarting this task."
+- **2.3 Branch check (per-plan)** — Compare `git -C <root> branch --show-current` against the Feature Branch in the task doc's `## Codebase` section (this plan's branch). If the task doc uses a single `**Branch**:` field (legacy format), compare against that. **Per-plan stacked-PR model**: each plan has its own Feature Branch, stacked off Base Branch. If the selected Feature Branch does not exist locally yet, verify its Base Branch and create it within the implementation authorization after inspecting working-tree ownership. An unexpected existing branch or detached HEAD is a WARN requiring target reconciliation before edits, not an automatic checkout or pull over unknown changes.
+- **2.4 Uncommitted changes** — Run `git -C <root> status --short`. Cross-reference dirty files with task doc `## Files` sections and prior activity. Review overlapping diffs and establish ownership before editing. For resumed `in_progress` work, determine which changes already succeeded; preserve partial implementation rather than discarding or restarting it blindly. Unknown changes are not authorized for an automatic commit, stash, or reset.
 - **2.5 Codebase table consistency** — Read codebase path info from `plans/00-overview.md` `## Implementation Environment` (or `research/00-overview.md` `## Codebases` if no IE section exists). Compare the task doc's codebase root path against the recorded paths. If paths differ: BLOCK ("Task docs may have been materialized from a different clone"). Also compare the current working directory. If no matching entry found: INFO.
 - **2.6 Worktree readiness** — If the dependency graph has parallelizable tasks (from parallel execution group derivation): (1) **Branch mismatch escalation:** If pre-flight 2.3 detected a branch mismatch (current branch ≠ Feature Branch), escalate from WARN to BLOCK: "Worktree isolation requires the correct Feature Branch. Current branch `<actual>` does not match Feature Branch `<expected>`. Switch to the Feature Branch before running parallel tasks." (2) **Clean working directory:** Verify `git -C <root> status --short --untracked-files=no` shows no uncommitted changes to tracked files. Uncommitted changes: WARN. "Uncommitted changes detected. Worktree isolation requires a clean working directory. Commit or stash changes before parallel execution." (3) **Existing worktrees:** Check `git -C <root> worktree list`. If worktrees other than the main one exist: WARN. "Existing worktrees found. These may conflict with parallel execution."
 
@@ -241,7 +321,7 @@ Existing checks, adapted to read from task docs.
 ### Blockers
 <numbered list, or "None">
 
-**Proceed with implementation?**
+**Next action:** <authorized start/repair, or the specific unresolved decision>
 ```
 
 #### Session Resumption Variant
@@ -251,17 +331,18 @@ When resuming (detected by finding task docs with `status: complete` or `status:
 2. **Verify completed task commits** (1.4) — confirm prior work is still in git history
 3. **Re-run test baseline** (4.3) — confirm tests still pass after prior session's changes
 4. **Report starting point:** "Resuming from Task N. Tasks 1-(N-1) complete in prior session."
-5. **In-progress tasks from crashed sessions**: Treat `status: in_progress` as incomplete — restart the task
+5. **In-progress tasks from crashed sessions**: Treat `status: in_progress` as incomplete. Inspect logs, source diffs, commits, and prior tool outcomes to determine what actually succeeded before resuming. Do not restart writes blindly or commit unknown changes.
 
 #### After Pre-Flight
 
 - **All PASS, no WARN:** Proceed automatically. "Pre-flight passed. Starting Task 1."
-- **PASS with WARN:** Report and ask. "Pre-flight found N warnings. [details]. Proceed?"
-- **Any BLOCK:** Stop. "Pre-flight found N blockers. [details]. Resolve before proceeding."
+- **PASS with WARN:** Report and resolve factual issues within scope. Continue when the remaining warnings are covered by existing authority; ask only for a new material choice.
+- **Any BLOCK:** Resolve the blocker before dependent work. Make clear factual repairs and recheck affected checks without a separate permission loop; surface unresolved choices to the user.
 
 If user proceeds despite warnings, note in implementation log: "Pre-flight warnings acknowledged by user: [list]."
 
-This is a gate — the user decides whether to proceed, skip, or fix issues first.
+This gate verifies readiness. Existing authorization does not make an unresolved source
+or execution prerequisite true, and a routine repair does not require renewed approval.
 
 ### Step 3: Execute Each Task
 
@@ -343,8 +424,8 @@ Group 3: [5] — sequential (depends on 3)
 
 1. `git merge <worktreeBranch>` — merge into current (Feature) branch
 2. If merge succeeds: clean up with `git worktree remove <worktreePath>` and `git branch -d <worktreeBranch>`. Log task as complete.
-3. If merge conflict: **BLOCK**. Do NOT merge remaining worktrees until resolved. Report: "Merge conflict from parallel task N. Conflicting files: X, Y. Remaining unmerged worktrees: worktree-task-M, worktree-task-P. Resolve conflicts manually, then continue with remaining merges." Store merge state in the implementation log. On re-invocation or after conflict resolution, detect remaining worktrees via `git worktree list` and continue the merge sequence.
-4. If a parallel subagent fails (tests fail, subagent errors, or timeout): skip merge-back for that task — do NOT merge its worktree. Clean up with `git worktree remove --force <worktreePath>` and `git branch -D <worktreeBranch>`. Mark task as failed in the implementation log. Continue merging other successful tasks. WARN: "Task N failed in worktree — skipping merge. Review output and re-run sequentially." If the subagent result does not include worktree fields (crash/timeout), check `git worktree list` for orphaned worktrees and clean up any found.
+3. If merge conflict: do not merge remaining worktrees until it is resolved. Record conflicting paths, remaining worktrees, and the attempted merge in the implementation log. Resolve clear owned conflicts within the plan, then run affected checks; surface material choices or uncertain ownership. On resumption, inspect git merge state and `git worktree list` before continuing.
+4. If a parallel subagent fails (tests fail, subagent errors, or timeout): skip merge-back for that task and preserve its worktree/branch. Record the failure, worktree path, known changes, and next recovery action; continue independent successful tasks when safe. If the result lacks worktree fields, locate the relevant worktree through git state before retrying. Do not force-remove failed or orphaned work containing unreviewed changes. Clean up only after the result is preserved or the user has authorized discarding it.
 5. If worktree creation itself fails: fall back to sequential execution for that task. WARN: "Worktree creation failed for Task N — falling back to sequential execution."
 6. After all merges complete, run the test suite to verify the combined changes work together. If post-merge tests fail: report failing tests and let the user decide how to proceed.
 
@@ -370,19 +451,18 @@ After all tasks are complete:
 
 ### Step 5: Review Deviations and Bookkeeping
 
-After the summary, present deviations for user review before proceeding with bookkeeping.
+After the summary, record deviations and update factual bookkeeping. Surface new
+material decisions before taking actions that depend on them.
 
 #### 5.0: Review Deviations
 
 Present the deviation summary from the implementation log. For each deviation, the user should understand what changed and why.
 
-> "Implementation complete. Here are the deviations from the plan: ..."
-> "Are these acceptable, or would you like to go back and address any of them?"
-
-- **If the user wants changes** → return to Step 3 for rework on specific tasks
-- **If the user approves** → proceed to bookkeeping (5.1+)
-
-**After approval, execute steps 5.1 through 5.5 automatically without pausing for acknowledgment.** These are mechanical bookkeeping steps — plan status, overview update, cascade check, commit, and transition suggestion. Only pause if cascade-check (5.3) surfaces design-impact decisions requiring user input.
+Explain what changed, why, and its effect on the agreed result. Continue steps 5.1–5.4
+under existing authorization for factual bookkeeping; preserve unresolved decisions as
+pending rather than marking them complete. If the user requests rework, return to
+Step 3 for the affected tasks. At 5.5, proceed only as far as the authorized operation
+and each callee's actual prerequisites permit.
 
 **If no overview file exists at `plans/00-overview.md`, skip steps 5.2, 5.3, and 5.5.**
 
@@ -406,7 +486,9 @@ Write a status header at the TOP of the plan file (before `## Context`):
 <numbered list from log, or "None">
 ```
 
-Follow this format exactly. Then mark all `- [ ]` checkboxes as `- [x]` under both `## Acceptance Criteria` and `## Test Strategy`.
+Use this format when implementation and its required checks are complete. Mark only
+the acceptance and validation checkboxes supported by observed results; leave pending
+review, installation pickup, or merge criteria unchecked.
 
 #### 5.2: Update Overview Progress Table
 
@@ -417,7 +499,7 @@ If `plans/00-overview.md` exists:
 
 #### 5.3: Cascade Check
 
-**Verify upstream commits:** Before spawning cascade-check, verify upstream plan commits exist in the local git history. Read the implementation log for commit hashes. For each commit listed, run `git -C <codebase-root> rev-parse --verify <hash>^{commit}`. If any commit is not found: WARN. "Upstream commit `<hash>` from `<task>` not found in local git history. This may indicate implementation happened in a different clone. Proceed with cascade-check anyway?"
+**Verify upstream commits:** Before spawning cascade-check, verify upstream plan commits exist in the local git history. Read the implementation log for commit hashes. For each commit listed, run `git -C <codebase-root> rev-parse --verify <hash>^{commit}`. If any commit is not found, reconcile the clone/ref and prior outcome; do not claim the implementation is present or continue dependent work from an unverified log entry. Record unresolved source evidence and surface a needed target decision.
 
 Spawn the [cascade-check](../../agents/cascade-check.md) agent with:
 - Implementation log path
@@ -430,24 +512,11 @@ If the agent reports design decisions needed, present each to the user with opti
 
 #### 5.4: Commit Bookkeeping
 
-```
-git add plans/<plan>.md plans/00-overview.md
-```
-
-Also stage task doc status changes:
-```
-git add plans/<plan>/tasks/*.md
-```
-
-Stage implementation log and feature log:
-
-```
-git add implementation/log-<plan>.md FEATURE_LOG.md 2>/dev/null
-```
-
-```
-git commit -m "chore: Bookkeeping complete — plan <name>"
-```
+Apply Commit Discipline to the exact files changed by this task: the plan, overview
+(if present), affected task docs, implementation log, decision log, and feature log.
+Review the diffs before staging; exclude unrelated paths and staged changes. Do not
+use a wildcard to commit every task doc or hide missing-file errors. Record saved and
+committed outcomes separately, including any pending checkpoint.
 
 #### 5.5: Per-Plan PR Gate (REQUIRED before next plan)
 
@@ -577,7 +646,11 @@ Implement the following N tasks.
 
 ## Implementation Log Format
 
-Write to `implementation/log-<plan>.md` (e.g., `implementation/log-01a.md`).
+Reuse the existing implementation log, or create `implementation/log-<plan>.md` (e.g.,
+`implementation/log-01a.md`) when none exists. Append dated attempt/outcome entries;
+update a current summary without rewriting historical activity. Corrections are new
+entries linking the prior observation. Checkpoint before and after multi-step writes
+so an interruption leaves enough evidence to reconcile what succeeded.
 
 ```markdown
 # Implementation Log: <Plan Name>
@@ -634,7 +707,7 @@ TaskList (from TaskCreate) does NOT persist across sessions — it's session-onl
 ### Starting a New Session Mid-Implementation
 
 1. **Read the implementation log** — it tells you what's done, what's next, and what deviated
-2. **Read task documents** — check `status` field in each task doc frontmatter. Completed tasks have `status: complete`. No need to reconstruct completion state.
+2. **Read task documents** — check `status` fields and reconcile them with source/commit evidence. A historical `complete` label alone does not prove that the current checkout contains the result.
 3. **Read the plan** — refresh on overall context (Architecture Fit, Constraints)
 4. **Identify next incomplete task** — first task doc where `status` is not `complete`
 5. **Recreate TaskList** if needed (for session display only)

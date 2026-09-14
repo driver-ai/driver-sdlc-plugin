@@ -11,6 +11,63 @@ description: |
 
 # Research
 
+## Entry: Delivery, Authority, and Organization
+
+Read [Symphony workflow](../../references/symphony-workflow.md) and
+[Linear organization](../../references/linear-organization.md) first. Their authority,
+durable-record, checkpoint, and recovery rules apply to both paths. Record **Delivery:
+Symphony** or **Delivery: Local** from explicit user/task context, not a repository name.
+Research can proceed with unresolved delivery; clarify before selecting execution or
+publishing an execution contract.
+
+## Symphony or Unresolved Delivery: Research Procedure
+
+Use direct repository, Linear, and relevant primary-source access. Do not call Driver MCP,
+perform Driver discovery/setup, or delegate to Driver-backed context or cascade agents.
+
+1. **Recover the question.** Read the canonical intent, current summary, relevant decisions,
+   recent activity, and unresolved operations. Refine what must be learned for the next
+   decision using known context; avoid repeating an answered interview.
+2. **Resolve sources and standards.** Verify target repository paths, branch/revision, and
+   relevant dirty files. Read applicable `AGENTS.md`, `CLAUDE.md`, scoped rules, and referenced
+   project standards directly. Record the standards source and applicable constraints.
+   Missing evidence stays explicit; ask only when it blocks a meaningful decision.
+3. **Work through WHY, WHAT, HOW.** WHY: problem, affected users, value, and cost of inaction.
+   WHAT: smallest useful scope, constraints, prior attempts, and definition of done.
+   HOW: existing mechanisms, exact files/interfaces, dependencies, options, and risks.
+   Inspect the source needed to answer these questions with targeted searches and reads.
+4. **Make evidence traceable.** Cite inspected paths/links and revisions; distinguish source
+   observations, inference, and unverified deployment state. Check claims against relevant
+   working-tree changes. A repository workflow or configuration is not proof of deployment.
+5. **Challenge and organize as findings emerge.** Apply KISS and DRY: reuse verified mechanisms,
+   challenge unsupported assumptions and extra scope, and identify clear ownership boundaries.
+   Identify pure logic and I/O where software behavior warrants it; prose/configuration work
+   need not invent a pure core or test system. Search relevant known dependencies and linked
+   work, not every feature or backlog. Use the organization reference to deduplicate, relate,
+   split, or defer discoveries while preserving their origin and revisit condition.
+6. **Keep one research record.** Maintain the existing local research/overview and feature
+   history when present. For Linear-native work, use working research in the operator
+   document alongside Current State, Decisions, and its append-only Activity Log. Reuse an
+   already durable plan/log. Put open questions near findings, retain their resolutions,
+   and link focused deep dives when they help; do not duplicate mutable findings in chat
+   and multiple records. Follow the shared checkpoints for saved/committed/pending outcomes.
+7. **Resolve the next decision.** Summarize supported conclusions, remaining uncertainty,
+   relevant deferred links, and constraints for planning. Correct factual errors and inspect
+   affected linked artifacts directly; verify their recorded source/revision and current
+   state before propagating corrections, then recheck affected evidence. Changes to an
+   active worker specification follow the [linear-issue skill](../linear-issue/SKILL.md)'s
+   rework procedure. Continue authorized
+   research or planning without a new phase permission prompt. Surface material choices
+   requiring the operator and record the next action before yielding.
+
+This is the complete research route for Symphony or unresolved delivery. Do not apply the
+Driver/tool, local-artifact, or architecture prerequisites in the Local method below.
+
+## Local Research Procedure
+
+All remaining methods, templates, and checklists apply to **Delivery: Local**. Shared
+authority and safe bookkeeping still apply; explicit user instructions take precedence.
+
 You are guiding technical research against one or more codebases using Driver MCP. Your job is to help the user deeply understand a technical topic — architecture, patterns, constraints, trade-offs — and produce organized research artifacts they can use for planning and decision-making.
 
 ## Architectural Commitment: Functional Core, Imperative Shell
@@ -84,7 +141,9 @@ After reviewing the codebase via Driver MCP...
 
 Progress through these layers systematically. Don't rush to "how" before "why" and "what" are clear.
 
-These are internal checkpoints for tracking progress — NOT transition triggers. Reaching "done" on a layer doesn't mean you should suggest moving on.
+These are checkpoints for tracking progress. Continue transitions within the established
+request; an unresolved material decision remains visible rather than being inferred from
+a completed checklist.
 
 ### 1. Why (Problem Framing)
 
@@ -235,7 +294,7 @@ Index this artifact in `research/00-overview.md`'s Research Documents table (use
 
 ## Step 3: Gather Codebase Context
 
-### CRITICAL: Use `gather_task_context` — Not Native Agents
+### Local Context Prerequisite: Use `gather_task_context`
 
 `gather_task_context` is Driver MCP's primary tool. **It is your default tool for codebase context.** (Full tool name: `mcp__driver-mcp__gather_task_context` — directly callable from the main conversation.)
 
@@ -252,7 +311,7 @@ and how delivery status is tracked. Codebase: my-backend"
 
 **It takes 1-3 minutes. This is expected and normal.** The tool is doing work that would take you just as long or longer to do iteratively with native tools — and it produces higher-quality dynamic context because it works from pre-computed, exhaustive documentation rather than raw source files. Wait for the full response.
 
-### CRITICAL: Do NOT Substitute Native Agents
+### Local Driver Method: Do NOT Substitute Native Agents
 
 **Do NOT use native Explore agents, subagents, or manual file-reading/grep as a substitute for `gather_task_context`.** These native tools work from raw source only. `gather_task_context` has access to pre-computed documentation that covers architecture, symbol-level details, development history, and conventions — dynamic context that native tools cannot replicate.
 
@@ -428,11 +487,11 @@ Not every micro-decision needs an entry — trivial choices (variable naming, fi
 
 When appending the first decision entry (replacing the `_No decisions recorded yet._` placeholder), also append a row to `FEATURE_LOG.md`: `| <today> | First decision logged | \`DECISIONS.md\` |`
 
-**Commit the research artifact** to the projects repo after creating or finalizing the document:
-
-```
-git add research/ FEATURE_LOG.md && git commit -m "chore: Research artifact — <doc name>"
-```
+**Checkpoint the research artifact** after meaningful findings and when finalizing it.
+Follow the [shared checkpoint rules](../../references/symphony-workflow.md): inspect the
+diff and ownership, stage only exact owned paths, and make a scoped commit that excludes
+unrelated staged work. Append outcomes/corrections without rewriting earlier history.
+Report saved, committed, and pending operations separately; do not rely on a session hook.
 
 ---
 
@@ -455,7 +514,7 @@ git add research/ FEATURE_LOG.md && git commit -m "chore: Research artifact — 
 - Wait for the full response — it is doing compressed expert-level codebase analysis
 - Use primitive tools (`get_code_map`, `get_file_documentation`, `get_source_file`) for targeted follow-up
 - Spawn parallel subagents as concurrency wrappers for multiple `gather_task_context` calls
-- Ask lots of probing questions before and during research
+- Ask focused questions for material missing context; reuse answers already supplied
 - Keep the overview current as an index of all research
 - Search for CLAUDE.md relative to each codebase path before gathering context
 - When no standards are found, ask the user rather than proceeding silently
@@ -467,7 +526,7 @@ git add research/ FEATURE_LOG.md && git commit -m "chore: Research artifact — 
 
 Before sending any response during research, verify:
 
-- [ ] **Questions asked?** — Am I being curious enough? What else should I ask?
+- [ ] **Material uncertainty addressed?** — Have I used existing context and surfaced what still matters?
 - [ ] **Questions in context?** — Are questions placed near the content they relate to?
 - [ ] **Why-What-How order?** — Am I progressing through layers appropriately?
 - [ ] **Driver context?** — Have I called `gather_task_context` where relevant?
