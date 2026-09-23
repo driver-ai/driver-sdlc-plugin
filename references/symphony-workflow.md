@@ -13,6 +13,58 @@ If delivery is unresolved, record that uncertainty and continue useful intent an
 
 The Symphony terminal preparation step is the full [Linear issue skill](../skills/linear-issue/SKILL.md). Preparing issues does not authorize running their implementation locally or assigning/delegating them to a worker.
 
+## Symphony executable review plans
+
+For Symphony handoffs, planning selects exactly one `general` reviewer and adds specialists
+only for concrete risks in the proposed change. Every selected role needs a nonempty reason.
+Supported specialists are `correctness`, `security`, `conventions`, `design` and `tests`.
+The issue's role/reason list is the execution input; surrounding prose cannot change it.
+Use the [issue template](../skills/linear-issue/SKILL.md#issue-template) to carry that selection.
+This contract does not replace the Local review workflow.
+
+The consumer owns the schema and its validation. The contract landed in
+[`driver-ai/symphony` at `42d55dd`](https://github.com/driver-ai/symphony/blob/42d55dd0899d8ee5c4992b8b9c7a3dbd7a6d8265/README.md#independent-review):
+exactly one H2 `Review plan` section outside Markdown fences, containing one `json` fence.
+The object has only `schema_version: 1`, a positive integer `revision`, and a nonempty
+`reviewers` array of unique `role`/`reason` objects, including exactly one `general`.
+Duplicate keys, unknown fields, unsupported roles and malformed or ambiguous blocks fail
+validation. Keep illustrative complete plans inside longer outer fences so they cannot
+be mistaken for an issue's authoritative section.
+
+Resolve the consumer revision from the established deployment record and record the source
+revision used for validation. A verified consumer source checkout can validate a draft
+before deployment; source availability is not proof of the installed runtime, workflow,
+method or configuration. Verify compatibility with the effective installed policy before
+arming. If the validator or that deployment evidence is unavailable, record the remaining
+preparation gate; do not substitute a plugin parser or infer a default plan.
+
+From that Symphony checkout, validate the complete description saved as `ISSUE.md`:
+
+```sh
+python3 deploy/host/review-run.py --validate-plan ISSUE.md
+```
+
+This read-only command needs no credentials, makes no network/provider calls and creates
+no run state. Success returns normalized `plan` data and `plan_hash`; failure exits nonzero.
+Record the returned revision/hash and command/source revision in the canonical preparation
+record. Do not hand-compute the hash. Validate the draft before saving, then validate the
+complete description read back from Linear and compare the normalized plan and hash.
+Correct any unexplained difference and repeat read-back before declaring the handoff ready.
+
+Start a new plan at revision 1; preserve an existing plan's revision when its selection is
+unchanged. A change to roles or reasons uses a higher revision, records the reason in the
+existing decision log, and follows existing planning authority. The worker may
+request a revision but cannot silently add, omit or substitute reviewers. A changed source
+head can require a new run of the same selection without a new scope approval; it does
+not change allowance, round limits or other installed policy. The review-plan JSON never supplies
+models, effort, permissions, spending limits or commands to launch reviewers.
+
+The runner executes the selected reviewers and owns run identity, receipts and accounting.
+The runtime owns guarded handoff. Complete CI and substantive notes before final review;
+during the evidence freeze, publish the exact generated evidence before guarded handoff.
+Workers stop at In Review. Human GitHub merge, Linear completion, and deployment retain
+their separate authority. Preparation neither launches reviews nor delegates the issue.
+
 ## Carry authority forward
 
 Read the user's current request and recorded decisions before asking for approval. Authorization persists across phase changes and resumed sessions. Within the authorized outcome, continue routine research, organization, factual repairs, related validation, bookkeeping, and phase transitions. Report material findings and actual changes; do not ask again whether to fix a known factual error or repeat its affected check.
