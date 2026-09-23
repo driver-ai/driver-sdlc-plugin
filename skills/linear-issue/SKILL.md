@@ -29,6 +29,7 @@ An issue here is therefore not a note to a teammate. It is the complete specific
 2. The Linear target: resolve the team, project, milestone if applicable, and dependencies from the established effort and current Linear records. Do not infer the destination from the plugin repository.
 3. The relevant Symphony `WORKFLOW.md`, resolved from the established deployment or repository reference. It is an external input, not a file bundled with drvr. Its clone configuration names the target repository; its prompt names the PR base branch and the rules the worker already receives. Record the source and revision, and distinguish source configuration from a verified deployed version.
 4. Access to Linear: a Linear MCP server, or the GraphQL API at `https://api.linear.app/graphql` with an API key. Access to the target repository for direct verification: `gh`, `git`, or a clone. This preparation skill does not require or invoke Driver MCP.
+5. The selected review roles/reasons and the consumer's canonical validator, resolved through [the review-plan contract](../../references/symphony-workflow.md#symphony-executable-review-plans). Record the validator's source revision separately from verified installed policy; a source-only check does not make the consumer ready for dispatch.
 
 ## Procedure
 
@@ -53,10 +54,18 @@ Fill the template below.
 - Dependencies are Linear relations, never prose in the issue.
 - Never write Linear's closing words (fixes, closes, resolves followed by an issue identifier) anywhere in the issue. The worker copies issue text into commits and PR bodies, and Linear would close issues on merge.
 - A change to code, rather than to a document or a prompt, also gets the optional sections described under the template.
+- Include exactly one `## Review plan` section outside Markdown fences, with one JSON block carrying the planned role/reason list. Replace the template's example reason with the actual change's risk and include only the selected reviewers. Do not copy a whole panel, add model/limit fields, or leave review selection to the worker. Every Symphony issue, including documentation work, needs its explicit plan.
+- Preserve the selection through creation and revisions. Start a new plan at revision 1 and preserve an unchanged plan's revision on rewrites; changing a role or reason requires a higher revision and a recorded rationale under existing planning authority. An implementation head change alone can rerun the same selection within installed limits. A worker requests a plan revision instead of silently expanding or reducing the review.
 
 ### 4. Self-review
 
-Apply the gates below. Fix every BLOCK before writing anything to Linear.
+Apply the pre-write gates below. Validate the complete draft description using the canonical command from the resolved Symphony checkout:
+
+```sh
+python3 deploy/host/review-run.py --validate-plan ISSUE.md
+```
+
+Record its returned normalized plan, revision/hash and validator source revision in the existing preparation record. Fix pre-write BLOCKs before saving; saved-description and deployment checks remain explicit handoff/arming gates. Do not replace this command with a second parser or a manual JSON-only check.
 
 Repair clear factual or consistency errors within authorized scope and repeat affected checks. Surface material choices rather than guessing. Do not require another fix/recheck approval for an already authorized repair. A source workflow whose deployment is unverified remains a named readiness limit.
 
@@ -66,11 +75,11 @@ Before writing, search for matching work and inspect the current issue and relat
 
 Create or update the issue with the description and established project/milestone, if any: `issueCreate` or `issueUpdate`, or the equivalent tool of the Linear MCP server in use. A new issue starts in state Backlog with no label and no worker delegate; a rewrite keeps its state, labels, assignee, and delegate. Add verified dependencies with `issueRelationCreate` of type `blocks`. If the milestone description lists an order, insert the issue there.
 
-Record intended changes before a multi-step write. Read back the issue and relations, and append returned IDs/URLs and outcomes to the canonical log. After an unknown outcome, retrieve by ID or search before retrying; leave ambiguous writes pending. Do not create a duplicate or report an unverified write as successful.
+Record intended changes before a multi-step write. Read back the issue and relations, save the complete returned description as `ISSUE.md`, and run the same canonical validator. Compare its normalized plan and hash with the validated draft, including the intended revision, roles and reasons. Repair any unexplained difference from the intended plan and repeat save/read-back validation. Missing, invalid or changed plans keep the handoff unready; a successful API save is not validation. Record returned IDs/URLs, the read-back revision/hash and outcomes in the canonical log. After an unknown outcome, retrieve by ID or search before retrying; leave ambiguous writes pending. Do not create a duplicate or report an unverified write as successful.
 
 ### 6. Report
 
-Return the issue URL, verified organization and dependencies, deferred/pending items, the operator tasks that must be done before arming, and the arming step. Do not arm. Update canonical Current State and append the handoff outcome; no separate mutable task-document copy is needed.
+Return the issue URL, verified organization and dependencies, validated review-plan revision/hash, deferred/pending items, the operator tasks that must be done before arming, and the arming step. Distinguish source validation from verified deployed-consumer compatibility. Do not arm. Update canonical Current State and append the handoff outcome; no separate mutable task-document copy is needed.
 
 When the user supplies run feedback or asks for a retrospective, read the relevant worker's Confusions in the workpad. A confusion is an ambiguity the worker had to resolve on its own; repeated confusion is evidence for improving this skill. Do not start monitoring or coordinate another task merely because an issue was prepared.
 
@@ -89,6 +98,21 @@ The approach chosen. Each rejected alternative in one line with the reason.
 ## Scope
 In scope: ...
 Out of scope: ...
+
+## Review plan
+
+```json
+{
+  "schema_version": 1,
+  "revision": 1,
+  "reviewers": [
+    {
+      "role": "general",
+      "reason": "Check the bounded guard change, surrounding behavior and focused regression."
+    }
+  ]
+}
+```
 
 ## Tasks
 
@@ -150,6 +174,7 @@ Plans arrive in many shapes. Map their sections like this. The drvr planning plu
 | Acceptance criteria | `## Acceptance criteria` |
 | Test strategy | `## Test strategy`; its commands go to `## Validation` |
 | Scope | `## Scope` |
+| Review selection: schema version, revision, roles and concrete reasons | The single JSON block in `## Review plan`; validate the complete issue before saving and after read-back. |
 | Constraints | `## Constraints` |
 | Task breakdown | Worker tasks, with Goal, Files, Tests, Constraints copied verbatim |
 | Open questions, unresolved review findings | Resolve before writing. An open question in an issue is a BLOCK. |
@@ -158,6 +183,9 @@ Plans arrive in many shapes. Map their sections like this. The drvr planning plu
 
 BLOCK, each with its remedy:
 
+- Missing, malformed, duplicate or unsupported review-plan input, or an unavailable canonical validator. Repair the plan or resolve the verified consumer checkout before saving; no fallback reviewer selection or substitute parser.
+- A saved description whose normalized review plan/hash differs from the validated draft. Repair and revalidate the read-back before declaring the handoff ready. Apply the same check to later issue revisions.
+- Unverified deployed-consumer compatibility. Record the operator prerequisite and keep arming pending; source-only plan validation can still be completed and saved.
 - An acceptance criterion a reviewer cannot verify from the PR or the workpad. Rewrite it as something observable.
 - A path, command, or setting that was not verified against the base branch or the live system. Verify it, or mark it an assumption.
 - Text that repeats a `WORKFLOW.md` rule (branch, PR base, workpad, state transitions, blocked behavior). Delete it. If the rule is wrong, change `WORKFLOW.md` through its own issue.

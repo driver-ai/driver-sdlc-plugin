@@ -45,12 +45,21 @@ and Driver-backed context/cascade/handoff agents are not part of Symphony prepar
    unresolved environment facts explicit. Split by independently reviewable deliveries
    (one eventual issue/PR), not a task-count quota. Preserve true dependency and actor
    boundaries; operator prerequisites may belong in separate Manual Work.
-5. **Organize the result.** Search/reuse current Linear homes and related work before creating
+5. **Select the executable review plan.** Include exactly one `general` reviewer with a
+   concrete reason tied to the change. Add specialists only for named risks, using the
+   supported roles and revision rules in [the review-plan contract](../../references/symphony-workflow.md#symphony-executable-review-plans).
+   A small guard fix may need general alone; an authorization-boundary change adds
+   security for the changed access boundary. Record each role/reason in the canonical
+   plan so issue preparation carries that selection without inferring another panel.
+   Models, effort, permissions and spending limits remain installed policy. A role or
+   reason change requires an explicit revision and rationale under existing planning
+   authority; a new source head alone does not change the reviewer selection.
+6. **Organize the result.** Search/reuse current Linear homes and related work before creating
    anything. Route tangents and deferrals with the organization reference. Keep plans in
    existing local plan artifacts or the operator document's working plan section with
    Current State, Decisions, and append-only Activity Log. An already durable plan/log is
    sufficient; do not create another spec or local task documents for worker preparation.
-6. **Dry-run and repair.** Walk the actual file, interface, environment, command, dependency,
+7. **Dry-run and repair.** Walk the actual file, interface, environment, command, dependency,
    and actor paths. Follow [dry-run-plan](../../commands/dry-run-plan.md)'s Symphony route.
    Repair clear factual/consistency defects within current authority, directly inspect
    affected plans/specifications, verify their source/revision and current state before
@@ -58,11 +67,15 @@ and Driver-backed context/cascade/handoff agents are not part of Symphony prepar
    load [linear-issue](../linear-issue/SKILL.md) and use its rework path. Preserve earlier rationale
    through appended corrections. Raise material scope/design changes and unresolved
    blockers; do not repeat an unchanged failed check or ask separately to fix and recheck.
-7. **Checkpoint and hand off.** Record the approved scope, evidence, pending operations,
+8. **Checkpoint and hand off.** Record the approved scope, evidence, pending operations,
    and next action using the shared checkpoint rules. Once validated and authorized for
    issue preparation, load the full [linear-issue skill](../linear-issue/SKILL.md); it owns
-   the worker contract and external workflow resolution. Planning alone does not authorize
-   implementation, and preparation does not authorize arming, dispatch, merge, or deployment.
+   the worker contract and external workflow resolution. Carry the selected plan into its
+   single fenced JSON section, validate the complete issue with the canonical runner,
+   then validate the saved description on read-back and record the revision/hash. Missing
+   or invalid plans are preparation defects, never worker-selected defaults. Planning alone
+   does not authorize implementation, and preparation does not authorize arming, dispatch,
+   merge, or deployment.
 
 This completes the Symphony planning route. Do not continue into Local task-document or
 execution prerequisites below.
