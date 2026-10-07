@@ -19,6 +19,8 @@ You are creating an implementation plan for a software engineering task. You wor
 
 The plan's job is to design code that has this shape. The test strategy is *derived* from the architecture — pure-core functions get unit tests with values in / values out (no mocks); shell functions get integration tests against real I/O. **If the plan would require a mock to test a "unit," the architecture is wrong and the plan must be re-shaped to extract a pure core.** When the surrounding code isn't in core/shell shape, the plan steers the feature toward extracting a pure core anyway — local mess from a clean extraction is preferred to a clean fit with an entangled neighbor.
 
+**Value types with I/O edges are a first-class design.** The boundary may run through a type: an immutable value type whose only I/O lives in thin edge methods (`from_path` / `to_path`, `from_reader` / `to_writer`, `load` / `save`) that delegate to the type's pure parse/serialize methods conforms to this commitment. Classify by member — the type and its pure methods are core; each edge method is shell. Rules and examples: [`CLAUDE.md`](../../CLAUDE.md) Engineering Practices > Value Types with I/O Edges.
+
 ---
 
 ## How This Skill Works
@@ -140,7 +142,7 @@ Before writing the plan, present your proposed direction to the user. At this po
 
 **Present a summary covering:**
 
-1. **Core/shell decomposition** — what's the pure logical core for this feature (no I/O, no time, no randomness), and what's the imperative shell that performs I/O and calls into it? Name the candidate pure functions/types and the shell entry points. If the surrounding code makes a clean extraction hard, say so explicitly and propose the extraction anyway — the plugin steers toward purity, it doesn't accommodate entanglement. **If the feature is genuinely shell-only by nature** (thin CRUD, webhook forwarder, glue code, integration wrapper with no decision logic), say so and propose the shell-only declaration with a specific rationale; this requires the user to confirm the feature really has no meaningful pure logic to extract.
+1. **Core/shell decomposition** — what's the pure logical core for this feature (no I/O, no time, no randomness), and what's the imperative shell that performs I/O and calls into it? Name the candidate pure functions/types and the shell entry points; for a value type with I/O edges, name its edge methods as shell items. If the surrounding code makes a clean extraction hard, say so explicitly and propose the extraction anyway — the plugin steers toward purity, it doesn't accommodate entanglement. **If the feature is genuinely shell-only by nature** (thin CRUD, webhook forwarder, glue code, integration wrapper with no decision logic), say so and propose the shell-only declaration with a specific rationale; this requires the user to confirm the feature really has no meaningful pure logic to extract.
 2. **Architecture approach** — which existing patterns to follow, key files to modify, integration strategy. Note where the core/shell boundary lands relative to existing files.
 3. **Derived test strategy** — testing follows from the architecture, not the other way around. Pure-core functions get unit tests (values in, values out, no mocks). Shell functions get integration tests against real I/O. For shell-only features, integration tests only. Name the framework and fixture-sourcing approach. If you find yourself proposing a mock for pure-core logic, stop — that's a signal the core/shell boundary needs to move. Mocks in integration tests are acceptable when the real collaborator is external, expensive, non-deterministic, or absent in test (see Mocking Rules) — each one named with its justification.
 4. **Scope adjustments** — anything surfaced during context gathering that wasn't in the original Step 2 scope (additions or exclusions)
@@ -370,6 +372,8 @@ _Integration points with existing code_
 
 _This subsection is required. The plan must explicitly name what's pure-core and what's shell, OR explicitly declare the feature shell-only with a rationale._
 
+_Value type with I/O edges: list the type and its pure methods under Pure core and each edge method by qualified name (`Invoice.from_path`, `Invoice::to_path`) under Imperative shell. A type's core classification never extends to its edge methods. Edges stay thin — read or write only, delegating parsing and serialization to the type's pure methods._
+
 **Pure core** (no I/O, no time, no randomness, no mutable shared state — functions taking values in, returning values out):
 - `<function or type name>` at `<file>` — <one-line purpose>
 - ...
@@ -381,7 +385,7 @@ _This subsection is required. The plan must explicitly name what's pure-core and
 > **Rationale**: <Why there's no meaningful pure logic to extract. Be specific: "Endpoint just validates the JSON schema and writes a row" or "Glue between Stripe webhook and our queue, no business logic." This rationale is reviewed at dry-run; vague rationales like "doesn't fit" get pushed back.>
 
 **Imperative shell** (performs I/O, calls into the core):
-- `<function or entry point>` at `<file>` — <I/O performed: HTTP / DB / filesystem / time / random / etc.>
+- `<function, entry point, or edge method>` at `<file>` — <I/O performed: HTTP / DB / filesystem / time / random / etc.>
 - ...
 
 **Boundary notes:** <Where does the seam land relative to existing files? Is the surrounding code already in core/shell shape, partially, or not at all? If the boundary cuts through an existing entangled module, name the extraction explicitly. For shell-only features, note what would have to change in the feature's scope before extraction would pay off.>
@@ -450,7 +454,7 @@ _One test per pure-core function listed above. Each test takes values in, assert
 - [ ] Test: `<test_name>` — `<pure-core function>` with `<input>` returns `<output>`
 
 ### Integration Tests (shell)
-_One test per shell entry point. Exercises real I/O against a real dependency (real test DB, real HTTP fake-backed by recorded fixtures from real calls, real filesystem in a tmpdir, etc.). Mocks only at justified boundaries (see Mocking Rules in Testing Methodology); each mock must be named with its justification._
+_One test per shell entry point, including each edge method on a value type. Exercises real I/O against a real dependency (real test DB, real HTTP fake-backed by recorded fixtures from real calls, real filesystem in a tmpdir, an in-memory stream for an edge method that takes a reader/writer, etc.). Mocks only at justified boundaries (see Mocking Rules in Testing Methodology); each mock must be named with its justification._
 
 - [ ] Test: `<test_name>` — `<shell entry point>` against `<real dependency>`, verifies `<observable outcome>`
 
@@ -674,8 +678,8 @@ Update the plan to address any discrepancies before the user reviews it.
 Before any other self-review check, verify the plan's core/shell decomposition holds:
 
 1. **Shell-only declaration is justified, if used** — if the plan declares "Pure core: (none — shell-only feature)", verify the Rationale is specific (names the type of work: thin CRUD, webhook forwarder, glue, integration wrapper) and not a hand-wave. Vague rationales like "doesn't fit" or "everything is I/O" get pushed back — look harder. If the rationale is solid, skip checks 2, 3, and 5 below; only check 4 applies.
-2. **Pure-core items are actually pure** — for every function/type listed under "Pure core" in Architecture Fit, walk through what its body would need to do. If the body would need to read from disk, hit a network, read the clock, read randomness, mutate shared state, or call a shell function, it isn't pure. Either move it to the shell or split out the pure piece.
-3. **Shell items don't carry hidden logic** — for every function/type listed under "Imperative shell," check that the substantive logic has been pulled into the core. The shell should be thin: receive I/O input → call into core → write I/O output. If the shell function has branching, calculation, or state machinery, extract it. (For shell-only features, branching that IS the routing/dispatch is acceptable — it's the feature's nature, not hidden logic.)
+2. **Pure-core items are actually pure** — for every function/type listed under "Pure core" in Architecture Fit, walk through what its body would need to do. If the body would need to read from disk, hit a network, read the clock, read randomness, mutate shared state, or call a shell function, it isn't pure. Either move it to the shell or split out the pure piece. For a value type with I/O edges, the check covers every member except the edge methods listed under "Imperative shell"; an edge method that isn't listed there makes the type impure as classified.
+3. **Shell items don't carry hidden logic** — for every function/type listed under "Imperative shell," check that the substantive logic has been pulled into the core. The shell should be thin: receive I/O input → call into core → write I/O output. If the shell function has branching, calculation, or state machinery, extract it. An edge method on a value type that parses, validates, or formats instead of delegating to the type's pure methods is hidden logic. (For shell-only features, branching that IS the routing/dispatch is acceptable — it's the feature's nature, not hidden logic.)
 4. **Every Integration Test in Test Strategy maps to a shell item** — and exercises real I/O against a real dependency (or a justified-boundary mock per the Mocking Rules).
 5. **Every Unit Test in Test Strategy maps to a pure-core item** — and asserts values-in/values-out with no mocks. If any unit test would need a mock, the architecture is wrong. (Skipped for shell-only features.)
 6. **Every mock in the plan is named with a justification** — and the justification fits one of the Mocking Rules categories (external / expensive / non-deterministic / absent). Unjustified mocks of internal modules are a boundary failure.

@@ -81,8 +81,8 @@ Read the plan's `## Architecture Fit` section, specifically the `### Core/Shell 
 **Otherwise**, for each task in the plan's `## Task Breakdown`, classify it by walking the task's `**Files**:` and `**Goal**:` entries:
 
 - **`core`** — the task introduces, modifies, or tests a pure-core item (function/type listed under "Pure core") and does not touch shell entry points.
-- **`shell`** — the task introduces, modifies, or tests a shell item (entry point listed under "Imperative shell") and does not touch pure-core items.
-- **`both`** — the task spans both sides (e.g., wires a shell entry point through to a pure-core function it also defines). Both sets of rules apply.
+- **`shell`** — the task introduces, modifies, or tests a shell item (entry point or edge method listed under "Imperative shell") and does not touch pure-core items.
+- **`both`** — the task spans both sides (e.g., wires a shell entry point through to a pure-core function it also defines, or adds a value type together with its I/O edge methods). Both sets of rules apply.
 
 If the plan has no Core/Shell Decomposition subsection at all (neither pure-core items nor a shell-only declaration — typically an older plan written before this requirement, or a plan whose author skipped it), BLOCK: "Plan has no Core/Shell Decomposition. Return to planning-guidance to add it (either list pure-core/shell items, or declare shell-only with rationale) before materializing." Do not guess — the classification is the contract that flows through implementation.
 
@@ -146,6 +146,7 @@ Do NOT navigate to or modify files outside this directory.
 **Rules for this task** (always present):
 - Pure-core items MUST NOT introduce I/O, time, randomness, or mutable shared state. If the task requires any of these, stop and report — the plan's boundary is wrong. (Skipped for shell-only plans — there are no pure-core items.)
 - Shell items MUST keep substantive logic in the core they call. Branching, calculation, or state machinery in the shell is a violation; extract into the core first. **Exception for shell-only plans**: routing/dispatch branching IS the feature, not a violation.
+- Value types with I/O edges: edge methods (`from_path` / `to_path`, `from_reader` / `to_writer`, `load` / `save`) are shell items and MUST stay thin — read or write only, delegating parsing, validation, and serialization to the type's pure methods. Every other member of the type is pure core: immutable ("changes" return a new value), no I/O in other methods, properties, or constructors, no lazy loading.
 - Tests MUST NOT mock to exercise pure-core logic — that's a boundary failure.
 - Mocks of internal modules in shell integration tests are acceptable ONLY when the real collaborator is external (third-party with no sandbox), expensive (real money per invocation), non-deterministic in ways you can't control (real wall-clock for timing-sensitive tests), or absent in the test environment. Each such mock must be named with its justification — a comment on the mock or a note in the test docstring. "The real thing is slow" or "I don't want to set up the DB" are not acceptable justifications.
 - Code MUST be self-standing: understandable by someone reading only the source, with no access to this task doc, the plan, or any process artifact. Comment the non-obvious **why** (a subtle decision, a workaround, or a deviation from a normal standard) in plain terms, never the **how**. Never put SDLC/process references in code or comments — no task numbers, deviation references (`see deviation 3`) or decision IDs (`DEC-005`), plan names, dry-run gap numbers, or acceptance-criteria IDs. Deviations and decisions belong in the implementation log and `DECISIONS.md`.

@@ -19,6 +19,8 @@ The plugin commits to a **functional core, imperative shell** architecture (see 
 
 The decomposition lives in a dedicated research deep-dive (typically the "how" research thread). Planning uses it as the foundation for Architecture Fit. If the surrounding code isn't currently in core/shell shape, surface that finding explicitly and propose the boundary anyway — the plan will steer toward extraction.
 
+The decomposition may run through a type rather than between modules. An immutable value type whose only I/O lives in thin edge methods (`from_path` / `to_path`, `from_reader` / `to_writer`, `load` / `save`) that delegate to the type's pure parse/serialize methods is a first-class core/shell shape — record the type under pure core and each edge method under shell. See [`CLAUDE.md`](../../CLAUDE.md) Engineering Practices > Value Types with I/O Edges.
+
 ---
 
 ## How This Skill Works
@@ -354,8 +356,10 @@ _Required section. Records the natural decomposition the research surfaced. Plan
 - ...
 
 **Imperative shell** (performs I/O, calls into the core):
-- `<function or entry point>` — <I/O performed> — <new or existing>
+- `<function, entry point, or edge method>` — <I/O performed> — <new or existing>
 - ...
+
+_Value type with I/O edges: list the type and its pure methods under Pure core and each edge method by qualified name (`Invoice.from_path`) under Imperative shell._
 
 **Surrounding code shape**: <"already core/shell" | "partially" | "entangled, extraction required">
 

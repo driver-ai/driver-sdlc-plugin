@@ -4,6 +4,12 @@ All notable changes to the Driver SDLC Plugin (drvr) will be documented in this 
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Changed
+
+- **Architecture**: Value types with I/O edges are an explicitly endorsed FCIS shape — an immutable type whose only I/O lives in thin `from_*` / `to_*` (or `load` / `save`) edge methods delegating to pure parse/serialize methods. Plans classify such types by member (type and pure methods under Pure core, each edge method under Imperative shell); the rules are defined in CLAUDE.md Engineering Practices > Value Types with I/O Edges and carried through research, planning, materialization, implementation sub-agent prompts, dry-run checks 16–17, `/drvr:assess` §FCIS, and `standards-review` §FCIS
+
 ## [1.2.0] - 2026-07-22
 
 ### Added

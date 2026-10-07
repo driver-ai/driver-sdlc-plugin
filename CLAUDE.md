@@ -188,7 +188,7 @@ Because each plan ships as its own PR, post-implementation events (assessment, d
 
 ## Key Principles
 
-- **Functional core, imperative shell** -- software produced through this plugin separates a pure logical core (functions taking values in and returning values out -- no I/O, no time, no randomness, no mutable shared state) from a thin imperative shell that performs I/O and calls into the core. This is an architectural commitment, not a testing strategy: the testing strategy follows from it. Pure-core code is unit-tested with values in / values out and no mocks. Shell code is integration-tested against real I/O. A "unit test" that needs mocks is a signal the core/shell boundary is broken -- fix the architecture, not the test. When the surrounding code isn't in this shape, the plugin steers each new feature toward extracting a pure core anyway. See the Engineering Practices section for how this commitment flows through each phase.
+- **Functional core, imperative shell** -- software produced through this plugin separates a pure logical core (functions taking values in and returning values out -- no I/O, no time, no randomness, no mutable shared state) from a thin imperative shell that performs I/O and calls into the core. This is an architectural commitment, not a testing strategy: the testing strategy follows from it. Pure-core code is unit-tested with values in / values out and no mocks. Shell code is integration-tested against real I/O. A "unit test" that needs mocks is a signal the core/shell boundary is broken -- fix the architecture, not the test. When the surrounding code isn't in this shape, the plugin steers each new feature toward extracting a pure core anyway. The boundary may run through a type rather than between modules: an immutable value type whose only I/O lives in thin `from_*` / `to_*` edge methods is a first-class core/shell design (see Value Types with I/O Edges). See the Engineering Practices section for how this commitment flows through each phase.
 - **User controls all decisions** -- skills suggest, the user decides. No auto-fixing, no silent bookkeeping.
 - **Deviations are reviewed** -- after implementation, deviations are presented for user approval before bookkeeping proceeds.
 - **Severity helps prioritize, not skip** -- dry-run gaps are classified LOW/MEDIUM/HIGH but all are presented for review.
@@ -295,6 +295,60 @@ This plugin treats the **functional core, imperative shell** decomposition (Bern
 - **Standards review** flags I/O bleeding into pure-core code as a violation, independent of whether the codebase's own CLAUDE.md documents this standard.
 
 **Steering when the surrounding code isn't pure.** Existing codebases are usually not in core/shell shape. The plugin does not accommodate this; it pushes against it. Each new feature should extract a pure core wherever possible, even if neighboring code is tangled. Local mess produced by a clean extraction is preferred to a clean fit with an entangled neighbor. The plugin fights architectural entropy actively.
+
+### Value Types with I/O Edges
+
+The core/shell boundary can run *through* a type rather than between modules. An immutable value type whose only I/O lives in thin **edge methods** -- constructors that read (`from_path`, `from_reader`, `load`, `fetch`) and sinks that write (`to_path`, `to_writer`, `save`) -- is a first-class core/shell design, not an exception to it. The type and its pure methods are the core; each edge method is a shell item. This is the shape of idiomatic Rust (`FromStr` / `Display` / serde beside `fs::read_to_string` or `from_reader` / `to_writer`) and of Python frozen dataclasses with `from_*` / `to_*` methods. It also fits the plugin's data-structure-first planning: the type's snippet in `## Data Structures & Callables` shows both halves of the boundary in one place.
+
+Rules:
+
+1. **Immutable to callers.** Frozen dataclass, record, or no `&mut self`. Methods that "change" the value return a new one (`dataclasses.replace`, `Self { field, ..self }`). Mutating an owned or consumed value before returning it is still pure (Rust `fn with_discount(mut self, pct: u8) -> Self { self.discount_pct = pct.min(100); self }`); what's prohibited is a change any caller or other holder of the value can observe.
+2. **I/O only at the edges.** No I/O, time, randomness, or mutable shared state in any other method, property/getter, or constructor (`__init__`, `__post_init__`, `new`). No lazy loading and no I/O-backed caching -- that is Active Record drift, not this pattern.
+3. **Edges are thin.** An edge reads raw input and hands it to a pure parser (`from_json`, `FromStr`, `TryFrom`), or takes output from a pure serializer (`to_json`, `Display`) and writes it. Parsing, validation, defaults, and formatting belong in the pure counterpart so they are unit-testable without I/O.
+4. **Classify by member.** Plans list the type and its pure methods under Pure core and each edge method by qualified name (`Invoice.from_path`, `Invoice::to_path`) under Imperative shell. A type's core classification never extends to its edge methods.
+
+Testing follows the usual split: pure methods get values-in / values-out unit tests; each edge method gets an integration test against real I/O -- a tmpdir round trip, or an in-memory stream (`io.StringIO`, `&[u8]`, `Vec<u8>`) when the edge takes a reader/writer. In-memory streams are real implementations of the I/O interface, not mocks.
+
+```python
+@dataclass(frozen=True)
+class Invoice:
+    lines: tuple[Line, ...]
+    discount_pct: int = 0
+
+    # Shell edges: I/O only, delegating all format logic to the pure layer.
+    @classmethod
+    def from_path(cls, path: Path) -> Invoice:
+        return cls.from_json(path.read_text())
+
+    def to_path(self, path: Path) -> None:
+        path.write_text(self.to_json())
+
+    # Pure core: values in, values out.
+    @classmethod
+    def from_json(cls, text: str) -> Invoice: ...
+    def to_json(self) -> str: ...
+    def with_discount(self, pct: int) -> Invoice:
+        return replace(self, discount_pct=min(pct, 100))
+    def total_cents(self) -> int: ...
+```
+
+```rust
+impl Invoice {
+    // Shell edges: I/O only, delegating all format logic to the pure layer.
+    pub fn from_path(path: &Path) -> Result<Self, LoadError> {
+        Ok(Self::from_json(&fs::read_to_string(path)?)?)
+    }
+    pub fn to_path(&self, path: &Path) -> io::Result<()> {
+        fs::write(path, self.to_json())
+    }
+
+    // Pure core: values in, values out.
+    pub fn from_json(s: &str) -> serde_json::Result<Self> { serde_json::from_str(s) }
+    pub fn to_json(&self) -> String { ... }
+    pub fn with_discount(self, pct: u8) -> Self { Self { discount_pct: pct.min(100), ..self } }
+    pub fn total_cents(&self) -> u64 { ... }
+}
+```
 
 ### Codebase Standards Discovery
 

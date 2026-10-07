@@ -15,6 +15,8 @@ You are guiding the implementation phase of a feature development lifecycle. Imp
 
 The plugin commits to a **functional core, imperative shell** architecture for all features (see [`CLAUDE.md`](../../CLAUDE.md) Key Principles). Pure-core code takes values in and returns values out — no I/O, no time, no randomness, no mutable shared state. Shell code performs I/O and calls into the core. Some features are genuinely shell-only by nature (thin CRUD, glue, integration wrappers) — those declare so in the plan with a rationale, and the rules below apply with the shell-only carve-outs noted.
 
+The boundary may run through a type: an immutable value type whose only I/O lives in thin edge methods is a first-class core/shell shape (see [`CLAUDE.md`](../../CLAUDE.md) Engineering Practices > Value Types with I/O Edges). Its edge methods are shell items; every other member is pure core.
+
 Implementation enforces this commitment three ways:
 
 1. **Tasks carry a core/shell classification** (set during materialization). Pure-core tasks must not introduce I/O. Shell tasks must keep substantive logic in the core they call. Tasks in shell-only plans only have shell rules to enforce.
@@ -502,6 +504,7 @@ This codebase commits to a functional core / imperative shell architecture. Pure
 **Rules for this task:**
 - If your task is **core**: do not introduce I/O, time, randomness, or mutable shared state. If the task requires any of these, stop and report — the plan's boundary is wrong, not your job to paper over.
 - If your task is **shell**: keep substantive logic out of the shell. The shell should receive I/O input, call into pure-core functions, and emit I/O output. If you find yourself writing branching, calculation, or state machinery in the shell, extract it into the core first. **Exception**: if the plan is declared shell-only, routing/dispatch branching IS the feature — that's expected, not a violation.
+- **Value types with I/O edges** are a sanctioned shape: an immutable type whose only I/O lives in edge methods (`from_path` / `to_path`, `from_reader` / `to_writer`, `load` / `save`). Edge methods are shell — read or write only, delegating parsing, validation, and serialization to the type's pure methods. Every other member is pure core — no I/O, time, or randomness in other methods, properties, or constructors; no lazy loading; "changes" return a new value.
 - **Do not mock to test pure-core logic** — that's a boundary failure. Stop and report it.
 - **Mocks of internal modules in shell integration tests are acceptable** only when the real collaborator is external (third-party with no sandbox), expensive (real money per invocation), non-deterministic in ways you can't control (real wall-clock for timing-sensitive tests where you can't inject a fake), or absent in the test environment. Each such mock must be named with its justification — a comment on the mock or a note in the test docstring. Mocking just because "the real thing is slow" or "I don't want to set up the DB" is not acceptable.
 
@@ -663,6 +666,7 @@ Task docs are the persistent source of truth for task state. The implementation 
 - Add mocks of internal modules without a justification fitting the Mocking Rules (external / expensive / non-deterministic / absent) — log a deviation
 - Introduce I/O, time, or randomness into a pure-core task — stop and report
 - Let substantive logic accumulate in a shell entry point — extract it into the core (routing/dispatch in shell-only plans is fine)
+- Put I/O in a value type outside its edge methods, or parsing/validation logic inside an edge method — keep edges thin and everything else pure
 - Start coding without reading the plan and task docs (including the Core/Shell Decomposition)
 - Extract tasks from the plan inline — read task docs from `plans/<plan>/tasks/`
 - Spawn sub-agents without the codebase root path from the task doc
