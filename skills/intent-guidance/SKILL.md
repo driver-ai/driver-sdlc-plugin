@@ -21,8 +21,8 @@ an exhaustive interview. Get in, capture intent, get out.
 ## CRITICAL: Intent Is Not Research
 
 Research (Why-What-How) explores *the codebase*. Intent explores *the author's head*. Do not
-call `gather_task_context` or any other tools that investigate external data — no codebase
-exploration, no file reading, no MCP calls. The focus is entirely on the author's intent.
+investigate external data — no codebase exploration, no file reading, no external lookups.
+The focus is entirely on the author's intent.
 Research and discovery come later. Intent is a conversational phase; its output is the
 author's framing of the problem.
 
@@ -114,7 +114,7 @@ H2 sections (include what's relevant, leave others brief):
 ## Anti-Patterns
 
 **Do NOT:**
-- Investigate external data — no codebase exploration, no MCP calls, no file reading outside the feature dir
+- Investigate external data — no codebase exploration, no external lookups, no file reading outside the feature dir
 - Run the author through a long questionnaire — get them talking, capture what they say
 - Block the flow when the author wants to move to research
 - Auto-advance without the author confirming intent is captured

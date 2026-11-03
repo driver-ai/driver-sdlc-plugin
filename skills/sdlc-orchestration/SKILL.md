@@ -413,4 +413,3 @@ Update the "Current State" header to reflect the new phase and active work.
 - [/drvr:review](../../commands/review.md)
 - [/drvr:docs-artifacts](../../commands/docs-artifacts.md)
 - [cascade-check](../../agents/cascade-check.md)
-- [driver-task-context](../../agents/driver-task-context.md)

@@ -795,7 +795,6 @@ class TestBranchAwareness(unittest.TestCase):
     materialize_tasks: str
     impl_guidance: str
     sdlc_orch: str
-    driver_task_context: str
     handoff_analyzer: str
 
     @classmethod
@@ -806,7 +805,6 @@ class TestBranchAwareness(unittest.TestCase):
         cls.materialize_tasks = (PLUGIN_ROOT / "skills" / "materialize-tasks" / "SKILL.md").read_text()
         cls.impl_guidance = (PLUGIN_ROOT / "skills" / "implementation-guidance" / "SKILL.md").read_text()
         cls.sdlc_orch = (PLUGIN_ROOT / "skills" / "sdlc-orchestration" / "SKILL.md").read_text()
-        cls.driver_task_context = (PLUGIN_ROOT / "agents" / "driver-task-context.md").read_text()
         cls.handoff_analyzer = (PLUGIN_ROOT / "agents" / "handoff-analyzer.md").read_text()
 
     def test_feature_cmd_asks_for_base_and_feature_branch(self):
@@ -836,27 +834,16 @@ class TestBranchAwareness(unittest.TestCase):
         self.assertIn("Branch Prefix", self.claude_template)
         self.assertRegex(self.claude_template, r"\|[^|]*Base Branch[^|]*\|[^|]*Branch Prefix[^|]*\|")
 
-    def test_research_guidance_validates_feature_branch(self):
-        """research-guidance Step 4 references 'Feature Branch'."""
-        match = re.search(
-            r"## Step 4: Validate Remote Context.*?(?=\n## |\Z)",
-            self.research_guidance, re.DOTALL,
-        )
-        self.assertIsNotNone(match, "Step 4 section not found in research-guidance")
-        self.assertIn("Feature Branch", match.group(0))
-
-    def test_research_guidance_step3_has_branch_passthrough(self):
-        """research-guidance Step 3 contains branch_name near gather_task_context guidance."""
+    def test_research_guidance_step3_checks_branch(self):
+        """research-guidance Step 3 checks the local branch against the Codebases table's Base Branch."""
         match = re.search(
             r"## Step 3: Gather Codebase Context.*?(?=\n## |\Z)",
             self.research_guidance, re.DOTALL,
         )
         self.assertIsNotNone(match, "Step 3 section not found in research-guidance")
         section = match.group(0)
-        self.assertTrue(
-            "branch_name" in section or "Base Branch" in section,
-            "Step 3 missing branch_name or Base Branch passthrough guidance",
-        )
+        self.assertIn("git branch --show-current", section)
+        self.assertIn("Base Branch", section)
 
     def test_materialize_tasks_template_has_both_branches(self):
         """materialize-tasks task doc template has **Base Branch** and **Feature Branch**."""
@@ -897,10 +884,6 @@ class TestBranchAwareness(unittest.TestCase):
             "feature:" in section.lower() or "feature branch" in section.lower(),
             "Session resume missing feature branch reporting",
         )
-
-    def test_driver_task_context_has_branch_passthrough(self):
-        """driver-task-context agent instructions mention branch_name."""
-        self.assertIn("branch_name", self.driver_task_context)
 
     def test_handoff_analyzer_reads_base_branch_from_table(self):
         """handoff-analyzer references Codebases table for base branch with fallback chain."""
@@ -1134,79 +1117,6 @@ class TestPlanningQualityImprovements(unittest.TestCase):
         match = re.search(r"### Required Plan Sections\n\n(.+?)(?:\n\n|\n---|\Z)", self.claude_md, re.DOTALL)
         self.assertIsNotNone(match)
         self.assertIn("Environment", match.group(1))
-
-
-class TestDriverizeTemplateStructural(unittest.TestCase):
-    """Structural tests for PE-3573 (driverize improvements) and PE-3572 (un-driverize)."""
-
-    @classmethod
-    def setUpClass(cls):
-        driverize_path = PLUGIN_ROOT / "commands" / "driverize.md"
-        undriverize_path = PLUGIN_ROOT / "commands" / "un-driverize.md"
-        plugin_json_path = PLUGIN_ROOT / ".claude-plugin" / "plugin.json"
-        cls.driverize = driverize_path.read_text() if driverize_path.exists() else ""
-        cls.undriverize = undriverize_path.read_text() if undriverize_path.exists() else ""
-        cls.plugin_json = json.loads(plugin_json_path.read_text()) if plugin_json_path.exists() else {}
-
-    def _require_driverize(self):
-        self.assertTrue(self.driverize, "commands/driverize.md not found or empty")
-
-    def _require_undriverize(self):
-        self.assertTrue(self.undriverize, "commands/un-driverize.md not found or empty")
-
-    def test_driverize_has_version_string(self):
-        self._require_driverize()
-        self.assertIn("DRIVERIZE_VERSION", self.driverize)
-
-    def test_driverize_artifacts_have_version_stamps(self):
-        self._require_driverize()
-        self.assertIn("driverize:v", self.driverize)
-        self.assertIn("# Driverize v", self.driverize)
-
-    def test_driverize_has_rerun_detection(self):
-        self._require_driverize()
-        self.assertRegex(self.driverize, r"### 2\.5.*Detect|Existing Installation",
-            "Phase 2.5 re-run detection section not found")
-        self.assertIn("_driverize", self.driverize,
-            "Re-run detection must reference _driverize metadata key")
-
-    def test_driverize_has_backup_safety(self):
-        self._require_driverize()
-        self.assertIn(".pre-driver", self.driverize)
-        self.assertIn("already preserved", self.driverize.lower(),
-            "Backup section must include backup-only-once guard ('already preserved')")
-
-    def test_driverize_has_changelog(self):
-        self._require_driverize()
-        self.assertIn("## Changelog", self.driverize)
-
-    def test_driverize_claude_md_block_has_markers(self):
-        self._require_driverize()
-        self.assertIn("<!-- driverize:v", self.driverize)
-        self.assertIn("<!-- /driverize -->", self.driverize)
-
-    def test_undriverize_has_provenance_detection(self):
-        self._require_undriverize()
-        self.assertIn("driverize:v", self.undriverize,
-            "Un-driverize must reference provenance markers for artifact identification")
-
-    def test_undriverize_has_backup_restoration(self):
-        self._require_undriverize()
-        self.assertIn(".pre-driver", self.undriverize,
-            "Un-driverize must reference .pre-driver backups for restoration")
-
-    def test_undriverize_has_user_confirmation(self):
-        self._require_undriverize()
-        lower = self.undriverize.lower()
-        self.assertTrue(
-            "confirm" in lower or "proceed" in lower or "approve" in lower,
-            "Un-driverize must include a user confirmation step before removal",
-        )
-
-    def test_plugin_json_has_driverize_commands(self):
-        commands = self.plugin_json.get("commands", [])
-        self.assertIn("./commands/driverize.md", commands)
-        self.assertIn("./commands/un-driverize.md", commands)
 
 
 class TestPostPRLifecycle(unittest.TestCase):

@@ -11,7 +11,7 @@ description: |
 
 # Planning
 
-You are creating an implementation plan for a software engineering task. You work from research output, gather deep codebase context via Driver MCP, and produce a plan specific enough that an engineer or agent can implement it mechanically — down to the level of specific files, functions, and code changes.
+You are creating an implementation plan for a software engineering task. You work from research output, study the codebase in depth, and produce a plan specific enough that an engineer or agent can implement it mechanically — down to the level of specific files, functions, and code changes.
 
 ## Architectural Commitment: Functional Core, Imperative Shell
 
@@ -27,11 +27,11 @@ The plan's job is to design code that has this shape. The test strategy is *deri
 
 1. **Ingest research** — read the research output to understand findings and decisions (including any core/shell decomposition surfaced during research)
 2. **Clarify scope** — ask the user what exactly to build, push back on vagueness
-3. **Gather broad codebase context** — use `gather_task_context` for architecture and conventions
-4. **Detail with primitive tools** — use `get_code_map`, `get_file_documentation`, `get_source_file` for specific file-level understanding
+3. **Gather codebase context** — architecture, conventions, and testing patterns around the change
+4. **Detail at the file level** — the exact files, signatures, and logic the plan will touch
 4.5. **Confirm approach** — present the core/shell decomposition, architecture, derived test strategy, scope, and sizing for user confirmation
 5. **Write the plan** — environment, core/shell architecture, TDD-ordered task breakdown, acceptance criteria
-6. **Self-review** — validate the plan against the actual codebase using Driver tools, including the core/shell boundary
+6. **Self-review** — validate the plan against the actual codebase, including the core/shell boundary
 7. **Approve** — user reviews, approves plan for implementation
 
 ---
@@ -69,70 +69,19 @@ With research context loaded, ask the user what they want to build.
 
 ---
 
-## Step 3: Gather Broad Codebase Context
+## Step 3: Gather Codebase Context
 
-### CRITICAL: Use `gather_task_context` — Not Native Agents
-
-`gather_task_context` is Driver MCP's primary tool. **It is your default tool for codebase context.** (Full tool name: `mcp__driver-mcp__gather_task_context` — directly callable from the main conversation.)
-
-**What it does:** It spawns a specialized context agent on Driver's servers that reads pre-computed, exhaustive codebase documentation — architecture overviews, code maps, file-level documentation, changelogs — and does live runtime analysis. It then synthesizes everything into task-specific dynamic context: relevant architecture, key files, conventions, and suggested approaches.
-
-**How to call it for planning:** Provide a task description focused on what you're about to plan. Include architectural concerns and testing patterns.
-
-```
-Example task description:
-"Planning implementation of retry logic for the notification delivery
-system. Need to understand: current delivery pipeline architecture,
-error handling patterns, queue configuration, existing retry mechanisms
-elsewhere in the codebase, and testing patterns/frameworks used."
-```
-
-**It takes 1-3 minutes. This is expected and normal.** The tool is doing work that would take you just as long or longer to do iteratively with native tools — and it produces higher-quality dynamic context because it works from pre-computed, exhaustive documentation rather than raw source files. Wait for the full response.
-
-### CRITICAL: Do NOT Substitute Native Agents
-
-**Do NOT use native Explore agents, subagents, or manual file-reading/grep as a substitute for `gather_task_context`.** These native tools work from raw source only. `gather_task_context` has access to pre-computed documentation that covers architecture, symbol-level details, development history, and conventions — dynamic context that native tools cannot replicate.
-
-Native tools are useful for **targeted follow-up** after `gather_task_context` returns (see Step 4), but they are not a replacement for it.
-
-### Running Multiple Calls in Parallel
-
-When you need context from multiple angles (e.g., architecture AND testing patterns), spawn native subagents as concurrency wrappers. Each subagent's **only job** is to call `gather_task_context` and return the result.
-
-**This is the one correct use of native subagents in this skill.** The subagent is a concurrency wrapper — it does NOT do its own codebase exploration.
-
-| Pattern | What the subagent does | Correct? |
-|---------|----------------------|----------|
-| **Substitution** | Its own file reading, grep, exploration — bypassing Driver | No |
-| **Parallelism wrapper** | Calls `gather_task_context` with a specific task description, returns the result | Yes |
-
-**Example:** You need architecture context and testing patterns for the same feature. Spawn two subagents, each calling `gather_task_context` with a different focused task description. Collect both results before writing the plan.
+Explore the parts of the codebase the plan will touch: the surrounding architecture, the conventions in use, existing patterns to follow (e.g., retry mechanisms elsewhere in the codebase), and the testing framework and patterns. When there are several distinct angles (e.g., architecture and testing patterns), you can explore them in parallel with subagents and synthesize the results.
 
 ---
 
-## Step 4: Detail with Primitive Driver MCP Tools
+## Step 4: Detail at the File Level
 
-After `gather_task_context` gives you the broad picture, drill into specifics using Driver's primitive tools. **This step is essential for reaching code-level plan specificity.**
+Drill into the specific files the plan will change. **This step is what makes the plan code-level specific.**
 
-### `get_code_map`
-Navigate codebase structure. Use this to:
-- Find the exact directories and files the plan will touch
-- Understand how code is organized around the area you're modifying
-- Verify that files referenced in research still exist and are in expected locations
-
-### `get_file_documentation`
-Get symbol-level documentation for specific files. Use this to:
-- Understand function signatures, types, classes, and interfaces in files the plan will modify
-- Identify the exact methods to extend or modify
-- Understand a file's public API without reading every line of source
-
-### `get_source_file`
-Read the actual source code. Use this to:
-- See exact current implementation when the plan needs to prescribe specific code changes
-- Understand control flow, error handling patterns, and edge cases
-- Get the precise code context needed to write accurate task specifications
-
-**The progression is: `gather_task_context` (broad) → `get_code_map` (navigate) → `get_file_documentation` (interfaces) → `get_source_file` (implementation).** You won't always need all four, but the plan should be specific enough that you've used at least the first three.
+- **Locate** — find the exact directories and files the plan will touch, and confirm files referenced in research still exist where expected
+- **Interfaces** — read the signatures, types, classes, and public APIs of the files the plan modifies or depends on
+- **Implementation** — read the current code wherever the plan prescribes specific changes: control flow, error handling, edge cases
 
 ---
 
@@ -307,7 +256,7 @@ and updated during planning (Step 6 self-review). Advisory only — user decides
 
 When creating `plans/00-overview.md`:
 
-1. **Implementation Environment** — populate with feature-level defaults: codebase paths, **Feature Parent Branch** (where the whole feature ultimately merges — Driver MCP context branch), **Branch Prefix** (default for per-plan branch names), test command, standards doc. Pull from the research Codebases table and codebase CLAUDE.md as starting points; confirm with the user.
+1. **Implementation Environment** — populate with feature-level defaults: codebase paths, **Feature Parent Branch** (where the whole feature ultimately merges), **Branch Prefix** (default for per-plan branch names), test command, standards doc. Pull from the research Codebases table and codebase CLAUDE.md as starting points; confirm with the user.
 2. **PR Stack table** — one row per plan, in dependency order. Set each plan's `Base Branch` from its `depends_on`: feature parent if independent, upstream plan's `Feature Branch` if dependent. For plans with multiple dependencies, the user picks one as the branch parent; the others are interface-only. Default per-plan `Feature Branch` to `<prefix>/<NN-plan-slug>`; the user may override.
 
 Materialize-tasks reads each plan's own `## Environment` section as the primary source — keep per-plan Environments in sync with the PR Stack table.
@@ -364,7 +313,7 @@ _Base Branch is what this plan's PR targets; Feature Branch is the head branch t
 _Summary from research — problem statement, scope, key decisions_
 
 ## Architecture Fit
-_Existing patterns to follow, with specific file paths from Driver context_
+_Existing patterns to follow, with specific file paths_
 _Directories and files this plan touches_
 _Integration points with existing code_
 
@@ -443,7 +392,7 @@ _The test strategy is derived from the Core/Shell Decomposition above, not desig
 _For shell-only features (Pure core: none), the Unit Tests subsection is omitted; the test strategy is integration-only against real I/O._
 
 ### Testing Patterns
-_Testing framework, file organization, and conventions discovered via Driver_
+_Testing framework, file organization, and conventions discovered in the codebase_
 
 ### Unit Tests (pure-core)
 
@@ -524,7 +473,7 @@ Each task must prescribe concrete changes — not hand-wavy descriptions:
 
 **Specific enough:** "Add `retry_delivery` method to `NotificationService` in `backend/services/notification_service.py`. Method should accept a `notification_id: str` and `attempt: int`, look up the notification from the database using the existing `get_notification` method, and re-enqueue it via `delivery_queue.enqueue()` with exponential backoff. Follow the retry pattern in `backend/services/email_service.py:retry_send`."
 
-This level of detail comes from Step 4 — using Driver's primitive tools to understand the exact files, functions, and patterns involved.
+This level of detail comes from Step 4 — reading the exact files, functions, and patterns involved.
 
 ### Explicit Constraints
 
@@ -636,34 +585,14 @@ git add plans/ FEATURE_LOG.md && git commit -m "chore: Plan created — <plan na
 After drafting the plan, validate it against the actual codebase. **This step is required, not optional.**
 
 ### Big-Picture Check
-Call `gather_task_context` with a task description focused on validating the plan:
-
-```
-Example:
-"Reviewing a plan to add retry logic to the notification delivery system.
-Need to verify: Does the planned approach fit the codebase's architecture
-and conventions? Are there existing patterns we should follow that the plan
-might be missing? Any concerns about the approach?"
-```
+Re-read the code the plan touches with the plan in hand. Does the approach fit the codebase's architecture and conventions? Are there existing patterns the plan should follow but doesn't?
 
 ### Specific Checks
-Use primitive tools to verify concrete plan details:
+1. **File existence** — every file in the Task Breakdown exists at the stated path, or is explicitly marked as new.
+2. **Interfaces** — the functions and classes the plan modifies or depends on have the signatures the plan assumes.
+3. **Implementation details** — the current code still behaves the way the plan assumes.
 
-- **`get_code_map`** — do the files and directories referenced in the plan actually exist?
-- **`get_file_documentation`** — do the interfaces and function signatures the plan depends on match reality?
-- **`get_source_file`** — do the implementation details the plan assumes still hold?
-
-### Local Validation
-
-Driver MCP shows committed state, not local changes. After the remote checks above, verify plan assumptions against local state:
-
-1. **File existence** — for each file in the plan's Task Breakdown, verify it exists locally at the stated path using `Glob` or `ls`. Flag files that exist in Driver but not locally (renamed? deleted?) or that exist locally but not in Driver (new? uncommitted?).
-2. **Interface check** — for key functions or classes the plan modifies or depends on, read the local version and compare against what Driver's `get_file_documentation` reported. If signatures differ, update the plan to match local state.
-3. **Uncommitted changes** — run `git status --short` in the target codebase for files the plan touches. If there are local modifications, note them: the plan should be based on local state, not Driver's committed version.
-
-If research was conducted in the same session and included local validation, focus this check on files specific to the plan's Task Breakdown (not the full codebase). If planning runs in a new session, do the full check.
-
-When divergence is found, update the plan to match local reality. Note the divergence in the self-review report.
+When the code and the plan disagree, update the plan to match the code. Note each discrepancy in the self-review report.
 
 ### Report Findings
 Tell the user what you found:
@@ -692,8 +621,8 @@ After drafting, verify:
 
 1. **Rollup exists** — the plan has a `## Data Structures & Callables` section with Added / Modified / Removed sub-sections (empty sub-sections are fine; absent section is not).
 2. **Rollup↔snippet consistency** — every row in Added and Modified has a corresponding inline snippet (`#### Snippet:`) inside its Owning Task. Every inline snippet has a matching rollup row. No orphans in either direction.
-3. **Signature drift on modified items** — for each Modified row, use `get_file_documentation` on the target file and verify the snippet signature matches the current codebase signature. If drifted, update the plan to match reality, OR mark the signature change as intentional in the Constraints section (breaking change).
-4. **Collision check on added items** — for each Added row, verify the name does not already exist in the target file (`get_file_documentation`).
+3. **Signature drift on modified items** — for each Modified row, read the target file and verify the snippet signature matches the current codebase signature. If drifted, update the plan to match reality, OR mark the signature change as intentional in the Constraints section (breaking change).
+4. **Collision check on added items** — for each Added row, verify the name does not already exist in the target file.
 
 ### Cross-Feature File Overlap Check
 
@@ -795,9 +724,6 @@ When appending the first decision entry (replacing the `_No decisions recorded y
 - Set numeric coverage targets ("80% line coverage") — the plugin doesn't use them, they produce filler tests
 - Use the words "scaffolding test" — that category has been removed; tests are pure-core unit or shell integration, both durable
 - Accommodate entangled neighbor code by tangling the new feature too — extract a pure core anyway when one exists
-- Use native Explore agents or subagents as a substitute for `gather_task_context`
-- Abandon `gather_task_context` if it takes 1-3 minutes — this is expected behavior
-- Fall back to `get_architecture_overview` or other tools because `gather_task_context` "seems slow"
 - Write plan content only in chat — always write to files
 - Skip reading research output before planning
 - Write vague task descriptions ("implement the feature")
@@ -810,9 +736,6 @@ When appending the first decision entry (replacing the `_No decisions recorded y
 - Push back on plans where the natural shape would require mocks — that means the seam isn't right yet
 - Extract a pure core even when the surrounding code is tangled — local mess from clean extraction beats clean fit with entangled neighbor
 - Derive the Test Strategy from the Core/Shell Decomposition — unit tests for pure core (values in, values out, no mocks), integration tests for shell (real I/O)
-- Call `gather_task_context` with detailed, planning-focused task descriptions
-- Wait for the full response — it is doing compressed expert-level codebase analysis
-- Use primitive tools (`get_code_map`, `get_file_documentation`, `get_source_file`) to reach code-level specificity
 - Write tasks specific enough that an engineer can implement without ambiguity
 - Order tests before implementation (TDD)
 - Validate the plan against the codebase before presenting to the user
@@ -827,7 +750,6 @@ When appending the first decision entry (replacing the `_No decisions recorded y
 - [ ] **No internal mocks?** — Did I check that no test in the plan mocks an internal module? (If yes, the boundary is wrong — fix before presenting.)
 - [ ] **Core/shell constraint encoded?** — Is the functional-core / imperative-shell constraint the first item in `## Constraints`?
 - [ ] **Read research first?** — Have I checked `research/*.md`, including any core/shell decomposition surfaced during research?
-- [ ] **Driver context?** — Have I called `gather_task_context` for architecture AND testing patterns?
 - [ ] **Writing to file?** — Plan content goes in `plans/*.md`, not chat
 - [ ] **Overview needed?** — Multi-plan feature? Create `plans/00-overview.md`
 - [ ] **All sections covered?** — Environment, Context, Architecture (with Core/Shell Decomposition), Acceptance, Tests, Approach, Scope, Constraints, Tasks
@@ -839,7 +761,6 @@ When appending the first decision entry (replacing the `_No decisions recorded y
 - [ ] **Approach confirmed?** — Did I present core/shell decomposition, architecture, derived test strategy, scope, and sizing before writing the plan?
 - [ ] **Environment section?** — Does the plan include `## Environment` with codebase, branches, test commands?
 - [ ] **Standards encoded?** — If a codebase standards artifact exists, are applicable standards included as plan constraints with source citations? (These layer on top of the core/shell constraint; they do not override it.)
-- [ ] **Local state validated?** — Did the self-review include local file checks alongside Driver tool checks?
 - [ ] **Decision log?** — Did I append to DECISIONS.md for significant decisions, rejected alternatives, or scope boundary calls?
 - [ ] **Cross-feature overlap?** — Did I check this plan's files against other active features?
 - [ ] **Artifacts committed?** — Did I commit new artifacts to the projects repo?

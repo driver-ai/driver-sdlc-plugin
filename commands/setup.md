@@ -1,7 +1,7 @@
 ---
 description: Set up a projects directory for the drvr plugin
 argument-hint: "[clone-url]"
-allowed-tools: Read, Write, Edit, Bash, Glob, Grep, AskUserQuestion, mcp__driver-mcp__get_codebase_names
+allowed-tools: Read, Write, Edit, Bash, Glob, Grep, AskUserQuestion
 ---
 
 # /drvr:setup Command
@@ -92,32 +92,19 @@ Create a new projects directory from scratch.
    temp/
    ```
 
-5. **Create `.mcp.json`** in the new directory. Write this exact content to `<parent>/<name>/.mcp.json`:
-   ```json
-   {
-     "mcpServers": {
-       "driver-mcp": {
-         "type": "http",
-         "url": "https://api.us1.driverai.com/mcp/v1"
-       }
-     }
-   }
-   ```
+5. **Create `CLAUDE.md`** in the new directory. Read the canonical template from `${CLAUDE_PLUGIN_ROOT}/templates/CLAUDE.md.template` (fall back to globbing for `templates/CLAUDE.md.template` under the plugin directory if the env var is unset), then replace `{{TEAM_NAME}}` with the directory name from step 2 and `{{DATE}}` with today's date. Leave the Codebases table as a placeholder — codebases are configured per-feature during `/drvr:feature` setup. Write the result to `<parent>/<name>/CLAUDE.md`.
 
-6. **Create `CLAUDE.md`** in the new directory. Read the canonical template from `${CLAUDE_PLUGIN_ROOT}/templates/CLAUDE.md.template` (fall back to globbing for `templates/CLAUDE.md.template` under the plugin directory if the env var is unset), then replace `{{TEAM_NAME}}` with the directory name from step 2 and `{{DATE}}` with today's date. Leave the Codebases table as a placeholder — codebases are configured per-feature during `/drvr:feature` setup. Write the result to `<parent>/<name>/CLAUDE.md`.
-
-7. **Git init** in the new directory:
+6. **Git init** in the new directory:
    ```bash
    cd <parent>/<name> && git init
    ```
 
-8. **Initial commit**:
+7. **Initial commit**:
    ```bash
    cd <parent>/<name> && git add CLAUDE.md .gitignore && git commit -m "Initialize SDLC projects directory"
    ```
-   Do NOT add `.mcp.json` — it's gitignored (may contain API keys).
 
-9. **Tell the user:**
+8. **Tell the user:**
    > "Your projects directory is ready at `<absolute-path>`. To start using it:"
    > 1. "Open Claude Code in that directory: `cd <path> && claude --permission-mode auto`"
    > 2. "Run `/drvr:feature <name>` to start your first feature"
@@ -132,20 +119,15 @@ Check for required files and fill gaps.
    |------|-------|------------|
    | `CLAUDE.md` | Glob for `CLAUDE.md` | Offer to create from `${CLAUDE_PLUGIN_ROOT}/templates/CLAUDE.md.template` (ask for project name first) |
    | `.gitignore` | Glob for `.gitignore` | Offer to create using the .gitignore content from Step 3A |
-   | `.mcp.json` | Glob for `.mcp.json` | Create with `driver-mcp` server using the .mcp.json content from Step 3A |
-
-   **For `.mcp.json` that exists:** Read it and check if `mcpServers.driver-mcp` is present.
-   - If `driver-mcp` is missing, warn: "Your `.mcp.json` does not include a `driver-mcp` server. The plugin requires this for codebase context. Would you like me to add it?"
-   - If the user says yes, read the existing `.mcp.json`, add the `driver-mcp` entry to `mcpServers` (preserving all existing servers), and write it back.
 
 2. **Report what was found and what was created.**
 
 3. **Template version check** — If CLAUDE.md exists, read the first line. Look for `<!-- drvr:template-version:X.Y.Z -->`.
 
-   - **If found and matches current version (1.2.0):** Skip migration. Report: "CLAUDE.md is up to date (template v1.2.0)."
+   - **If found and matches current version (1.3.0):** Skip migration. Report: "CLAUDE.md is up to date (template v1.3.0)."
    - **If found but outdated:** Look up the migration path in the Migration Registry below. Apply each migration in sequence, asking user approval for each.
    - **If not found:** Treat as pre-versioning (version 0). Apply the full migration path from v0 → current.
-   - **If version is higher than current (1.2.0):** Warn: "CLAUDE.md has template version X.Y.Z which is newer than this plugin's current version (1.2.0). Skipping migration." and skip.
+   - **If version is higher than current (1.3.0):** Warn: "CLAUDE.md has template version X.Y.Z which is newer than this plugin's current version (1.3.0). Skipping migration." and skip.
 
    After all migrations are applied, update the version comment on line 1 to the current version. If no version comment exists, add it as the first line. Before adding, scan the file for any existing `<!-- drvr:template-version:` comments and remove them to prevent duplicates.
 
@@ -156,8 +138,9 @@ Each row describes what changed between template versions and how to migrate exi
 | From | To | Changes | Migration Steps |
 |------|----|---------|----------------|
 | (none) | 1.0.0 | Initial versioned template. Commands qualified with `drvr:` prefix. Skills qualified in tables. | 1. Replace 8 unqualified command names with `drvr:`-prefixed versions (see table below). 2. Replace 5 unqualified skill names with `drvr:`-prefixed versions in Skills and Phase-Skill Mapping tables. 3. Add `<!-- drvr:template-version:1.0.0 -->` as first line. |
-| 1.0.0 | 1.1.0 | Intent phase, internal review, open-pr, post-PR lifecycle, expanded agents list. | 1. Add Intent row (`drvr:intent-guidance`) to Phase-Skill Mapping table. 2. Add Internal Review (`/drvr:review`), Open PR (`/drvr:open-pr`), PR Review, Revision, Merge, Verification, Shipped, Retro rows to Phase-Skill Mapping. 3. Add 5 commands to Commands table: `/drvr:context`, `/drvr:review`, `/drvr:driverize`, `/drvr:un-driverize`, `/drvr:open-pr`. 4. Add `drvr:intent-guidance` to Skills table. 5. Add 7 agents to Agents table: commit-log, decisions-log, features-list, security-review, standards-review, test-coverage, dependency-analysis. 6. Update lifecycle diagram to include Intent phase and full post-assess flow. 7. Update version comment to `1.1.0`. |
+| 1.0.0 | 1.1.0 | Intent phase, internal review, open-pr, post-PR lifecycle, expanded agents list. | 1. Add Intent row (`drvr:intent-guidance`) to Phase-Skill Mapping table. 2. Add Internal Review (`/drvr:review`), Open PR (`/drvr:open-pr`), PR Review, Revision, Merge, Verification, Shipped, Retro rows to Phase-Skill Mapping. 3. Add 2 commands to Commands table: `/drvr:review`, `/drvr:open-pr`. 4. Add `drvr:intent-guidance` to Skills table. 5. Add 7 agents to Agents table: commit-log, decisions-log, features-list, security-review, standards-review, test-coverage, dependency-analysis. 6. Update lifecycle diagram to include Intent phase and full post-assess flow. 7. Update version comment to `1.1.0`. |
 | 1.1.0 | 1.2.0 | Per-plan PR model — each plan ships as its own stacked/parallel PR; the assess → review → docs → open-pr gate runs once per plan; `driver-docs/` becomes centralized per-plan; the Codebases table uses a Branch Prefix instead of a single Feature Branch. | 1. In the Phase-Skill Mapping table, rename the post-assessment phases to their per-plan forms — Assessment → **Per-plan Assessment** (`/drvr:assess <plan>`), Internal Review → **Per-plan Internal Review** (`/drvr:review <plan>`), Handoff → **Per-plan Handoff** (`/drvr:docs-artifacts <plan>`), Open PR → **Per-plan Open PR** (`/drvr:open-pr <plan>`), plus per-plan PR Review / Revision / Merge / Verification — and add a **Next Plan** row. 2. Replace the single-feature lifecycle diagram with the per-plan gate diagram (assess/review/docs/open-pr run per plan, then PR Review → Revision → Merge → Verification → Next plan; all plans shipped → Feature Shipped). 3. Add the **One plan = one PR, stacked** and **Each PR must stand alone** Key Principles. 4. In the Codebases table, replace the `Feature Branch` column with `Branch Prefix`; add the note that each plan gets its own branch (default `<prefix>/<NN-plan-slug>`). 5. Update the Project Structure block: mark `plans/` "one plan = one PR", `assessment/` as per-plan (`<plan>-test-curation.md`), and `driver-docs/` as centralized per-plan (`00-feature-overview.md` + `<plan>/`). 6. Ensure `/drvr:open-pr` is in the Commands table. 7. Update version comment to `1.2.0`. |
+| 1.2.0 | 1.3.0 | Removed Driver MCP references — the plugin no longer routes codebase context through a specific MCP server. | 1. Remove the `/drvr:context`, `/drvr:driverize`, and `/drvr:un-driverize` rows from the Commands table, if present. 2. Remove the `driver-task-context` row from the Agents table; change the `handoff-analyzer` purpose to "Synthesize process artifacts + git history for handoff". 3. Remove the `.mcp.json` line from the Project Structure block. 4. Remove the **Driver MCP** row from the MCP Integrations table (keep the section and any other rows). 5. Update version comment to `1.3.0`. |
 
 **Command name replacements** (v0 → v1.0.0):
 
@@ -244,20 +227,7 @@ For all paths (A, B, C), after the projects directory is set up:
 
 3. **Note:** Hooks are auto-registered via `hooks/hooks.json` — no configuration needed.
 
-### Step 5: MCP Connectivity Verification
-
-1. Call `get_codebase_names` from Driver MCP (tool: `mcp__driver-mcp__get_codebase_names`)
-
-2. **If successful:** Report the available codebases:
-   > "Driver MCP is connected. Found N codebases: [list first 5-10 names]"
-
-3. **If it fails:** Warn but don't block:
-   > "Driver MCP is not connected. This is needed for codebase context during research and planning. Check:"
-   > - "Your Driver API token is configured"
-   > - "The `.mcp.json` file has the correct URL"
-   > - "Visit [driverai.com](https://driverai.com) for setup instructions"
-
-### Step 6: Status Report
+### Step 5: Status Report
 
 Print a summary of everything that was done:
 
@@ -268,13 +238,10 @@ Print a summary of everything that was done:
 **Files created/verified:**
 - CLAUDE.md: <created | already exists>
 - .gitignore: <created | already exists>
-- .mcp.json: <created | already exists | driver-mcp verified>
 
 **Plugin configuration:**
 - ~/.driver/config.json: projects_path set to <path>
 - Hooks: auto-registered via hooks.json
-
-**Driver MCP:** <connected (N codebases) | not connected — see above>
 
 **Next step:** Run `/drvr:feature <name>` to start your first feature.
 ```

@@ -11,7 +11,7 @@ description: |
 
 # Research
 
-You are guiding technical research against one or more codebases using Driver MCP. Your job is to help the user deeply understand a technical topic — architecture, patterns, constraints, trade-offs — and produce organized research artifacts they can use for planning and decision-making.
+You are guiding technical research against one or more codebases. Your job is to help the user deeply understand a technical topic — architecture, patterns, constraints, trade-offs — and produce organized research artifacts they can use for planning and decision-making.
 
 ## Architectural Commitment: Functional Core, Imperative Shell
 
@@ -27,11 +27,9 @@ The decomposition may run through a type rather than between modules. An immutab
 
 1. **Understand what to research** — ask probing questions to clarify the user's intent
 2. **Resolve codebase standards** — find and capture the target codebase's coding standards
-3. **Gather codebase context via Driver MCP** — use `gather_task_context` as your primary tool
-4. **Validate remote context against local state** — verify key files and interfaces locally after Driver returns
-5. **Deep-dive into specific areas** — use Driver's primitive tools for targeted follow-up
-6. **Produce organized research artifacts** — overview + numbered deep-dive documents
-7. **Finalize** — when the user says done, ensure the overview captures everything
+3. **Gather codebase context** — explore the code that matters to the research question
+4. **Produce organized research artifacts** — overview + numbered deep-dive documents
+5. **Finalize** — when the user says done, ensure the overview captures everything
 
 ---
 
@@ -51,8 +49,6 @@ Intent mining is now upstream — `research/00-intent.md` captures the problem, 
 
 **Push back on vague requests.** "Research the authentication system" is too broad. Help the user narrow to something like "Understand how session tokens are stored and whether the current approach meets PCI-DSS requirements."
 
-**Verify codebase names.** Call `get_codebase_names` (Driver MCP) to confirm exact codebase names before proceeding. Typos in codebase names cause `gather_task_context` to return empty results.
-
 ---
 
 ## How Questions Work in Research Docs
@@ -70,7 +66,7 @@ We need to handle payments for the new subscription tier.
 - ~~Do we support recurring billing?~~ → Yes, Stripe subscriptions are already set up in `billing_service.py`
 
 **Findings:**
-After reviewing the codebase via Driver MCP...
+After reviewing `billing_service.py`...
 ````
 
 **Question best practices:**
@@ -106,7 +102,7 @@ Define boundaries before exploring implementation.
 - What constraints exist? (technical, business, time, team)
 - What's been tried before? What does success look like?
 
-Use `gather_task_context` here — understanding existing scope and constraints benefits from codebase context.
+Ground this in the codebase — existing code often defines the real scope and constraints.
 
 **Checkpoint:** Scope is bounded and constraints are documented.
 
@@ -115,7 +111,7 @@ Use `gather_task_context` here — understanding existing scope and constraints 
 Now explore implementation approaches.
 
 - How might this work technically?
-- What patterns exist in the codebase? (call `gather_task_context` with specific questions)
+- What patterns exist in the codebase?
 - What dependencies or integrations are involved?
 - What risks or unknowns exist?
 - **What's the natural core/shell decomposition for this feature?** Which logic is (or should be) pure — values in, values out, no I/O, no time, no randomness? Which logic is (or should be) shell — I/O at the edges, calling into the core? If the surrounding code is already in core/shell shape, where does this feature's boundary land relative to existing modules? If not, what extraction would be needed?
@@ -126,7 +122,7 @@ Now explore implementation approaches.
 
 ## Step 1.5: Cross-Feature Scan
 
-Before diving into codebase context, scan for other active features that may overlap with this one. This is an **awareness scan** — at this point, this feature's file scope isn't concrete yet (that comes from `gather_task_context` in Step 3). The goal is situational awareness, not precise file-to-file comparison.
+Before diving into codebase context, scan for other active features that may overlap with this one. This is an **awareness scan** — at this point, this feature's file scope isn't concrete yet (that comes from Step 3). The goal is situational awareness, not precise file-to-file comparison.
 
 **Scan other active features:**
 
@@ -154,8 +150,6 @@ The user can identify potential overlaps based on their knowledge of this featur
 
 ## Step 2: Resolve Codebase Standards
 
-**Why a separate step**: This step reads the codebase's standards documents directly because `gather_task_context` (Step 3) synthesizes conventions from its pre-computed documentation, which may paraphrase or omit specific rules. The raw CLAUDE.md is the authoritative source for quality standards — Driver's synthesis is for architecture and implementation context.
-
 **Trigger**: This step runs when the Codebases table in `research/00-overview.md` has at least one entry with a Local Path filled in. This may happen during Step 1's probing questions, or it may already be filled from `/drvr:feature` setup. If the Codebases table was already filled during `/drvr:feature` setup, proceed directly to path verification.
 
 **Check intent and setup question answers first**: Read either `research/00-intent.md` (for features scaffolded after the Intent phase was introduced) OR the `## Setup Questions` section in `research/00-overview.md` (for legacy features scaffolded before Intent). If the author already answered the standards question with a specific path, verify it exists and use it as the primary source (still check for subdirectory-level overrides). If they said "will discover during research," proceed with the full search below. If they said "none" or equivalent, do a quick check (CLAUDE.md at repo root only) to confirm, then accept their answer — don't ask again.
@@ -177,8 +171,6 @@ Process one codebase at a time (complete all searches for codebase A before movi
 
 Only search for CLAUDE.md and README.md — other AI assistant config files (`.cursorrules`, `.windsurfrules`, etc.) are out of scope. This plugin targets Claude Code's native standards format.
 
-**Note on native file reading**: Reading standards documents at known paths (CLAUDE.md, README.md) is a direct file lookup, not a substitute for `gather_task_context`. The prohibition in Step 3 against native file-reading applies to broad codebase exploration for research context, not targeted reads of specific files at known paths.
-
 ### Handling Results
 
 - **If found but empty/trivial** (e.g., only a project name or boilerplate with no actionable coding standards): treat as "not found" and offer the user the three options below
@@ -192,7 +184,7 @@ Only search for CLAUDE.md and README.md — other AI assistant config files (`.c
 
 ### Authority Hierarchy
 
-The local CLAUDE.md read in this step is the authoritative source for coding standards. If `gather_task_context` (Step 3) later returns conventions or standards information that supplements this, note the supplement but do not overwrite CLAUDE.md content with Driver-synthesized conventions. Update the standards artifact only to add genuinely new information — not to replace what was read directly from CLAUDE.md.
+The CLAUDE.md read in this step is the authoritative source for coding standards. If Step 3 surfaces conventions that CLAUDE.md doesn't cover, add them to the standards artifact as supplements — never replace what CLAUDE.md says.
 
 ### Multi-Codebase
 
@@ -237,82 +229,17 @@ Index this artifact in `research/00-overview.md`'s Research Documents table (use
 
 ## Step 3: Gather Codebase Context
 
-### CRITICAL: Use `gather_task_context` — Not Native Agents
+Explore each codebase at the Local Path from the Codebases table.
 
-`gather_task_context` is Driver MCP's primary tool. **It is your default tool for codebase context.** (Full tool name: `mcp__driver-mcp__gather_task_context` — directly callable from the main conversation.)
+**Check the branch first.** Run `git branch --show-current` in each Local Path and report it so the user can confirm it's the branch they want to research against — normally the Base Branch from the Codebases table (or the `Branch` column in legacy format). A mismatch is a user-awareness note, not a failure. Skip this for paths that aren't git repositories.
 
-**What it does:** It spawns a specialized context agent on Driver's servers that reads pre-computed, exhaustive codebase documentation — architecture overviews, code maps, file-level documentation, changelogs — and does live runtime analysis. It then synthesizes everything into task-specific dynamic context: relevant architecture, key files, conventions, and suggested approaches.
+**Then explore.** Find where the relevant functionality lives, trace the paths that matter to the research question, and read the interfaces and logic you need to understand. Record specific files, functions, and patterns in the research docs.
 
-**How to call it:** Provide a detailed task description and codebase names. The richer your description, the better the context you get back. When calling `gather_task_context`, pass the Base Branch from the Codebases table as `branch_name` in the codebases array entry. This ensures Driver MCP returns context from the stable branch, not the default branch. If the Codebases table uses a single `Branch` column (legacy format), use that value as `branch_name`. For multi-codebase features, pass each codebase's Base Branch as its own `branch_name` in its own codebases array entry (e.g., `codebases: [{codebase_name: 'backend', branch_name: 'develop'}, {codebase_name: 'frontend', branch_name: 'main'}]`).
-
-```
-Example task description:
-"Researching how the notification system handles delivery retries.
-Need to understand: retry logic, failure modes, queue architecture,
-and how delivery status is tracked. Codebase: my-backend"
-```
-
-**It takes 1-3 minutes. This is expected and normal.** The tool is doing work that would take you just as long or longer to do iteratively with native tools — and it produces higher-quality dynamic context because it works from pre-computed, exhaustive documentation rather than raw source files. Wait for the full response.
-
-### CRITICAL: Do NOT Substitute Native Agents
-
-**Do NOT use native Explore agents, subagents, or manual file-reading/grep as a substitute for `gather_task_context`.** These native tools work from raw source only. `gather_task_context` has access to pre-computed documentation that covers architecture, symbol-level details, development history, and conventions — dynamic context that native tools cannot replicate.
-
-Native tools are useful for **targeted follow-up** after `gather_task_context` returns (see Step 5), but they are not a replacement for it.
-
-### When to Call `gather_task_context`
-
-Use your judgment. Not every user answer needs to trigger a call. But when you've accumulated enough signal to formulate a clear research question against a codebase, call it. Specifically:
-
-- **After clarifying the research question** — your first call, with a broad task description
-- **When a new research angle emerges** — a follow-up call with a more focused description
-- **When exploring a different codebase** — each codebase may need its own call
-
-### Running Multiple Calls in Parallel
-
-When you have multiple distinct research angles to explore, you can run `gather_task_context` calls concurrently by spawning native subagents. Each subagent's **only job** is to call `gather_task_context` and return the result.
-
-**This is the one correct use of native subagents in this skill.** The subagent is a concurrency wrapper — it does NOT do its own codebase exploration.
-
-| Pattern | What the subagent does | Correct? |
-|---------|----------------------|----------|
-| **Substitution** | Its own file reading, grep, exploration — bypassing Driver | No |
-| **Parallelism wrapper** | Calls `gather_task_context` with a specific task description, returns the result | Yes |
-
-**Example:** You've identified three research angles — authentication flow, session storage, and token rotation. Spawn three subagents, each calling `gather_task_context` with a different focused task description. Collect all results and synthesize.
+Explore again when a new research angle emerges or when moving to a different codebase. When there are several distinct angles (e.g., authentication flow, session storage, token rotation), you can explore them in parallel with subagents and synthesize the results.
 
 ---
 
-## Step 4: Validate Remote Context Against Local State
-
-This step runs immediately after `gather_task_context` returns. It's a lightweight local validation — not a full codebase scan.
-
-For each codebase in the Codebases table, run these commands in the directory specified by its Local Path column:
-
-- **Branch check**: run `git branch --show-current` in the target codebase's Local Path directory. Report the current branch so the user can confirm they're on the right one. Compare against the Feature Branch column from the Codebases table (or the `Branch` column in legacy format). If different, note: "Local branch is `<branch>`, Codebases table specifies Feature Branch `<expected>`." This is a user-awareness check, not a validation failure.
-- **Key file existence**: for files that `gather_task_context` referenced as architecturally important, verify they exist locally at the stated paths using `ls` or `Glob`. Flag any that are missing locally — they may have been renamed or deleted.
-- **Uncommitted changes**: run `git status --short` in the target codebase's Local Path directory. If there are uncommitted changes to files that `gather_task_context` referenced in its response, note them: "Local file `<path>` has uncommitted changes — Driver's documentation may not reflect the current state of this file."
-- **Not a git repo**: if the Local Path is not a git repository (`git rev-parse --git-dir` fails), skip branch check and uncommitted changes. Note: "Codebase at `<path>` is not a git repo — skipping git-based validation."
-- **If divergence found**: report it inline in the research doc, note which findings from `gather_task_context` may be affected. Use local state as ground truth when the two conflict.
-- **If no divergence**: note "Local state validated against Driver context — no divergence found" and continue.
-
-This step should be quick — a few git commands and targeted file checks. Do not re-read the entire codebase; that's what `gather_task_context` already did.
-
----
-
-## Step 5: Deep-Dive with Primitive Tools
-
-After `gather_task_context` returns broad context, you may need to drill into specific areas. Use Driver's primitive MCP tools for targeted follow-up:
-
-- **`get_code_map`** — navigate the codebase directory structure. Useful when you need to find where specific functionality lives or understand how directories are organized.
-- **`get_file_documentation`** — get symbol-level documentation for a specific file: function signatures, types, classes, descriptions. Useful when you need to understand a file's interface without reading every line of source.
-- **`get_source_file`** — read the actual source code of a file with line numbers. Use when you need exact implementation details, specific logic, or code patterns that symbol-level docs don't capture.
-
-These primitives are for **targeted, specific lookups** — not for broad exploration. `gather_task_context` handles broad exploration.
-
----
-
-## Step 6: Produce Research Artifacts
+## Step 4: Produce Research Artifacts
 
 ### Output Structure
 
@@ -386,7 +313,7 @@ Each deep-dive doc should:
 
 ---
 
-## Step 7: Finalize
+## Step 5: Finalize
 
 When the user indicates research is complete:
 
@@ -443,27 +370,17 @@ git add research/ FEATURE_LOG.md && git commit -m "chore: Research artifact — 
 ## Anti-Patterns
 
 **Do NOT:**
-- Use native Explore agents or subagents as a substitute for `gather_task_context`
-- Abandon `gather_task_context` if it takes 1-3 minutes — this is expected behavior
-- Fall back to `get_architecture_overview` or other tools because `gather_task_context` "seems slow"
-- Use generic language like "gather context from the codebase" — always name the specific Driver MCP tool
 - Skip the conversational Q&A phase — understanding intent before researching prevents wasted work
 - Split documents based on length rather than concept boundaries
 - Leave the overview out of date when research is finalized
 - Assume you know where the codebase is or what standards apply — if uncertain, ask the user
 - Skip standards resolution when the user has identified codebases — always search for CLAUDE.md
-- Trust Driver context without local validation — Driver shows committed state, not local uncommitted changes
 
 **DO:**
-- Call `gather_task_context` with detailed, specific task descriptions
-- Wait for the full response — it is doing compressed expert-level codebase analysis
-- Use primitive tools (`get_code_map`, `get_file_documentation`, `get_source_file`) for targeted follow-up
-- Spawn parallel subagents as concurrency wrappers for multiple `gather_task_context` calls
 - Ask lots of probing questions before and during research
 - Keep the overview current as an index of all research
 - Search for CLAUDE.md relative to each codebase path before gathering context
 - When no standards are found, ask the user rather than proceeding silently
-- After gather_task_context returns, validate key files and branch locally before building on the findings
 
 ---
 
@@ -474,12 +391,10 @@ Before sending any response during research, verify:
 - [ ] **Questions asked?** — Am I being curious enough? What else should I ask?
 - [ ] **Questions in context?** — Are questions placed near the content they relate to?
 - [ ] **Why-What-How order?** — Am I progressing through layers appropriately?
-- [ ] **Driver context?** — Have I called `gather_task_context` where relevant?
 - [ ] **Overview current?** — Does `00-overview.md` reflect the latest findings and decisions?
 - [ ] **Feature log?** — Did I update `FEATURE_LOG.md` when creating new research docs?
 - [ ] **Standards resolved?** — Have I searched for CLAUDE.md at each codebase path? If not found, did I ask the user?
 - [ ] **Core/shell decomposition surfaced?** — Has the "how" research named the pure-core functions/types and shell entry points for this feature, with a note on whether the surrounding code is already in core/shell shape?
-- [ ] **Local state validated?** — After gather_task_context, did I check branch, key file existence, and uncommitted changes locally?
 - [ ] **Decision log?** — Did I append to DECISIONS.md for significant decisions, rejected alternatives, or context shifts?
 - [ ] **Artifacts committed?** — Did I commit new artifacts to the projects repo?
 - [ ] **Cross-feature scan?** — Did I check other active features for overlapping file targets?

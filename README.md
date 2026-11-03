@@ -17,7 +17,6 @@ The plugin handles the structure so you can focus on the hard part: deciding wha
 ## Prerequisites
 
 - [Claude Code](https://docs.anthropic.com/en/docs/claude-code) installed and configured
-- A [Driver](https://driverai.com) account with your codebases onboarded
 - `python3` available in PATH — required for the laziness detector hook
 
 ## Installation
@@ -51,7 +50,7 @@ claude --plugin-dir /path/to/driver-sdlc-plugin --permission-mode auto
 >
 > See the [Claude Code permissions documentation](https://docs.anthropic.com/en/docs/claude-code/security) for details on permission modes.
 
-After installing the plugin, run `/drvr:setup` to configure your projects directory. It handles everything: creating the directory structure, generating CLAUDE.md, configuring the Driver MCP server, and verifying connectivity.
+After installing the plugin, run `/drvr:setup` to configure your projects directory. It handles everything: creating the directory structure, generating CLAUDE.md, and saving the plugin configuration.
 
 ### New Team / Solo Developer
 
@@ -66,7 +65,7 @@ After installing the plugin, run `/drvr:setup` to configure your projects direct
 
 You can also pass a clone URL directly: `/drvr:setup git@github.com:my-org/my-team-sdlc.git`
 
-> **Note:** `/drvr:setup` is idempotent — safe to re-run at any time. It also creates `.mcp.json` locally (gitignored, since it may contain API keys), so each team member needs to run `/drvr:setup` on their own machine.
+> **Note:** `/drvr:setup` is idempotent — safe to re-run at any time. It also writes per-user plugin configuration (`~/.driver/config.json`), so each team member needs to run `/drvr:setup` on their own machine.
 
 ### Verify
 
@@ -112,26 +111,6 @@ The drvr plugin is intentionally front-loaded: most time goes into Research and 
 
 ## Usage Scenarios
 
-### Easy: Understanding a Codebase
-
-Use `/drvr:context` to get oriented in an unfamiliar codebase before making changes.
-
-```
-/drvr:context How does the authentication flow work? --codebases my-backend
-```
-
-The drvr plugin spawns an agent that reads Driver's architecture docs and code maps, then returns a synthesized summary without cluttering your conversation context.
-
-### Easy: Bug Fix with Context
-
-Gather targeted context before fixing a bug.
-
-```
-/drvr:context The user profile page crashes when email is null --codebases frontend
-```
-
-Review the returned context, fix the bug, and commit. No full SDLC needed for a straightforward fix.
-
 ### Easy: Session Retrospective
 
 Reflect on what happened in the current session and capture improvements.
@@ -143,20 +122,6 @@ Reflect on what happened in the current session and capture improvements.
 > "write it"
 > (retro saved to retrospectives/ with actionable improvements)
 ```
-
-### Easy: Driverize a Repo
-
-Install the Driver enforcement stack to ensure Claude Code uses Driver MCP for codebase intelligence instead of native exploration tools. The stack includes 4 tiers: permissions & hooks, shadow agents, context injection, and CLAUDE.md routing.
-
-```
-/drvr:driverize
-> (scans repo, backs up existing files, installs 9 artifacts + CLAUDE.md block)
-> (version-stamped for re-run detection and clean reversal)
-/drvr:un-driverize
-> (detects artifacts via provenance markers, confirms removal plan, restores backups)
-```
-
-Both commands work standalone — copy the `.md` file and paste as a prompt, no plugin required.
 
 ### Medium: Single-Plan Feature End-to-End
 
@@ -277,18 +242,15 @@ For high-stakes features, run every plan through validation before writing any c
 
 | Command | Description | Example |
 |---------|-------------|---------|
-| `/drvr:setup [clone-url]` | Set up a projects directory -- configure MCP, create structure, verify connectivity | `/drvr:setup` or `/drvr:setup git@github.com:my-org/sdlc.git` |
+| `/drvr:setup [clone-url]` | Set up a projects directory -- create structure, configure the plugin, migrate CLAUDE.md | `/drvr:setup` or `/drvr:setup git@github.com:my-org/sdlc.git` |
 | `/drvr:feature <name>` | Scaffold a new feature project with research, plans, and implementation structure | `/drvr:feature user-notifications` |
 | `/drvr:orchestrate <path>` | Resume work on a feature -- read the feature log, report current state, suggest next action | `/drvr:orchestrate features/user-notifications` |
 | `/drvr:dry-run-plan <plan>` | Walk through a plan as-if implementing to identify gaps before real implementation | `/drvr:dry-run-plan 02-api-endpoints` |
 | `/drvr:assess` | Curate the test suite after implementation -- categorize, prune scaffolding, promote valuable tests | `/drvr:assess features/user-notifications` |
 | `/drvr:docs-artifacts <path>` | Generate handoff docs (overview, architecture, testing guide, risk assessment) for code review | `/drvr:docs-artifacts features/user-notifications` |
-| `/drvr:context <task>` | Gather codebase context for a specific task via Driver | `/drvr:context How does the billing module work? --codebases backend` |
 | `/drvr:retro` | Analyze the current session -- evaluate work quality, identify improvements, think about what is next | `/drvr:retro --write` |
 | `/drvr:review [feature-path]` | Run internal standards review -- check code against standards, verify acceptance criteria and test coverage, auto-fix violations | `/drvr:review features/user-notifications` |
 | `/drvr:open-pr [feature-path]` | Open a pull request from handoff documentation generated by `/drvr:docs-artifacts` | `/drvr:open-pr features/user-notifications` |
-| `/drvr:driverize` | Install Driver enforcement stack -- hooks, shadow agents, context injection, and CLAUDE.md routing | `/drvr:driverize` |
-| `/drvr:un-driverize` | Remove Driver enforcement stack -- restore backups and remove driverize artifacts | `/drvr:un-driverize` |
 
 ## Skills
 
@@ -309,7 +271,6 @@ Agents are specialized workers that run in isolated context. They are spawned by
 
 | Agent | What It Does |
 |-------|-------------|
-| **driver-task-context** | Gathers targeted codebase context from Driver MCP in an isolated sandbox. Reads architecture docs, explores code maps, and returns synthesized context without burdening your main conversation. |
 | **handoff-analyzer** | Orchestrates handoff documentation generation. Coordinates the extraction agents below and synthesizes their outputs into final handoff artifacts. |
 | **commit-log** | Extracts detailed commit history for a feature branch -- messages, files changed, diff statistics, and patterns. |
 | **decisions-log** | Extracts all design decisions from research docs and plans, producing a comprehensive decisions log in ADR format. |
@@ -356,17 +317,6 @@ There are two levels of customization:
 
 ## Troubleshooting
 
-**MCP connection failures**
-- Run `/drvr:setup` -- it verifies MCP connectivity and reports issues
-- Verify your Driver API token is valid and configured in Claude Code
-- Check network connectivity to Driver's API
-- Confirm your codebases are onboarded in Driver -- use `get_codebase_names` to verify
-- The MCP server **must** be named `driver-mcp` -- all plugin agents reference tools using the `mcp__driver-mcp__` prefix. Using a different name will cause agent failures.
-
-**Rate limits**
-- Wait and retry. Driver MCP calls have rate limits.
-- Reduce parallel agent invocations if you hit limits frequently
-
 **File path errors**
 - Use Glob to verify file paths before editing
 - Ensure your feature directory exists and follows the expected structure
@@ -377,12 +327,8 @@ There are two levels of customization:
 
 ## Key Gotchas
 
-- **Driver shows committed state, not local changes.** Uncommitted code will not appear in Driver's documentation. Commit your work before querying Driver for updated context.
-- **Codebase names must match exactly.** Use `get_codebase_names` via Driver MCP to verify the exact name before passing it to tools.
-- **Large Driver responses should go through the agent.** Calling Driver MCP directly for architecture overviews or onboarding guides can consume significant context. Route these through `driver-task-context` instead.
 - **Plans are the source of truth during implementation.** The drvr plugin enforces plan-driven development. Deviations are tracked, not prevented, but they must be reviewed before bookkeeping proceeds.
 - **The laziness detector skips test files.** Patterns like TODO and NotImplementedError in test files are intentionally allowed.
-- **`.mcp.json` is gitignored.** It may contain API keys, so `/drvr:setup` creates it locally but does not commit it. Each team member needs to run `/drvr:setup` on their own machine to get their local `.mcp.json`.
 - **Select the correct command when multiple plugins are installed.** For example, typing `/drvr:feature` in Claude Code may match commands from other plugins — make sure to select the one with the full name `drvr:feature` in the list below. Here's a screenshot that shows an example:
 
 ![Command selection](docs/images/command_selection.png)

@@ -41,16 +41,9 @@ Example invocations:
 1. Verify process artifacts path exists and contains plans/
 2. Verify the target plan file exists: `plans/<plan>.md` (status: COMPLETE)
 3. Verify each codebase path is a git repository
-4. Check that Driver MCP is available (required)
-5. **Per-plan assessment check** — BLOCK if `assessment/<plan>-test-curation.md` does not exist. "Per-plan assessment for `<plan>` has not been completed. Run `/drvr:assess <plan>` first — handoff docs depend on a curated test suite." If a feature-wide `assessment/test-curation-<date>.md` exists instead, this feature was scaffolded under 1.1.0 — see [/drvr:setup](setup.md) → **In-Flight Features (1.1.0 → 1.2.0)** before continuing.
-6. **Plan status check** — Read `plans/<plan>.md` frontmatter. BLOCK if `status` is not `complete` (or the plan's section in `plans/00-overview.md` is not COMPLETE). "Plan `<plan>` is not marked complete. Complete implementation + bookkeeping, then assess, before generating handoff docs."
-7. Detect if `driver-docs/<plan>/` directory exists (determines create vs update mode)
-
-If Driver MCP is unavailable:
-```
-Error: Driver MCP is required for /drvr:docs-artifacts.
-Please ensure Driver MCP server is running.
-```
+4. **Per-plan assessment check** — BLOCK if `assessment/<plan>-test-curation.md` does not exist. "Per-plan assessment for `<plan>` has not been completed. Run `/drvr:assess <plan>` first — handoff docs depend on a curated test suite." If a feature-wide `assessment/test-curation-<date>.md` exists instead, this feature was scaffolded under 1.1.0 — see [/drvr:setup](setup.md) → **In-Flight Features (1.1.0 → 1.2.0)** before continuing.
+5. **Plan status check** — Read `plans/<plan>.md` frontmatter. BLOCK if `status` is not `complete` (or the plan's section in `plans/00-overview.md` is not COMPLETE). "Plan `<plan>` is not marked complete. Complete implementation + bookkeeping, then assess, before generating handoff docs."
+6. Detect if `driver-docs/<plan>/` directory exists (determines create vs update mode)
 
 ### Step 3: Determine Mode
 
@@ -58,14 +51,6 @@ Please ensure Driver MCP server is running.
 |-----------|------|
 | No `driver-docs/<plan>/` folder | **Create** - Generate all per-plan artifacts from scratch |
 | `driver-docs/<plan>/` exists | **Update** - Diff-based update of changed sections (e.g., after PR revision) |
-
-### Step 3.5: Resolve Driver Codebase Names
-
-Before spawning the analyzer, resolve Driver codebase names so the analyzer can use Driver MCP tools:
-
-1. Read `research/00-overview.md` from the feature's process artifacts
-2. Find the Codebases table and extract the "Driver Name" column values
-3. If no Codebases table exists, check `FEATURE_LOG.md` or ask the user for Driver codebase names
 
 ### Step 4: Spawn Handoff Analyzer Agent (Per-Plan Scope)
 
@@ -81,7 +66,6 @@ Prepare per-plan handoff documentation:
 - Codebases:
   - {codebase_path_1}
   - {codebase_path_2}
-- Driver codebase names: {driver_name_1}, {driver_name_2}
 - Plan Environment (from plans/{plan-name}.md):
   - Base Branch: {base_branch}
   - Feature Branch: {feature_branch}
@@ -94,7 +78,7 @@ The analyzer must:
 - Read implementation log for actual deviations/decisions for this plan
 - Read research artifacts and DECISIONS.md for upstream context (cross-plan motivation, prior decisions)
 - Read `plans/00-overview.md` for stack position (this plan's row in PR Stack, prior/next plan names)
-- Query Driver MCP for architecture and patterns relevant to changed files only
+- Study existing architecture and patterns relevant to the changed files only
 - Return structured content where each artifact's "feature-overview.md" includes a self-contained PR body — feature context, this plan's purpose, stack position, and links to upstream/downstream plans
 
 ### Step 5: Write Per-Plan Artifacts

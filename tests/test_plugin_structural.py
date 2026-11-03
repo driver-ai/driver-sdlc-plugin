@@ -212,24 +212,25 @@ class TestCrossReferences(unittest.TestCase):
             for cp in cls.plugin_data["commands"]
         ]
 
-    def test_mcp_tool_prefix(self):
-        """Any tool name containing 'mcp' must start with 'mcp__driver-mcp__'."""
+    def test_no_driver_mcp_tool_references(self):
+        """Skills, agents, and commands must not name Driver MCP tools."""
+        driver_tools = re.compile(
+            r"mcp__driver-mcp__|gather_task_context|get_code_map|get_file_documentation"
+            r"|get_source_file|get_codebase_names|get_architecture_overview|get_llm_onboarding_guide"
+        )
         all_components = (
-            [("agent", p) for p in self.agent_paths]
+            [("skill", p) for p in self.skill_paths]
+            + [("agent", p) for p in self.agent_paths]
             + [("command", p) for p in self.command_paths]
         )
         for kind, path in all_components:
-            with self.subTest(kind=kind, name=path.stem):
-                fm = parse_frontmatter(path)
-                tools = fm.get("allowed-tools", [])
-                if isinstance(tools, str):
-                    tools = [t.strip() for t in tools.split(",")]
-                for tool in tools:
-                    if "mcp" in tool.lower():
-                        self.assertTrue(
-                            tool.startswith("mcp__driver-mcp__"),
-                            f"{path.stem}: MCP tool '{tool}' must start with 'mcp__driver-mcp__'",
-                        )
+            label = path.parent.name if kind == "skill" else path.stem
+            with self.subTest(kind=kind, name=label):
+                match = driver_tools.search(path.read_text())
+                self.assertIsNone(
+                    match,
+                    f"{label}: references Driver MCP tool '{match.group(0) if match else ''}'",
+                )
 
     def test_skill_trigger_phrases_in_description(self):
         """Skills with 'Trigger phrases:' must have valid quoted phrases (excluding negative examples)."""
@@ -284,9 +285,9 @@ class TestCommandQualification(unittest.TestCase):
     """Tests that all command references use fully qualified drvr:* names."""
 
     COMMANDS = [
-        "feature", "assess", "context", "dry-run-plan",
+        "feature", "assess", "dry-run-plan",
         "docs-artifacts", "open-pr", "orchestrate", "retro", "setup",
-        "driverize", "un-driverize", "review",
+        "review",
     ]
 
     SCAN_DIRS = ["commands", "skills", "agents", "docs", "hooks", "templates"]

@@ -7,7 +7,7 @@
     {
       "name": "drvr",
       "source": "./",
-      "description": "Structured SDLC workflow for feature development with Driver MCP and Claude Code",
+      "description": "Structured SDLC workflow for feature development with Claude Code",
       "homepage": "https://github.com/driver-ai/driver-sdlc-plugin",
       "repository": "https://github.com/driver-ai/driver-sdlc-plugin"
     }

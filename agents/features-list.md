@@ -7,7 +7,6 @@ allowed-tools:
   - Read
   - Glob
   - Grep
-  - mcp__driver-mcp__get_file_documentation
 ---
 
 # Features List Extraction Agent
@@ -20,7 +19,6 @@ You will receive:
 - **Codebase path**: Local path to the git repository
 - **Branch name**: The feature branch to analyze
 - **Base branch**: The branch to compare against
-- **Driver codebase name**: Name for querying Driver MCP (optional)
 - **Process artifacts path**: Path to research/plans docs (optional)
 
 ## Process

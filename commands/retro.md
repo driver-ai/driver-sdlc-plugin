@@ -94,7 +94,7 @@ INDEX.md row format:
 - Why → What → How progression followed?
 - Questions inline with content, resolved questions preserved?
 - `00-overview.md` effective as entry point?
-- Driver MCP and web research used where appropriate?
+- Codebase and web research used where appropriate?
 - Wireframes created for UI research?
 
 **Planning Readiness** — could someone start writing a plan from these artifacts?
@@ -107,7 +107,7 @@ INDEX.md row format:
 
 **Plan Quality**:
 - Research context read first?
-- Architecture patterns from Driver used?
+- Existing architecture patterns followed?
 - Constraints explicit and specific?
 - Task breakdown granular enough for subagents?
 - Test strategy with specific test cases?

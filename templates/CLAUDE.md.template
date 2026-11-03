@@ -1,4 +1,4 @@
-<!-- drvr:template-version:1.2.0 -->
+<!-- drvr:template-version:1.3.0 -->
 # {{TEAM_NAME}} — SDLC Project Instructions
 
 This repository organizes development work by feature, with each feature containing its own lifecycle of artifacts. It is managed by the [Driver SDLC Plugin (drvr)](https://github.com/driver-ai/driver-sdlc-plugin) for Claude Code.
@@ -10,7 +10,6 @@ This repository organizes development work by feature, with each feature contain
 ```
 {{TEAM_NAME}}/
 ├── CLAUDE.md                # Agent instructions (this file)
-├── .mcp.json                # MCP server configuration (gitignored)
 ├── .gitignore
 ├── features/                # Feature development projects
 │   └── <feature-name>/
@@ -159,7 +158,6 @@ The per-plan PR gate runs **once per plan**, not once per feature: after each pl
 | `/drvr:review <plan>` | Run a plan's internal standards review — check code, verify criteria, auto-fix |
 | `/drvr:docs-artifacts <plan>` | Generate a plan's handoff documentation for code review |
 | `/drvr:open-pr <plan>` | Open the plan's pull request from its handoff documentation |
-| `/drvr:context <task>` | Gather codebase context for a specific task via Driver MCP |
 | `/drvr:retro` | Evaluate session quality, patterns, and improvements |
 
 ## Skills
@@ -177,9 +175,8 @@ The per-plan PR gate runs **once per plan**, not once per feature: after each pl
 
 | Agent | Purpose |
 |-------|---------|
-| `driver-task-context` | Gather task-specific context from Driver MCP |
 | `cascade-check` | Analyze implementation deviations against downstream plans |
-| `handoff-analyzer` | Synthesize process artifacts + git + Driver context for handoff |
+| `handoff-analyzer` | Synthesize process artifacts + git history for handoff |
 | `standards-review` | Review code changes against codebase standards and plan criteria |
 
 ---
@@ -228,7 +225,6 @@ _Add team-specific testing notes below (test framework, commands, real-dependenc
 
 | Integration | Purpose | When to Use |
 |-------------|---------|-------------|
-| **Driver MCP** | Codebase architecture, file docs, code maps | Starting any research or planning |
 | _Add additional MCP servers here_ | | |
 
 ---

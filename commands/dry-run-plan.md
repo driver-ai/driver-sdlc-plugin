@@ -51,7 +51,7 @@ For each task in the plan, walk through it as if implementing:
 10. **CLI compatibility**: Do referenced CLI commands and flags exist in the expected versions?
 11. **Platform**: Are there platform-specific assumptions (e.g., bash version, OS utilities)?
 12. **Standards**: If a codebase standards artifact exists (search the feature's `research/` directory for a file containing `## Standards Source`), do the plan's constraints cover the applicable standards for this task's files? Match the artifact's Applicable Sections against the task's file paths. (Check once per unique file-type group — if multiple tasks touch the same language/framework, check once and reference that finding for the others.)
-13. **Concreteness**: Does the plan have a `## Data Structures & Callables` section? If present, does each rollup row have a corresponding inline snippet in its Owning Task? For modified items, do the snippet signatures match the current codebase (use `get_file_documentation` for verification)? For plans with minimal code surface or that predate this rule (no section at all), downgrade to MEDIUM and note the reason.
+13. **Concreteness**: Does the plan have a `## Data Structures & Callables` section? If present, does each rollup row have a corresponding inline snippet in its Owning Task? For modified items, do the snippet signatures match the current codebase? For plans with minimal code surface or that predate this rule (no section at all), downgrade to MEDIUM and note the reason.
 14. **Core/Shell Decomposition present**: Does the plan's `## Architecture Fit` contain a `### Core/Shell Decomposition` subsection naming pure-core items and shell items, OR declaring shell-only with rationale? If absent entirely: HIGH-severity gap.
 15. **Shell-only rationale is justified, if used**: If the plan declares "Pure core: (none — shell-only feature)", is the Rationale specific and credible? Acceptable: "thin CRUD endpoint, all logic is HTTP routing and DB write"; "webhook forwarder, just re-shapes payload and enqueues"; "wires Stripe SDK to our queue, no business logic". Not acceptable: "doesn't fit," "everything is I/O," or no rationale at all. Vague rationale: MEDIUM-severity gap (push back, look harder for extraction). For verified shell-only features, skip checks 15a, 17, and 18; only 16 and the mocking check (new 19) apply.
 16. **Pure-core items are actually pure** (only if not shell-only): For each item listed under "Pure core," walk through what the task's implementation would need to do. If it would need to perform I/O, read time, read randomness, mutate shared state, or call a shell function, the classification is wrong — HIGH-severity gap. A value type with I/O edges (see [`CLAUDE.md`](../CLAUDE.md) Engineering Practices > Value Types with I/O Edges) passes when each edge method is listed by name under "Imperative shell" and every other member is pure; a type listed as core whose edge methods aren't classified, or whose non-edge members (methods, properties, constructors) need I/O, fails this check.
@@ -63,17 +63,11 @@ Classify each gap found using the severity criteria below.
 
 ### Step 4: Check Architecture Fit
 
-If the plan modifies source code or references codebase patterns, spawn the `driver-task-context` agent to verify accuracy:
+If the plan modifies source code or references codebase patterns, check it against the codebase:
 
-```
-Dry running a plan for <feature>. Need to verify:
-- Do the referenced files/directories exist?
-- Are the patterns referenced in the plan accurate?
+- Do the referenced files and directories exist?
+- Are the patterns the plan references accurate?
 - Any architectural concerns with this approach?
-
-Plan references these files: <list from plan>
-Plan references these patterns: <list from plan>
-```
 
 Skip this step if the plan only modifies project management files (markdown, config).
 

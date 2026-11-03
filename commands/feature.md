@@ -34,8 +34,7 @@ Before creating any files, gather project logistics through conversation.
 Ask these questions **one at a time**, waiting for the user's answer before proceeding:
 
 1. **"Which codebases are involved?"**
-   - For each codebase, ask: name, local path, base branch (where you'll ultimately merge back to — also used for Driver MCP context), and branch prefix (default for per-plan branches, e.g., `amark/oauth` will produce `amark/oauth/01-token-store` for Plan 01).
-   - Ask for the Driver MCP codebase name if they know it (they can check by running `get_codebase_names` separately)
+   - For each codebase, ask: name, local path, base branch (where you'll ultimately merge back to), and branch prefix (default for per-plan branches, e.g., `amark/oauth` will produce `amark/oauth/01-token-store` for Plan 01).
    - Validate that local paths exist on disk (`ls <path>`)
    - Branch prefix: if the user provides only a base branch, suggest a default prefix from the feature name (e.g., feature `oauth-support` → prefix `<user>/oauth-support`). Per-plan branches default to `<prefix>/<NN-plan-slug>` and can be overridden during planning.
    - If the user doesn't know yet: accept "TBD" and move on
@@ -222,9 +221,9 @@ _See `research/00-intent.md` for full problem framing and author's domain contex
 
 ## Codebases
 
-| Name | Local Path | Driver Name | Base Branch | Branch Prefix |
-|------|------------|-------------|-------------|---------------|
-| <name from Step 3> | <validated path> | <Driver MCP name> | <base branch — feature parent> | <branch prefix — e.g., `<user>/<feature>`> |
+| Name | Local Path | Base Branch | Branch Prefix |
+|------|------------|-------------|---------------|
+| <name from Step 3> | <validated path> | <base branch — feature parent> | <branch prefix — e.g., `<user>/<feature>`> |
 
 **Per-plan branches** are generated from the Branch Prefix during planning (default: `<prefix>/<NN-plan-slug>`). Plan 01 branches off Base Branch; Plan N branches off Plan N-1's feature branch. The PR Stack table in `plans/00-overview.md` tracks the actual branch chain once plans are written.
 
@@ -267,7 +266,6 @@ git add FEATURE_LOG.md research/ && git commit -m "chore: Initialize feature pro
 
 - The `/drvr:feature` command only handles scaffolding
 - Research methodology is handled by the `research-guidance` skill
-- Deep codebase context is handled by `driver-task-context` agent
 - `FEATURE_LOG.md` tracks lifecycle state — each skill updates it at transitions
 - Resume with `/drvr:orchestrate <feature-path>` in future sessions
 - Config is stored per-user in `~/.driver/config.json`

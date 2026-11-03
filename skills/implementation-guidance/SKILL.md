@@ -34,7 +34,7 @@ Implementation enforces this commitment three ways:
 1. **Read the specified plan** — the single source of truth
 2. **Verify task docs exist** — check `plans/<plan>/tasks/` for `.md` files. If missing: BLOCK. "No task docs found. Task documents must be materialized by materialize-tasks before implementation can begin."
 3. **Validate task docs match plan** — compare task doc count and task numbers against the plan's `## Task Breakdown` sections. Mismatches: BLOCK with details.
-4. **Read prerequisites** — research docs, Driver context, or materials referenced in the plan's Context or Architecture Fit section
+4. **Read prerequisites** — research docs or other materials referenced in the plan's Context or Architecture Fit section
 5. **Pre-flight** — Step 2 runs environment checks before execution begins
 6. **Tell the user** — "Found N task docs matching the plan. Starting with Task 1."
 
@@ -355,7 +355,7 @@ Group 3: [5] — sequential (depends on 3)
 1. **Root path:** Replace `**Root**: <absolute path>` with `**Root**: (worktree — use your current working directory)`
 2. **cd/branch instruction:** Replace instruction 1 with: "Your current working directory IS the codebase root (worktree isolation). Do NOT change to any other directory and do NOT change branches."
 3. **Test command:** Strip any `cd <path> &&` prefix from test commands — the worktree is already at the codebase root.
-4. **Branch annotation:** `**Feature Branch**: <value> (informational — do not run git checkout)`. `**Base Branch**: <value> (informational — merge target and Driver MCP context branch)`.
+4. **Branch annotation:** `**Feature Branch**: <value> (informational — do not run git checkout)`. `**Base Branch**: <value> (informational — merge target)`.
 5. **Commit instruction:** Add: "Commit your changes within the worktree before reporting."
 6. **Emergent files:** Add: "If you create files not listed in `## Files`, prefer unique names or paths to minimize merge conflicts with other parallel tasks."
 7. Goal, Files, Tests, Constraints, Context, Standards sections are copied unchanged from the task doc.
@@ -489,7 +489,7 @@ Implement the following task.
 
 ## Codebase
 **Root**: <from task doc ## Codebase section>
-**Base Branch**: <value> (merge target / Driver MCP context branch — for reference only, implementation targets Feature Branch)
+**Base Branch**: <value> (merge target — for reference only, implementation targets Feature Branch)
 **Feature Branch**: <from task doc ## Codebase section>
 
 All file paths are relative to the codebase root.
@@ -706,7 +706,6 @@ Task docs are the persistent source of truth for task state. The implementation 
 ## Related
 
 - Previous phase: [planning-guidance](../planning-guidance/SKILL.md) → [/drvr:dry-run-plan](../../commands/dry-run-plan.md)
-- Context gathering: [driver-task-context](../../agents/driver-task-context.md)
 - Cascade check: [cascade-check](../../agents/cascade-check.md)
 - After completion: [sdlc-orchestration](../sdlc-orchestration/SKILL.md)
 - Handoff: [/drvr:docs-artifacts](../../commands/docs-artifacts.md)

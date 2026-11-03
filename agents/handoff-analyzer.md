@@ -9,10 +9,6 @@ allowed-tools:
   - Glob
   - Grep
   - Agent
-  - mcp__driver-mcp__get_codebase_names
-  - mcp__driver-mcp__get_architecture_overview
-  - mcp__driver-mcp__get_llm_onboarding_guide
-  - mcp__driver-mcp__get_file_documentation
 ---
 
 # Handoff Analyzer (Orchestrator)
@@ -25,7 +21,6 @@ The parent agent invokes you via the Agent tool with:
 
 - **Process artifacts path** — Path to the feature's process artifacts folder
 - **Codebase paths** — Local paths to codebases involved (one or more)
-- **Driver codebase names** — Names for querying Driver MCP (one per codebase path)
 
 **Example prompt:**
 
@@ -33,8 +28,8 @@ The parent agent invokes you via the Agent tool with:
 Prepare handoff documentation:
 - Process artifacts: /path/to/features/oauth-support
 - Codebases:
-  - /path/to/python-backend (Driver: python-backend)
-  - /path/to/webapp-frontend (Driver: webapp-frontend)
+  - /path/to/python-backend
+  - /path/to/webapp-frontend
 - Mode: create
 ```
 
@@ -164,14 +159,9 @@ Now read all the detailed extractions and synthesize into the 4 final artifacts.
 
 Read every file in `driver-docs/detailed/` to build comprehensive understanding.
 
-#### Step 2.2: Query Driver MCP for Architecture Context
+#### Step 2.2: Gather Existing Architecture Context
 
-For each codebase, get high-level context. Pass the Base Branch (determined in Step 1.2) as `branch_name` to ensure architecture docs describe the correct branch:
-
-```
-get_architecture_overview(codebase_name, branch_name=base_branch)
-get_llm_onboarding_guide(codebase_name, branch_name=base_branch)
-```
+For each codebase, build a high-level picture of the existing architecture around the changed files — the codebase's own docs (CLAUDE.md, README) and the surrounding code. This frames how the change fits in.
 
 #### Step 2.3: Synthesize Feature Overview
 
@@ -189,7 +179,7 @@ Using inputs from:
 - `decisions.md` — Design decisions (ADR format)
 - `features-*.md` — Components added
 - `commits-*.md` — Files changed, patterns used
-- Driver MCP — Existing architecture context
+- Existing architecture context (Step 2.2)
 
 Produce: `architecture.md`
 
@@ -280,7 +270,7 @@ Report what was created:
 > Last Updated: {date}
 
 ## Overview
-{Technical summary from Driver MCP + features extractions}
+{Technical summary from existing architecture context + features extractions}
 
 ## Cross-Codebase Integration
 {If multi-codebase, from features-*.md API sections}
@@ -295,7 +285,7 @@ Report what was created:
 {Synthesized from features + architecture context}
 
 ## Patterns
-{From commits analysis + Driver onboarding guide}
+{From commits analysis + existing codebase conventions}
 ```
 
 ### testing-guide.md

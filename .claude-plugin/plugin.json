@@ -1,7 +1,7 @@
 {
   "name": "drvr",
   "version": "1.2.0",
-  "description": "Structured SDLC workflow for feature development with Driver MCP and Claude Code",
+  "description": "Structured SDLC workflow for feature development with Claude Code",
   "skills": [
     "./skills/intent-guidance",
     "./skills/research-guidance",
@@ -11,7 +11,6 @@
     "./skills/sdlc-orchestration"
   ],
   "agents": [
-    "./agents/driver-task-context.md",
     "./agents/handoff-analyzer.md",
     "./agents/commit-log.md",
     "./agents/decisions-log.md",
@@ -27,13 +26,10 @@
     "./commands/feature.md",
     "./commands/dry-run-plan.md",
     "./commands/docs-artifacts.md",
-    "./commands/context.md",
     "./commands/retro.md",
     "./commands/orchestrate.md",
     "./commands/open-pr.md",
     "./commands/assess.md",
-    "./commands/driverize.md",
-    "./commands/un-driverize.md",
     "./commands/review.md"
   ]
 }
