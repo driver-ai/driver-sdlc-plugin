@@ -101,9 +101,9 @@ For each task in the plan, walk through it as if implementing:
 
 1. **Files**: Do I know exactly which files to create/modify?
 2. **Patterns**: Do I understand the existing patterns to follow?
-3. **Tests**: Are the test cases specific enough to write?
+3. **Tests**: Are the test cases specific enough to write? Does each name the regression it catches and a path production takes to reach it? Is there an existing test that already catches it?
 4. **Dependencies**: Are there hidden dependencies on other tasks?
-5. **Edge cases**: What could go wrong that isn't covered?
+5. **Edge cases**: What could go wrong that isn't covered? A missing edge case is a gap in the plan's handling or verification; add a test only where the code handles that case explicitly.
 6. **Context**: Is any context missing that I'd need during implementation?
 7. **Env vars**: Are there environment variables that must be set? Will they persist across shell sessions?
 8. **Dependency paths**: Do file paths and import references use correct extensions and conventions?
@@ -246,7 +246,7 @@ Use these criteria when assigning severity to each gap:
 | Severity | Criteria | Examples |
 |----------|----------|----------|
 | **LOW** | Mechanical fix — one correct answer | Stale file reference, typo in pattern name, outdated method name |
-| **MEDIUM** | Clear addition needed | Missing constraint, missing edge case, adding a test case |
+| **MEDIUM** | Clear addition needed | Missing constraint, missing error handling, a test for a behavior change with none planned |
 | **HIGH** | Design decision — multiple valid approaches | Interface choice, architecture pattern, scope change, trade-off |
 
 ## Gap Types to Watch For
@@ -261,7 +261,9 @@ Default severities are starting points — override based on the specific gap.
 | **Missing edge cases** | Happy path only, no error handling specified | MEDIUM |
 | **Ambiguous acceptance** | Criteria that can't be objectively verified | HIGH |
 | **Stale references** | Files or patterns that don't exist in codebase | LOW |
-| **Missing tests** | Implementation task without corresponding test task | MEDIUM |
+| **Missing tests** | Task changes behavior a caller or operator can observe, but has no test task and no No Committed Test entry. Migrations, one-off scripts, constant/flag defaults, and deletions recorded under No Committed Test are not gaps. | MEDIUM |
+| **Test of unreachable path** | Planned test reaches its branch only by patching config or a flag to a value production never has | MEDIUM |
+| **Redundant test** | Planned test duplicates an existing test at the same boundary; the plan should extend that test or list it under Existing Tests Reused | LOW |
 | **Constraint gaps** | Generic constraints instead of specific rules | MEDIUM |
 | **Standards coverage** | Codebase standards artifact exists but plan constraints don't reference applicable standards sections | MEDIUM |
 | **Env var persistence** | Required env var not set, or won't persist across sessions | MEDIUM |

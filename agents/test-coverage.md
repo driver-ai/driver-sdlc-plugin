@@ -65,11 +65,15 @@ Look for:
 
 ### 6. Identify Coverage Gaps
 
-For untested code, assess:
-- Is it testable? (pure functions vs side effects)
+A gap is a changed contract — behavior a caller or operator relies on — with no test that would fail if it broke. An untested file is not by itself a gap: migrations, one-off scripts, constant or flag defaults, paths production cannot reach, and deleted code need no committed test.
+
+For each uncovered contract, assess:
+- What regression would a caller see, and on which supported path?
 - Is it critical? (auth, data integrity, etc.)
-- Is it complex? (cyclomatic complexity)
+- Does an existing test at that boundary already catch it, or could one be extended?
 - What would testing require? (mocks, fixtures, etc.)
+
+Also flag tests the branch added that catch nothing a caller would see: branches reachable only by patching config or a flag, `side_effect` sequences that script call order, counts pinned to fixture size, real sleeps.
 
 ### 7. Output Format
 
@@ -138,11 +142,17 @@ Produce a markdown file with this structure:
 |---------------------|-----------|----------|
 | `{impl.py}` | `{test_impl.py}` | {High/Medium/Low} |
 
-### Files WITHOUT Tests
+### Contracts WITHOUT Tests
 
-| Implementation File | Risk | Reason | Recommendation |
-|---------------------|------|--------|----------------|
-| `{impl.py}` | {High/Med/Low} | {Why risky} | {What to test} |
+| Contract | Implementation File | Regression a caller would see | Risk | Recommendation |
+|----------|---------------------|-------------------------------|------|----------------|
+| `{behavior}` | `{impl.py}` | {What breaks, for whom} | {High/Med/Low} | {Extend `{existing test}` / add test / verify by `{command}`} |
+
+### Files Without Tests, Intentionally
+
+| Implementation File | Reason |
+|---------------------|--------|
+| `{impl.py}` | {Migration / one-off script / default / unreachable path / deleted} |
 
 ## Coverage Gaps
 
@@ -189,7 +199,7 @@ def test_suggested_case():
 
 ## Guidelines
 
-1. **Map exhaustively** - Every implementation file should be accounted for
+1. **Map exhaustively** - Every changed implementation file is accounted for: covered, uncovered contract, or intentionally untested
 2. **Assess risk** - Untested code in auth/data paths is higher risk
 3. **Note patterns** - Document testing patterns for consistency
 4. **Be practical** - Not everything needs 100% coverage
