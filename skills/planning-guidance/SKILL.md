@@ -518,6 +518,12 @@ _The test strategy is derived from the Core/Shell Decomposition above, not desig
 
 _For shell-only features (Pure core: none), the Unit Tests subsection is omitted; the test strategy is integration-only against real I/O._
 
+_Size the strategy by regressions, not by functions. For each changed contract:_
+1. _Name the supported caller or operator path that reaches it, and one regression they could observe. A patch may simulate a real dependency failure; it may not invent a deployment state (a flag or config value production never has)._
+2. _Find the existing test at that boundary (start with `*_integration_test.py` or `tests/` beside the source). Extend it before adding a new case._
+3. _Use the smallest stable interface that exposes the regression. One test may cover several functions or tasks._
+4. _If no committed test is needed, list the change under **No Committed Test** with how you will verify it instead._
+
 ### Testing Patterns
 _Testing framework, file organization, and conventions discovered via Driver_
 
@@ -525,14 +531,24 @@ _Testing framework, file organization, and conventions discovered via Driver_
 
 _Omit this subsection entirely if the feature is shell-only._
 
-_One test per pure-core function listed above. Each test takes values in, asserts on the returned value. No mocks, no I/O, no time, no randomness — if you reach for any of those, the function isn't pure, fix it._
+_One test per pure-core contract whose break a caller would see, not one per function. Each test takes values in, asserts on the returned value. No mocks, no I/O, no time, no randomness — if you reach for any of those, the function isn't pure, fix it._
 
-- [ ] Test: `<test_name>` — `<pure-core function>` with `<input>` returns `<output>`
+- [ ] Test: `<test_name>` — `<pure-core function>` with `<input>` returns `<output>`; catches `<regression>`
 
 ### Integration Tests (shell)
-_One test per shell entry point. Exercises real I/O against a real dependency (real test DB, real HTTP fake-backed by recorded fixtures from real calls, real filesystem in a tmpdir, etc.). Mocks only at justified boundaries (see Mocking Rules in Testing Methodology); each mock must be named with its justification._
+_One test per shell behavior a caller or operator relies on, not one per entry point. Exercises real I/O against a real dependency (real test DB, real HTTP fake-backed by recorded fixtures from real calls, real filesystem in a tmpdir, etc.). Mocks only at justified boundaries (see Mocking Rules in Testing Methodology); each mock must be named with its justification._
 
-- [ ] Test: `<test_name>` — `<shell entry point>` against `<real dependency>`, verifies `<observable outcome>`
+- [ ] Test: `<test_name>` — `<shell entry point>` against `<real dependency>`, verifies `<observable outcome>`; catches `<regression>`
+
+### Existing Tests Reused
+_Tests that already cover a changed contract, and what this plan adds to them. Write "none found" after searching._
+
+- `<test file>::<test>` — covers `<contract>`; extend with `<case>`, or "no change needed"
+
+### No Committed Test
+_Changes verified another way. Typical entries: a migration (every `db` fixture already migrates to head), a one-off or run-by-hand script, a constant or flag default, a fallback production cannot reach, deleted code (delete its tests too)._
+
+- `<change>` — `<why no committed test>`; verified by `<command, throwaway test, or prod check>`
 
 ## Implementation Approach
 _High-level approach, key design decisions, rationale_
@@ -641,10 +657,11 @@ There is no test-pyramid ratio to tune. The ratio of unit to integration tests i
 
 #### No Coverage Quotas
 
-This plugin does not set numeric coverage targets. Coverage quotas reliably produce filler tests written to hit a number rather than to document behavior. Instead:
+This plugin does not set numeric coverage targets or per-function minimums. Quotas reliably produce filler tests written to hit a number rather than to document behavior. Instead:
 
-- **Every pure-core function gets at least one test** that documents its input/output contract. More tests for branches, edge cases, and error returns as the function's behavior warrants.
-- **Every shell entry point gets at least one happy-path integration test** and additional tests for failure modes that the code handles explicitly.
+- **Every test names the regression it catches** and the supported path that reaches it. A test whose branch is reachable only by patching config or a flag to a value production never has guards nothing.
+- **Reuse before adding.** An existing test at the same boundary that already catches the regression is the coverage; extend it rather than adding a sibling.
+- **Add cases for failure modes the code handles explicitly**, not for every branch or edge case you can enumerate.
 - **A test is worth keeping only if a reader can use it to understand what the code does.** If the test reads as noise — long mock setup, opaque assertions, brittle to refactors — it should not be written in the first place.
 
 #### Mocking Rules
@@ -663,9 +680,11 @@ A mock is permitted only when the real collaborator is one of:
 **Heuristic for catching boundary failures**: if the test's setup is mostly mocks, you're testing the wiring of the mocks rather than the behavior of the code. Return to Architecture Fit and look for the pure-core extraction that would let you assert on values instead.
 
 **Do not mock just because it's easier:**
-- The database — use a real test DB or in-memory equivalent. "Real DB is slow" doesn't justify mocking; slow tests are still real tests, and the speed cost is usually small.
+- The database — use a real test DB or in-memory equivalent. "Real DB is slow" doesn't justify mocking. Pay the cost once instead: share the codebase's DB, container, and subprocess fixtures at the widest scope the tests don't mutate.
 - HTTP to services you control — use a real local instance or recorded fixtures from real calls.
 - The filesystem — use a tmpdir.
+
+**Control time.** Retry, backoff, TTL, and rate-limit tests inject a fake clock or patch the sleep; no test waits on the wall clock. Rate limiters wrapped around in-process fakes are removed, not tuned.
 
 #### Test Lifecycle — No "Scaffolding" Category
 
@@ -872,7 +891,8 @@ When appending the first decision entry (replacing the `_No decisions recorded y
 - Treat the core/shell decomposition as optional or skip the Architecture Fit subsection (shell-only declarations are acceptable; absence is not)
 - Declare "shell-only" as an escape hatch when meaningful logic does exist — the rationale must be specific and pass scrutiny at dry-run
 - Design test strategy independently of architecture — the test strategy is *derived* from where the boundary lands
-- Set numeric coverage targets ("80% line coverage") — the plugin doesn't use them, they produce filler tests
+- Set numeric coverage targets ("80% line coverage") or per-function test minimums — the plugin doesn't use them, they produce filler tests
+- Plan tests for a path production cannot reach (a fallback behind a flag that is always on), for constant or flag defaults, for migrations, or for one-off scripts — record them under No Committed Test
 - Use the words "scaffolding test" — that category has been removed; tests are pure-core unit or shell integration, both durable
 - Accommodate entangled neighbor code by tangling the new feature too — extract a pure core anyway when one exists
 - Use native Explore agents or subagents as a substitute for `gather_task_context`
@@ -890,6 +910,7 @@ When appending the first decision entry (replacing the `_No decisions recorded y
 - Push back on plans where the natural shape would require mocks — that means the seam isn't right yet
 - Extract a pure core even when the surrounding code is tangled — local mess from clean extraction beats clean fit with entangled neighbor
 - Derive the Test Strategy from the Core/Shell Decomposition — unit tests for pure core (values in, values out, no mocks), integration tests for shell (real I/O)
+- Name the regression each planned test catches, and search for an existing test at that boundary first
 - Call `gather_task_context` with detailed, planning-focused task descriptions
 - Wait for the full response — it is doing compressed expert-level codebase analysis
 - Use primitive tools (`get_code_map`, `get_file_documentation`, `get_source_file`) to reach code-level specificity
@@ -905,6 +926,7 @@ When appending the first decision entry (replacing the `_No decisions recorded y
 - [ ] **Core/shell named?** — Does Architecture Fit have a Core/Shell Decomposition subsection listing pure-core items and shell items by name?
 - [ ] **Test strategy derived?** — Does every unit test map to a pure-core item with no mocks, and every integration test map to a shell item against real I/O?
 - [ ] **No internal mocks?** — Did I check that no test in the plan mocks an internal module? (If yes, the boundary is wrong — fix before presenting.)
+- [ ] **Regression named?** — Does every planned test name the regression it catches and a path production takes to reach it? Are existing tests listed under Existing Tests Reused, and changes with no test under No Committed Test?
 - [ ] **Core/shell constraint encoded?** — Is the functional-core / imperative-shell constraint the first item in `## Constraints`?
 - [ ] **Read research first?** — Have I checked `research/*.md`, including any core/shell decomposition surfaced during research?
 - [ ] **Driver context?** — Have I called `gather_task_context` for architecture AND testing patterns?

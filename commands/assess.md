@@ -65,14 +65,18 @@ Evaluate each test against the core/shell rules. The categories:
 The test is a symptom of a boundary problem, has no future use, and shouldn't survive curation. Either the architecture is wrong (a follow-up will fix it) or the test never asserted anything load-bearing.
 
 Strong PRUNE signals:
-- **Mocks an internal module** — the test asserts behavior of something the codebase owns by mocking its collaborators. This is the strongest PRUNE signal. If the covered behavior is important, the right fix is to extract a pure core and write a real unit test against it; the mock-based test should not survive in the meantime.
+- **Mocks an internal module** — the test asserts behavior of something the codebase owns by mocking its collaborators. This is the strongest PRUNE signal. If the covered behavior is important and nothing else covers it, PROMOTE (see Key constraint below): extract a pure core, write the real test, and delete the mock-based test once its replacement passes.
 - **Asserts exact mock call signatures** (`.toHaveBeenCalledWith(exact, args)` on internal methods) — tests the call sequence, not the outcome.
 - **Tests pure wiring with no behavioral assertion** — "this constructor was called" type tests.
 - **Setup longer than the test itself** — visible symptom of over-mocking; the seams are wrong.
 - **Tests implementation details** — private method calls, internal state inspection, class-internal collaborator interactions.
 - **Breaks on any refactor without catching real bugs** — coupled to structure, not behavior.
 - **Duplicates coverage from a behavior-asserting test** — the behavioral one is the keeper.
-- **Tautological structural assertions** — the assertion mirrors the implementation by construction (an enum asserted to have exactly the three variants it lists; a class asserted to expose the N methods it defines; a config dict asserted to have the K keys of its literal). These pass iff the implementation is unchanged and catch no real bug — they only re-state the implementation in a different syntax.
+- **Reaches its branch only by patching config or a flag** to a value production never has (a fallback behind an always-on flag). It guards a path no caller takes; delete the dead branch with it, or flag that to the user.
+- **Scripts results in call order** — `side_effect=[...]` sequences against a DB session or client encode the production query order, not an outcome.
+- **Covers code with no durable caller** — a migration (every DB fixture migrates to head), a one-off or run-by-hand script, a profiling or benchmark script, or code being deleted in this change.
+- **Pins a count to a fixture corpus or growing set** (`len(results) == 36` traced to a fixture file; one parametrized case per file, route, or snapshot). Rewrite as one aggregate test that collects offenders and asserts none, or PRUNE.
+- **Tautological structural assertions** — the assertion mirrors the implementation by construction (an enum asserted to have exactly the three variants it lists; a class asserted to expose the N methods it defines; a config dict asserted to have the K keys of its literal; a flag asserted to have its hard-coded default). These pass iff the implementation is unchanged and catch no real bug — they only re-state the implementation in a different syntax.
 
 ### KEEP — Valuable long-term, already conforming
 
@@ -85,7 +89,9 @@ Strong KEEP signals:
 
 ### PROMOTE — Rewrite to conform
 
-The test covers behavior worth keeping, but in a shape that violates the architecture. The fix is a rewrite, not a deletion. Two common cases:
+The test covers behavior worth keeping, but in a shape that violates the architecture or wastes suite time. The fix is a rewrite, not a deletion. Common cases:
+
+- **Waits on real time or rebuilds expensive setup per test.** Rewrite: patch the sleep or inject a clock for retry, backoff, TTL, and rate-limit paths; widen the scope of container, DB, synth, or subprocess fixtures the tests don't mutate.
 
 - **Mock-heavy test of internal logic that could be tested through a pure-core extraction.** Rewrite: extract the pure core (record as a follow-up architecture task if it's nontrivial), then assert values-in / values-out against the extracted function with no mocks.
 - **Implementation-detail test that should be a behavioral test through the public interface.** Rewrite: assert the observable outcome rather than the internal call sequence.
